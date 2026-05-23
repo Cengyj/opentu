@@ -1,0 +1,59 @@
+# Opentu 开发文档
+
+本目录只保留当前仍有维护价值的开发文档。产品介绍、安装和常用命令见 [项目 README](../README.md)。
+
+## 必读入口
+
+- [编码规则](./CODING_RULES.md)：项目级经验、踩坑记录和高风险改动规则。
+- [编码标准](./CODING_STANDARDS.md)：TypeScript、React、样式与测试约定。
+- [功能流](./FEATURE_FLOWS.md)：核心用户路径和主要功能流转。
+- [概念说明](./CONCEPTS.md)：领域概念与画布工作区说明。
+- [Service Worker 架构](./SW_ARCHITECTURE.md)：SW、缓存、后台任务与调试入口。
+
+## 部署与发布
+
+- [版本控制](./VERSION_CONTROL.md)：版本号、发布流程和缓存策略。
+- [版本更新策略](./VERSION_UPDATE_STRATEGY.md)：版本文件、changelog 与发布验证。
+- [NPM CDN 部署](./NPM_CDN_DEPLOY.md)：npm 包与 CDN 发布链路。
+- [CDN 部署](./CDN_DEPLOYMENT.md)：混合部署、CDN 回退与线上排查。
+- [Cloudflare Pages 部署](./CFPAGE-DEPLOY.md)：静态托管配置。
+
+## UI 与品牌
+
+- [品牌规范](./BRAND_GUIDELINES.md)：Logo、色彩和品牌用法。
+- [品牌设计](./BRAND_DESIGN.md)：品牌方向与设计方案。
+- [PWA 图标](./PWA_ICONS.md)：图标生成和 manifest 相关配置。
+- [Z-Index 指南](./Z_INDEX_GUIDE.md)：弹层层级和遮挡问题处理。
+- [TDesign 主题接入](./TDESIGN_THEME_INTEGRATION.md)：组件主题集成经验。
+
+## 关键能力
+
+- [统一缓存设计](./UNIFIED_CACHE_DESIGN.md)：缓存模型、存储和清理策略。
+- [统一缓存实现总结](./UNIFIED_CACHE_IMPLEMENTATION_SUMMARY.md)：落地细节和验证要点。
+- [素材库插入经验](./MEDIA_LIBRARY_INSERTION_LESSONS.md)：素材插入、选择和画布联动。
+- [素材库渲染性能经验](./MEDIA_LIBRARY_RENDER_PERFORMANCE_LESSONS.md)：列表、预览和性能优化。
+- [异步任务供应商路由经验](./ASYNC_TASK_PROVIDER_ROUTE_LESSONS.md)：多供应商异步任务提交、恢复查询和路由快照规则。
+- [PPT 能力规划](./PPT_CAPABILITY_PLAN.md)：PPT 生成、编辑和导出路线。
+- [PPT Prompt](./PPT_Prompt.md)：PPT 相关提示词资产。
+
+## 复盘文档
+
+`*_LESSONS.md` 文档用于保留仍会影响实现决策的复盘经验。新增复盘前优先检查是否能合并进现有主题文档，避免继续膨胀。
+
+常用主题：
+
+- AI 生成参数、提示词历史、模型选择和任务队列。
+- PPT 生成、媒体导出、Frame 操作和样式一致性。
+- Service Worker、CDN、缓存、启动性能和发布稳定性。
+- PostHog 埋点、错误追踪、SEO 和观测方法。
+
+## 本地命令
+
+```bash
+corepack enable pnpm
+pnpm install
+pnpm start          # http://localhost:7200
+pnpm check
+pnpm test
+pnpm check:cycles
+```

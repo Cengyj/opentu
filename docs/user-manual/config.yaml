@@ -1,0 +1,44 @@
+# Opentu 用户手册配置文件
+
+# 站点信息
+site:
+  title: Opentu 用户手册
+  description: Opentu（开图）是一款以画布工作区为底座的 AI 应用平台，连接模型、知识、素材与工作流，帮助创作者在同一个浏览器窗口里完成生成、编辑与交付。
+  logo: 🎨
+
+# 分类配置（按 order 排序）
+categories:
+  getting-started:
+    name: 快速入门
+    order: 1
+  drawing:
+    name: 绘图工具
+    order: 2
+  ai-generation:
+    name: AI 创作
+    order: 3
+  advanced:
+    name: 进阶功能
+    order: 4
+  mindmap:
+    name: 思维导图
+    order: 5
+  media-library:
+    name: 素材库
+    order: 6
+  project:
+    name: 项目管理
+    order: 7
+  settings:
+    name: 设置
+    order: 8
+
+# 截图目录配置
+screenshots:
+  source: ../../apps/web-e2e/test-results/manual-screenshots
+  output: ./screenshots
+
+# 输出配置
+output:
+  dir: ../../apps/web/public/user-manual
+  format: html

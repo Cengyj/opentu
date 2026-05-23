@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Startup App",
+    "path": "dist/apps/web/assets/startup-app-*.js",
+    "limit": "820 kB",
+    "gzip": true,
+    "running": false
+  },
+  {
+    "name": "Startup Runtime",
+    "path": "dist/apps/web/assets/startup-runtime-*.js",
+    "limit": "5 kB",
+    "gzip": true,
+    "running": false
+  },
+  {
+    "name": "AI Chat",
+    "path": "dist/apps/web/assets/ai-chat-*.js",
+    "limit": "140 kB",
+    "gzip": true,
+    "running": false
+  },
+  {
+    "name": "Diagram Engines",
+    "path": "dist/apps/web/assets/diagram-engines-*.js",
+    "limit": "950 kB",
+    "gzip": true,
+    "running": false
+  },
+  {
+    "name": "Office Data",
+    "path": "dist/apps/web/assets/office-data-*.js",
+    "limit": "300 kB",
+    "gzip": true,
+    "running": false
+  },
+  {
+    "name": "Editor Engines",
+    "path": "dist/apps/web/assets/editor-engines-*.js",
+    "limit": "870 kB",
+    "gzip": true,
+    "running": false
+  },
+  {
+    "name": "Media Viewer",
+    "path": "dist/apps/web/assets/media-viewer-*.js",
+    "limit": "20 kB",
+    "gzip": true,
+    "running": false
+  }
+]
