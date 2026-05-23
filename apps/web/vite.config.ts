@@ -1187,7 +1187,6 @@ export default defineConfig({
       brotliSize: true,
     }),
     deferEntryAssetsPlugin(),
-    rewriteEntryAssetsToCDNPlugin(),
     rewriteManifestAssetsToCDNPlugin(),
     precacheManifestPlugin(),
     idlePrefetchManifestPlugin(),
