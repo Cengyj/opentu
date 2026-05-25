@@ -42,11 +42,12 @@ import type { VideoModel } from '../../types/video.types';
 
 // 懒加载批量出图组件
 const BatchImageGeneration = lazy(() => import('./batch-image-generation'));
+const AIImagePsdGeneration = lazy(() => import('./ai-psd-generation'));
 const MermaidToDrawnix = lazy(() => import('./mermaid-to-drawnix'));
 const MarkdownToDrawnix = lazy(() => import('./markdown-to-drawnix'));
 
 // 图像生成模式类型
-type ImageGenerationMode = 'single' | 'batch';
+type ImageGenerationMode = 'single' | 'batch' | 'psd';
 
 const TTDDialogComponent = ({
   container,
@@ -65,6 +66,7 @@ const TTDDialogComponent = ({
 
   // 移动端和平板端不显示批量出图
   const showBatchTab = !isMobile && !isTablet;
+  const showPsdTab = true;
 
   // 使用ref来防止多次并发处理
   const isProcessingRef = useRef(false);
@@ -235,7 +237,9 @@ const TTDDialogComponent = ({
     useState<ImageGenerationMode>(() => {
       try {
         const savedMode = localStorage.getItem(AI_IMAGE_MODE_CACHE_KEY);
-        return savedMode === 'batch' ? 'batch' : 'single';
+        return savedMode === 'batch' || savedMode === 'psd'
+          ? savedMode
+          : 'single';
       } catch (e) {
         return 'single';
       }
@@ -689,12 +693,16 @@ const TTDDialogComponent = ({
             ? language === 'zh'
               ? '批量出图'
               : 'Batch Generation'
+            : imageGenerationMode === 'psd'
+            ? language === 'zh'
+              ? '分层 PSD'
+              : 'Layered PSD'
             : language === 'zh'
             ? 'AI 图片生成'
             : 'AI Image Generation'
         }
         headerContent={
-          showBatchTab ? (
+          showBatchTab || showPsdTab ? (
             <div
               className="image-generation-mode-tabs"
               onMouseDown={(e) => e.stopPropagation()}
@@ -714,19 +722,36 @@ const TTDDialogComponent = ({
               >
                 {language === 'zh' ? 'AI 图片生成' : 'AI Image'}
               </button>
-              <button
-                type="button"
-                className={`mode-tab ${
-                  imageGenerationMode === 'batch' ? 'active' : ''
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  handleImageModeChange('batch');
-                }}
-              >
-                {language === 'zh' ? '批量出图' : 'Batch'}
-              </button>
+              {showBatchTab ? (
+                <button
+                  type="button"
+                  className={`mode-tab ${
+                    imageGenerationMode === 'batch' ? 'active' : ''
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    handleImageModeChange('batch');
+                  }}
+                >
+                  {language === 'zh' ? '批量出图' : 'Batch'}
+                </button>
+              ) : null}
+              {showPsdTab ? (
+                <button
+                  type="button"
+                  className={`mode-tab ${
+                    imageGenerationMode === 'psd' ? 'active' : ''
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    handleImageModeChange('psd');
+                  }}
+                >
+                  {language === 'zh' ? '分层 PSD' : 'PSD'}
+                </button>
+              ) : null}
             </div>
           ) : undefined
         }
@@ -754,6 +779,29 @@ const TTDDialogComponent = ({
             >
               <BatchImageGeneration
                 onSwitchToSingle={() => handleImageModeChange('single')}
+                selectedModel={selectedImageModel}
+                selectedModelRef={selectedImageModelRef}
+                onModelChange={handleImageModelChange}
+                onModelRefChange={handleImageModelRefChange}
+              />
+            </Suspense>
+          ) : imageGenerationMode === 'psd' ? (
+            <Suspense
+              fallback={
+                <div className="loading-fallback">
+                  {language === 'zh' ? '加载中...' : 'Loading...'}
+                </div>
+              }
+            >
+              <AIImagePsdGeneration
+                initialPrompt={aiImageData.initialPrompt}
+                initialImages={aiImageData.initialImages}
+                initialKnowledgeContextRefs={
+                  aiImageData.initialKnowledgeContextRefs ||
+                  imageDialogInitialData?.initialKnowledgeContextRefs ||
+                  imageDialogInitialData?.knowledgeContextRefs ||
+                  []
+                }
                 selectedModel={selectedImageModel}
                 selectedModelRef={selectedImageModelRef}
                 onModelChange={handleImageModelChange}

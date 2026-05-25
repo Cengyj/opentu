@@ -262,6 +262,14 @@
   &.is-generating {
     opacity: 0.9;
   }
+
+  &.unified-action-box--no-quantity {
+    min-width: 120px;
+
+    .generate-button {
+      min-width: 100%;
+    }
+  }
 }
 
 .quantity-section {

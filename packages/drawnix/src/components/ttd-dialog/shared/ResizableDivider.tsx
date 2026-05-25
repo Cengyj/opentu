@@ -28,7 +28,7 @@ interface ResizableDividerProps {
   /** 是否禁用拖动 */
   disabled?: boolean;
   /** 存储 key 后缀，用于区分不同弹窗的宽度设置 */
-  storageKey?: 'image' | 'video';
+  storageKey?: 'image' | 'video' | 'psd';
 }
 
 // 默认宽度和限制
@@ -136,9 +136,6 @@ export const ResizableDivider: React.FC<ResizableDividerProps> = ({
         setIsDragging(false);
         onResizeEnd?.();
         // 保存当前宽度到 localStorage
-        const currentWidth =
-          startWidthRef.current +
-          (startXRef.current - document.body.getBoundingClientRect().left);
         saveWidth(storageKey, rightPanelWidth);
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);

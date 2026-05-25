@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useCallback, useState, useRef, useEffect } from 'react';
 import { Button } from 'tdesign-react';
 import { RefreshIcon, ChevronDownIcon } from 'tdesign-icons-react';
 import { HoverTip } from '../../shared';
@@ -12,6 +12,8 @@ interface ActionButtonsProps {
   onGenerate: (count?: number) => void;
   onReset: () => void;
   leftContent?: React.ReactNode;
+  showQuantity?: boolean;
+  generateLabel?: string;
 }
 
 const PRESETS = [1, 2, 3, 4, 5, 10, 20, 50, 100];
@@ -28,6 +30,8 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
   onGenerate,
   onReset,
   leftContent,
+  showQuantity = true,
+  generateLabel,
 }) => {
   // Get type-specific storage key
   const storageKey = type === 'video' ? VIDEO_STORAGE_KEY : IMAGE_STORAGE_KEY;
@@ -62,6 +66,15 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
     }
   }, [quantity, storageKey]);
 
+  const handleBlur = useCallback(() => {
+    let num = parseInt(inputValue, 10);
+    if (isNaN(num) || num < 1) num = 1;
+    if (num > MAX_QUANTITY) num = MAX_QUANTITY;
+
+    setInputValue(num.toString());
+    setQuantity(num);
+  }, [inputValue]);
+
   // Handle outside click to close dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -75,16 +88,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [inputValue]);
-
-  const handleBlur = () => {
-    let num = parseInt(inputValue, 10);
-    if (isNaN(num) || num < 1) num = 1;
-    if (num > MAX_QUANTITY) num = MAX_QUANTITY;
-
-    setInputValue(num.toString());
-    setQuantity(num);
-  };
+  }, [handleBlur]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
@@ -106,7 +110,23 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
   };
 
   const handleGenerateClick = () => {
-    onGenerate(quantity);
+    onGenerate(showQuantity ? quantity : undefined);
+  };
+
+  const getGenerateButtonText = () => {
+    if (isGenerating) {
+      return language === 'zh' ? '生成中...' : 'Generating...';
+    }
+    if (hasGenerated) {
+      return language === 'zh' ? '重新生成' : 'Regenerate';
+    }
+    if (generateLabel) {
+      return generateLabel;
+    }
+    if (type === 'video') {
+      return language === 'zh' ? '生成视频' : 'Generate Video';
+    }
+    return language === 'zh' ? '生成' : 'Generate';
   };
 
   return (
@@ -118,97 +138,99 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
       <div
         className={`unified-action-box ${isGenerating ? 'is-generating' : ''} ${
           canGenerate ? 'can-generate' : ''
-        }`}
+        } ${showQuantity ? '' : 'unified-action-box--no-quantity'}`}
       >
         {/* Left Side: Quantity Control */}
-        <div className="quantity-section" ref={containerRef}>
-          <HoverTip
-            content={language === 'zh' ? '生成数量' : 'Quantity'}
-            theme="light"
-          >
-            <div
-              className={`quantity-control ${isOpen ? 'is-open' : ''} ${
-                isGenerating ? 'is-disabled' : ''
-              }`}
+        {showQuantity && (
+          <div className="quantity-section" ref={containerRef}>
+            <HoverTip
+              content={language === 'zh' ? '生成数量' : 'Quantity'}
+              theme="light"
             >
-              <input
-                type="text"
-                inputMode="numeric"
-                value={inputValue}
-                onChange={handleInputChange}
-                onBlur={handleBlur}
-                data-track="ai_click_quantity_input"
-                onClick={() => !isGenerating && setIsOpen(true)}
-                disabled={isGenerating}
-                className="quantity-input"
-              />
-              <button
-                type="button"
-                data-track="ai_click_quantity_toggle"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleDropdown();
-                }}
-                disabled={isGenerating}
-                className="quantity-toggle"
+              <div
+                className={`quantity-control ${isOpen ? 'is-open' : ''} ${
+                  isGenerating ? 'is-disabled' : ''
+                }`}
               >
-                <ChevronDownIcon
-                  className={`quantity-icon ${isOpen ? 'is-open' : ''}`}
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={inputValue}
+                  onChange={handleInputChange}
+                  onBlur={handleBlur}
+                  data-track="ai_click_quantity_input"
+                  onClick={() => !isGenerating && setIsOpen(true)}
+                  disabled={isGenerating}
+                  className="quantity-input"
                 />
-              </button>
-            </div>
-          </HoverTip>
-
-          {/* Dropdown Menu */}
-          {isOpen && (
-            <div className="quantity-dropdown">
-              <div className="quantity-dropdown-header">
-                {language === 'zh' ? '选择数量' : 'Select Quantity'}
-              </div>
-              {PRESETS.map((preset) => (
                 <button
-                  key={preset}
                   type="button"
-                  data-track="ai_click_quantity_select"
-                  onClick={() => handleSelect(preset)}
-                  className={`quantity-option ${
-                    quantity === preset ? 'is-selected' : ''
-                  }`}
+                  data-track="ai_click_quantity_toggle"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleDropdown();
+                  }}
+                  disabled={isGenerating}
+                  className="quantity-toggle"
                 >
-                  <span>
-                    {preset}{' '}
-                    {type === 'video'
-                      ? language === 'zh'
-                        ? '个'
-                        : preset > 1
-                        ? 'videos'
-                        : 'video'
-                      : language === 'zh'
-                      ? '张'
-                      : preset > 1
-                      ? 'images'
-                      : 'image'}
-                  </span>
-                  {quantity === preset && (
-                    <svg
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                    >
-                      <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
-                  )}
+                  <ChevronDownIcon
+                    className={`quantity-icon ${isOpen ? 'is-open' : ''}`}
+                  />
                 </button>
-              ))}
-            </div>
-          )}
-        </div>
+              </div>
+            </HoverTip>
+
+            {/* Dropdown Menu */}
+            {isOpen && (
+              <div className="quantity-dropdown">
+                <div className="quantity-dropdown-header">
+                  {language === 'zh' ? '选择数量' : 'Select Quantity'}
+                </div>
+                {PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    data-track="ai_click_quantity_select"
+                    onClick={() => handleSelect(preset)}
+                    className={`quantity-option ${
+                      quantity === preset ? 'is-selected' : ''
+                    }`}
+                  >
+                    <span>
+                      {preset}{' '}
+                      {type === 'video'
+                        ? language === 'zh'
+                          ? '个'
+                          : preset > 1
+                          ? 'videos'
+                          : 'video'
+                        : language === 'zh'
+                        ? '张'
+                        : preset > 1
+                        ? 'images'
+                        : 'image'}
+                    </span>
+                    {quantity === preset && (
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                      >
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Middle: Vertical Divider */}
-        <div className="action-divider"></div>
+        {showQuantity && <div className="action-divider"></div>}
 
         {/* Right Side: Generate Button */}
         <button
@@ -217,21 +239,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
           disabled={isGenerating || !canGenerate}
           className={`generate-button ${isGenerating ? 'loading' : ''}`}
         >
-          {isGenerating
-            ? language === 'zh'
-              ? '生成中...'
-              : 'Generating...'
-            : hasGenerated
-            ? language === 'zh'
-              ? '重新生成'
-              : 'Regenerate'
-            : type === 'video'
-            ? language === 'zh'
-              ? '生成视频'
-              : 'Generate Video'
-            : language === 'zh'
-            ? '生成'
-            : 'Generate'}
+          {getGenerateButtonText()}
         </button>
       </div>
 
