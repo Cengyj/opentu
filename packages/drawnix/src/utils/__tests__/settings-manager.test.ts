@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DRAWNIX_SETTINGS_KEY } from '../../constants/storage';
 
 function createStorageMock(): Storage {
@@ -231,7 +231,7 @@ describe('settings-manager', () => {
     expect(profiles.find((profile) => profile.id === 'custom-provider')).toMatchObject({
       name: 'Custom Provider',
       pricingGroup: 'codex',
-      imageApiCompatibility: 'for-gpt-image',
+      imageApiCompatibility: 'openai-gpt-image',
     });
     expect(catalogs.find((catalog) => catalog.profileId === 'custom-provider')).toMatchObject({
       selectedModelIds: ['custom-model'],
@@ -282,7 +282,7 @@ describe('settings-manager', () => {
     });
   });
 
-  it('normalizes legacy for GPT image compatibility values to the canonical value', async () => {
+  it('migrates legacy For GPT image compatibility values to OpenAI GPT Image', async () => {
     mockSettingsManagerDeps();
 
     localStorage.setItem(
@@ -321,16 +321,16 @@ describe('settings-manager', () => {
     expect(
       profiles.find((profile) => profile.id === 'legacy-for-profile')
     ).toMatchObject({
-      imageApiCompatibility: 'for-gpt-image',
+      imageApiCompatibility: 'openai-gpt-image',
     });
     expect(
       profiles.find((profile) => profile.id === 'legacy-compatible-profile')
     ).toMatchObject({
-      imageApiCompatibility: 'for-gpt-image',
+      imageApiCompatibility: 'openai-gpt-image',
     });
   });
 
-  it('migrates legacy default For GPT Image compatibility only once', async () => {
+  it('keeps the legacy default profile on OpenAI GPT Image compatibility', async () => {
     mockSettingsManagerDeps();
 
     localStorage.setItem(
@@ -367,7 +367,7 @@ describe('settings-manager', () => {
       .find((profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID);
 
     expect(migratedProfile).toMatchObject({
-      imageApiCompatibility: 'for-gpt-image',
+      imageApiCompatibility: 'openai-gpt-image',
     });
     expect(settingsManager.getSettings().migrations).toMatchObject({
       legacyDefaultImageApiCompatibilityV1: true,

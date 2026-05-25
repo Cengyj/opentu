@@ -1,15 +1,11 @@
 import type { ModelAdapter, ModelKind } from './types';
 import { getModelConfig, ModelVendor } from '../../constants/model-config';
 import type { ModelType } from '../../constants/model-config';
-import {
-  resolveInvocationRoute,
-  type ModelRef,
-} from '../../utils/settings-manager';
+import type { ModelRef } from '../../utils/settings-manager';
 import {
   resolveInvocationPlanFromRoute,
   type ProviderModelBinding,
 } from '../provider-routing';
-import { FOR_GPT_IMAGE_GENERATION_REQUEST_SCHEMA } from './image-request-schemas';
 
 const adapterRegistry = new Map<string, ModelAdapter>();
 
@@ -148,24 +144,6 @@ function findImageAdapterBySchema(schema: string): ModelAdapter | undefined {
   );
 }
 
-function isForOpenCodeBaseUrl(baseUrl: string): boolean {
-  const trimmed = baseUrl.trim();
-  if (!trimmed) {
-    return false;
-  }
-
-  try {
-    const url = new URL(
-      /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed)
-        ? trimmed
-        : `https://${trimmed}`
-    );
-    return url.hostname.toLowerCase() === 'foropencode.com';
-  } catch {
-    return false;
-  }
-}
-
 function resolveGPTImageAdapterForLegacyRoute(
   modelId?: string | null,
   modelRef?: ModelRef | null
@@ -174,11 +152,7 @@ function resolveGPTImageAdapterForLegacyRoute(
     return undefined;
   }
 
-  const route = resolveInvocationRoute('image', modelRef || modelId);
-  if (isForOpenCodeBaseUrl(route.baseUrl)) {
-    return findImageAdapterBySchema(FOR_GPT_IMAGE_GENERATION_REQUEST_SCHEMA);
-  }
-
+  void modelRef;
   return findImageAdapterBySchema('openai.image.gpt-generation-json');
 }
 

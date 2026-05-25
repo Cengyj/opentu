@@ -9,15 +9,15 @@ describe('createProviderProfileDraft', () => {
         href: 'https://example.com/app',
       },
       history: {
-        replaceState: () => {},
+        replaceState: vi.fn(),
       },
       dispatchEvent: () => true,
     });
     vi.stubGlobal('localStorage', {
       getItem: () => null,
-      setItem: () => {},
-      removeItem: () => {},
-      clear: () => {},
+      setItem: vi.fn(),
+      removeItem: vi.fn(),
+      clear: vi.fn(),
     });
   });
 
@@ -45,7 +45,7 @@ describe('createProviderProfileDraft', () => {
     });
   });
 
-  it('shows For GPT compatibility for ForOpenCode auto image API mode', async () => {
+  it('shows OpenAI GPT Image compatibility for ForOpenCode auto image API mode', async () => {
     const { getImageApiCompatibilityHint } = await import(
       '../image-api-compatibility-display'
     );
@@ -55,7 +55,7 @@ describe('createProviderProfileDraft', () => {
       imageApiCompatibility: 'auto',
     });
 
-    expect(hint).toContain('For GPT 兼容');
+    expect(hint).toContain('OpenAI GPT Image');
     expect(hint).not.toMatch(/Tuzi\s+GPT/);
   });
 });

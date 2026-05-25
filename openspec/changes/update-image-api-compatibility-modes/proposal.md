@@ -1,45 +1,30 @@
-﻿# Change: Update image API compatibility modes for official and For GPT Image routing
+# Change: Default image compatibility to OpenAI GPT Image and remove For GPT mode
 
 ## Why
 
-The project already supports official GPT Image generation and edit requests through a dedicated adapter, but For GPT compatibility is still implemented as a hidden branch inside the generic default image adapter. That keeps current behavior working, but it leaves three important problems:
-
-- `For GPT compatibility` does not have a real adapter boundary of its own.
-- `auto` still feels ambiguous because it resolves to different contracts without a clear ownership model.
-- future `/images/edits` work for ForOpenCode/New API or other GPT-compatible gateways will keep accumulating inside the generic basic adapter.
-
-We need to separate these contracts cleanly before more image capabilities are added.
+The project should converge on a single explicit GPT Image request format. `for-gpt-image` was introduced as a separate compatibility path, but the current rollout decision is to migrate users from `for-gpt-image` to `openai-gpt-image` and delete the dedicated For GPT code path.
 
 ## What Changes
 
-- Refine internal image compatibility modes to four values:
+- Refine internal image compatibility modes to three stored values:
   - `auto`
   - `openai-gpt-image`
-  - `for-gpt-image`
   - `openai-compatible-basic`
-- Keep `auto` as a runtime resolver, not as a concrete wire contract.
-- Accept legacy `tuzi-gpt-image` and `tuzi-compatible` values as aliases and normalize them toward `for-gpt-image`.
-- Add a dedicated `for-gpt-image-adapter` so For GPT compatibility no longer lives inside the generic default/basic adapter. The internal identifier is `for-gpt-image`; historical Tuzi-named values remain legacy aliases only.
-- Add a dedicated For GPT request schema for text-to-image generation, with edit support designed as the next phase.
-- Keep official GPT generation and edit on the existing dedicated `gpt-image-adapter`.
-- Keep `openai-compatible-basic` as the generic fallback path for non-official gateways and emergency rollback.
-- Default newly created provider profiles to `openai-gpt-image` instead of `auto`.
-- Default built-in managed provider profiles to `openai-gpt-image` when they do not already have a stored override.
-- Preserve explicit stored `auto` on historical custom profiles instead of silently rewriting user intent.
-- Migrate only missing compatibility fields or managed-profile defaults toward `openai-gpt-image`, while keeping manual overrides round-trippable.
-- Simplify the profile settings UX so the main choices emphasize:
-  - `OpenAI GPT Image`
-  - `For GPT 兼容`
-  while `auto` and `openai-compatible-basic` remain internal or migration-oriented modes.
-- Make size, resolution, and quality contract semantics explicit for official GPT versus For/basic compatibility.
+- Default newly created provider profiles to `openai-gpt-image`.
+- Default built-in managed/default provider profiles to `openai-gpt-image` when no stored override exists.
+- Preserve explicit custom `auto` choices, but resolve ForOpenCode GPT Image `auto` to `openai-gpt-image` instead of `for-gpt-image`.
+- Migrate any stored `for-gpt-image`, `tuzi-gpt-image`, or `tuzi-compatible` value to `openai-gpt-image` during settings/profile normalization.
+- Remove the dedicated `for-gpt-image-adapter` and `for.image.*` / `tuzi.image.*` request schemas.
+- Route GPT Image generation and edit requests through the official `gpt-image-adapter` and official request schemas.
+- Keep `openai-compatible-basic` as the generic fallback for non-GPT image providers and manual rollback.
+- Remove `For GPT 兼容` from the settings UI options and hints.
 
 ## Non-Goals
 
-- Do not introduce the broader `image.generate` / `image.edit` operation abstraction in this change.
-- Do not add a new public MCP tool name or a new image task type.
-- Do not remove the generic `openai-compatible-basic` fallback.
-- Do not redefine `auto` as always-official or always-basic.
-- Do not fully standardize For GPT edit transport in the first implementation phase.
+- Do not remove `auto`.
+- Do not remove `openai-compatible-basic`.
+- Do not add a new MCP tool name or image task type.
+- Do not change non-GPT image provider routing.
 
 ## Impact
 
@@ -48,23 +33,14 @@ We need to separate these contracts cleanly before more image capabilities are a
   - `provider-routing`
   - `image-generation`
 - Affected code:
+  - `packages/drawnix/src/utils/settings-types.ts`
   - `packages/drawnix/src/utils/settings-manager.ts`
   - `packages/drawnix/src/components/settings-dialog/settings-dialog.tsx`
-  - `packages/drawnix/src/services/provider-routing/types.ts`
+  - `packages/drawnix/src/components/settings-dialog/image-api-compatibility-display.ts`
   - `packages/drawnix/src/services/provider-routing/settings-repository.ts`
   - `packages/drawnix/src/services/provider-routing/binding-inference.ts`
-  - `packages/drawnix/src/services/provider-routing/endpoint-binding-inference.ts`
   - `packages/drawnix/src/services/model-adapters/default-adapters.ts`
-  - `packages/drawnix/src/services/model-adapters/gpt-image-adapter.ts`
   - `packages/drawnix/src/services/model-adapters/registry.ts`
-  - `packages/drawnix/src/services/model-adapters/image-size-quality-resolver.ts`
-  - `packages/drawnix/src/services/model-adapters/for-gpt-image-adapter.ts`
-  - `packages/drawnix/src/services/generation-api-service.ts`
-  - `packages/drawnix/src/mcp/tools/image-generation.ts`
-
-## Relationship To Existing Changes
-
-- Builds on `add-gpt-image-profile-compatibility`, but tightens the contract boundary so For GPT compatibility is no longer treated as a generic basic-only branch.
-- Builds on `add-gpt-image-edit-support`, while keeping official `/images/edits` on the existing adapter and reserving a cleaner For GPT edit contract for the next phase.
-- Preserves the current default/basic adapter as a fallback path rather than the long-term home for GPT-specific compatibility logic.
-- Revises the earlier rollout assumption that new or rebuilt profiles should keep defaulting to `auto`; this follow-up makes explicit GPT mode the default while retaining `auto` as an advanced resolver.
+  - `packages/drawnix/src/services/model-adapters/image-request-schemas.ts`
+  - `packages/drawnix/src/services/model-adapters/for-gpt-image-adapter.ts` (removed)
+  - image routing, adapter registry, MCP image, and media executor tests

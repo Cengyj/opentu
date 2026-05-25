@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   createQueueTask: vi.fn(),
@@ -34,17 +34,10 @@ vi.mock('../../../services/media-api/utils', () => ({
 vi.mock('../../../services/model-adapters', () => ({
   resolveAdapterForInvocation: mocks.resolveAdapterForInvocation,
   getAdapterContextFromSettings: mocks.getAdapterContextFromSettings,
-  GPT_IMAGE_EDIT_REQUEST_SCHEMAS: [
-    'openai.image.gpt-edit-form',
-    'for.image.gpt-edit-json',
-  ],
+  GPT_IMAGE_EDIT_REQUEST_SCHEMAS: ['openai.image.gpt-edit-form'],
   isGPTImageEditRequestSchema: (value?: string | string[] | null) => {
     const schemas = Array.isArray(value) ? value : value ? [value] : [];
-    return schemas.some(
-      (schema) =>
-        schema === 'openai.image.gpt-edit-form' ||
-        schema === 'for.image.gpt-edit-json'
-    );
+    return schemas.some((schema) => schema === 'openai.image.gpt-edit-form');
   },
 }));
 
@@ -67,6 +60,7 @@ vi.mock('../shared/queue-utils', () => ({
     })),
 }));
 
+// eslint-disable-next-line import/first
 import { imageGenerationTool } from '../image-generation';
 
 describe('image-generation MCP tool', () => {
@@ -122,20 +116,14 @@ describe('image-generation MCP tool', () => {
       'gpt-image-2',
       null,
       {
-        preferredRequestSchema: [
-          'openai.image.gpt-edit-form',
-          'for.image.gpt-edit-json',
-        ],
+        preferredRequestSchema: ['openai.image.gpt-edit-form'],
       }
     );
     expect(mocks.getAdapterContextFromSettings).toHaveBeenCalledWith(
       'image',
       'gpt-image-2',
       {
-        preferredRequestSchema: [
-          'openai.image.gpt-edit-form',
-          'for.image.gpt-edit-json',
-        ],
+        preferredRequestSchema: ['openai.image.gpt-edit-form'],
       }
     );
     expect(mocks.generateImage).toHaveBeenCalledWith(

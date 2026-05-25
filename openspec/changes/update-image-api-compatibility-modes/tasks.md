@@ -1,59 +1,36 @@
-﻿## 1. Proposal And Validation
+## 1. Compatibility Model
 
-- [x] 1.1 Review `add-gpt-image-profile-compatibility` and `add-gpt-image-edit-support` for overlap and migration impact.
-- [ ] 1.2 Validate `update-image-api-compatibility-modes` with OpenSpec tooling when the CLI is available.
-- [ ] 1.3 Approve the internal compatibility model before implementation starts.
+- [x] 1.1 Remove `for-gpt-image` from the supported `ImageApiCompatibility` union.
+- [x] 1.2 Keep `auto`, `openai-gpt-image`, and `openai-compatible-basic` as supported stored values.
+- [x] 1.3 Treat `for-gpt-image`, `tuzi-gpt-image`, and `tuzi-compatible` as read-time migration aliases to `openai-gpt-image`.
 
-## 2. Settings And Migration
+## 2. Defaults And Migration
 
-- [x] 2.1 Extend `ImageApiCompatibility` to include `for-gpt-image`.
-- [x] 2.2 Accept legacy `tuzi-gpt-image` and `tuzi-compatible` values and normalize them to `for-gpt-image`.
-- [x] 2.3 Preserve stored `auto` values and confirm they continue to resolve correctly for historical OpenAI profiles.
-- [x] 2.4 Preserve `openai-compatible-basic` for rollback and generic gateway scenarios.
-- [x] 2.5 Ensure snapshot, copy, import, and export flows preserve the compatibility field.
+- [x] 2.1 Default newly created provider profiles to `openai-gpt-image`.
+- [x] 2.2 Default built-in managed/default profiles to `openai-gpt-image` when no stored override exists.
+- [x] 2.3 Preserve explicit supported overrides such as `auto` and `openai-compatible-basic`.
+- [x] 2.4 Persist migrated removed For GPT compatibility values as `openai-gpt-image`.
 
-## 3. Routing Contract
+## 3. Routing And Adapters
 
-- [x] 3.1 Update compatibility resolution so `auto` resolves to `openai-gpt-image`, `for-gpt-image`, or `openai-compatible-basic`.
-- [x] 3.2 Keep non-GPT image model routing unchanged.
-- [x] 3.3 Add a dedicated For GPT generation request schema such as `for.image.gpt-generation-json`.
-- [x] 3.4 Route official GPT edit bindings only for the official GPT compatibility mode.
-- [x] 3.5 Ensure resolved compatibility and request schema stay aligned in metadata and logs.
+- [x] 3.1 Resolve ForOpenCode GPT Image `auto` to `openai-gpt-image`.
+- [x] 3.2 Remove `for.image.*` and `tuzi.image.*` request schemas.
+- [x] 3.3 Remove `for-gpt-image-adapter` registration/export/source file.
+- [x] 3.4 Route GPT Image generation through `openai.image.gpt-generation-json` and `gpt-image-adapter`.
+- [x] 3.5 Route GPT Image edit through `openai.image.gpt-edit-form` and `gpt-image-adapter`.
 
-## 4. Adapter Ownership Cleanup
+## 4. Settings UI
 
-- [x] 4.1 Add `for-gpt-image-adapter.ts`.
-- [x] 4.2 Move GPT-specific For GPT translation logic out of `default-adapters.ts`.
-- [x] 4.3 Keep `gpt-image-adapter` responsible only for official GPT request schemas.
-- [x] 4.4 Keep the default/basic adapter as the generic fallback for `openai-compatible-basic`.
-- [x] 4.5 Reuse the shared size/quality resolver where helpful, but keep official and For GPT contract semantics separate.
+- [x] 4.1 Remove `For GPT 兼容` from the image API compatibility option list.
+- [x] 4.2 Normalize removed compatibility values to `OpenAI GPT Image` for display/hints.
+- [x] 4.3 Keep `auto` and `openai-compatible-basic` available for advanced/fallback scenarios.
 
-## 5. UI And Diagnostics
+## 5. Verification
 
-- [x] 5.1 Simplify the main profile UI to emphasize `OpenAI GPT Image` and `For GPT 兼容`.
-- [x] 5.2 Show a resolved summary when a profile remains on `auto`.
-- [x] 5.3 Keep hidden or advanced fallback modes round-trippable for legacy profiles.
-- [x] 5.4 Expose enough debug information to understand stored mode, resolved mode, request schema, and adapter selection without leaking secrets.
-
-## 6. Defaults And Migration Guardrails
-
-- [ ] 6.1 Default newly created provider profiles to `openai-gpt-image`.
-- [ ] 6.2 Default built-in managed provider profiles to `openai-gpt-image` when no stored override exists.
-- [ ] 6.3 Preserve explicit stored compatibility values when managed profiles are rebuilt or reopened.
-- [ ] 6.4 Upgrade only missing compatibility fields to `openai-gpt-image`, while preserving explicit custom-profile `auto`.
-- [ ] 6.5 Update settings UI hints or labels so `OpenAI GPT Image` is clearly the recommended default without removing `auto`.
-
-## 7. Phase 1 Verification
-
-- [x] 7.1 Add routing tests proving the same `gpt-image-*` model can route to official GPT, For GPT, or generic fallback depending on profile.
-- [x] 7.2 Add adapter-selection tests proving `for-gpt-image` no longer lands on the generic default adapter.
-- [x] 7.3 Add request serialization tests for official GPT generation/edit and For GPT generation.
-- [x] 7.4 Add migration tests for `auto`, legacy `tuzi-gpt-image` / `tuzi-compatible`, and `openai-compatible-basic`.
-- [x] 7.5 Run targeted Vitest coverage for provider routing, settings normalization, adapters, task persistence, and MCP image generation.
-- [ ] 7.6 Add regression tests for new-profile defaults, managed-profile defaults, managed-profile override persistence, and explicit custom-profile `auto` preservation.
-
-## 8. Phase 2 Follow-Up
-
-- [x] 8.1 Define the For GPT edit contract and dedicated request schema.
-- [x] 8.2 Route For GPT edit requests through `for-gpt-image-adapter`.
-- [x] 8.3 Extend edit-path persistence, planner preference, and regression tests once the For GPT edit contract is finalized.
+- [x] 5.1 Update settings normalization tests for migration from removed For GPT values to `openai-gpt-image`.
+- [x] 5.2 Update provider routing tests for ForOpenCode GPT Image auto resolution to official GPT mode.
+- [x] 5.3 Update adapter registry/routing tests to remove the dedicated For GPT adapter path.
+- [x] 5.4 Update MCP/media edit-schema tests to prefer only the official GPT edit schema.
+- [x] 5.5 Run targeted Vitest coverage and `drawnix:typecheck`.
+- [ ] 5.6 Run targeted lint to zero errors; currently blocked by the pre-existing `default-adapters.ts` `@nx/enforce-module-boundaries` lint error.
+- [ ] 5.7 Run `openspec validate update-image-api-compatibility-modes --strict`; currently blocked because the `openspec` CLI is unavailable in this workspace.

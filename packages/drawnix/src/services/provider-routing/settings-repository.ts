@@ -1,4 +1,4 @@
-﻿import {
+import {
   getDefaultAudioModel,
   getDefaultImageModel,
   getDefaultTextModel,
@@ -108,14 +108,17 @@ function normalizeImageApiCompatibility(
   if (
     value === 'auto' ||
     value === 'openai-gpt-image' ||
-    value === 'for-gpt-image' ||
     value === 'openai-compatible-basic'
   ) {
     return value;
   }
 
-  if (value === 'tuzi-gpt-image' || value === 'tuzi-compatible') {
-    return 'for-gpt-image';
+  if (
+    value === 'for-gpt-image' ||
+    value === 'tuzi-gpt-image' ||
+    value === 'tuzi-compatible'
+  ) {
+    return 'openai-gpt-image';
   }
 
   return DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY;

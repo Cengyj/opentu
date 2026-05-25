@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 通用的全局设置管理器
  * 统一管理应用程序的所有配置设置
  * 支持敏感信息加密存储
@@ -392,15 +392,18 @@ class SettingsManager {
     if (
       value === 'auto' ||
       value === 'openai-gpt-image' ||
-      value === 'for-gpt-image' ||
       value === 'openai-compatible-basic'
     ) {
       return value;
     }
 
-    if (value === 'tuzi-gpt-image' || value === 'tuzi-compatible') {
+    if (
+      value === 'for-gpt-image' ||
+      value === 'tuzi-gpt-image' ||
+      value === 'tuzi-compatible'
+    ) {
       this.shouldPersistSettingsAfterInitialization = true;
-      return 'for-gpt-image';
+      return 'openai-gpt-image';
     }
 
     return 'auto';

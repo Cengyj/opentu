@@ -13,9 +13,6 @@ export const IMAGE_API_COMPATIBILITY_META: Record<
   'openai-gpt-image': {
     label: 'OpenAI GPT Image',
   },
-  'for-gpt-image': {
-    label: 'For GPT 兼容',
-  },
   'openai-compatible-basic': {
     label: 'OpenAI-compatible 通用兼容（兜底）',
   },
@@ -27,14 +24,17 @@ function normalizeImageApiCompatibilityForDisplay(
   if (
     value === 'auto' ||
     value === 'openai-gpt-image' ||
-    value === 'for-gpt-image' ||
     value === 'openai-compatible-basic'
   ) {
     return value;
   }
 
-  if (value === 'tuzi-gpt-image' || value === 'tuzi-compatible') {
-    return 'for-gpt-image';
+  if (
+    value === 'for-gpt-image' ||
+    value === 'tuzi-gpt-image' ||
+    value === 'tuzi-compatible'
+  ) {
+    return 'openai-gpt-image';
   }
 
   return 'auto';
@@ -63,12 +63,11 @@ function resolveAutoImageApiCompatibilityForDisplay(
 ): Exclude<ImageApiCompatibility, 'auto'> {
   const normalizedBaseUrl = profile.baseUrl.trim().toLowerCase();
 
-  if (normalizedBaseUrl.includes('api.openai.com')) {
+  if (
+    normalizedBaseUrl.includes('api.openai.com') ||
+    isForOpenCodeBaseUrl(profile.baseUrl)
+  ) {
     return 'openai-gpt-image';
-  }
-
-  if (isForOpenCodeBaseUrl(profile.baseUrl)) {
-    return 'for-gpt-image';
   }
 
   return 'openai-compatible-basic';

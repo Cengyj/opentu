@@ -1,7 +1,6 @@
-﻿import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   clearModelAdapters,
-  getModelAdapter,
   registerModelAdapter,
   resolveAdapterForBinding,
 } from '../model-adapters/registry';
@@ -68,22 +67,6 @@ const gptImageAdapter: ImageModelAdapter = {
   },
 };
 
-const forGptImageAdapter: ImageModelAdapter = {
-  id: 'for-gpt-image-adapter',
-  legacyIds: ['tuzi-gpt-image-adapter'],
-  label: 'For GPT Image',
-  kind: 'image',
-  matchRequestSchemas: [
-    'for.image.gpt-generation-json',
-    'for.image.gpt-edit-json',
-    'tuzi.image.gpt-generation-json',
-    'tuzi.image.gpt-edit-json',
-  ],
-  async generateImage() {
-    throw new Error('not implemented');
-  },
-};
-
 const seedanceVideoAdapter: VideoModelAdapter = {
   id: 'seedance-video',
   label: 'Seedance Video',
@@ -112,7 +95,6 @@ describe('model adapter registry', () => {
     registerModelAdapter(genericImageAdapter);
     registerModelAdapter(seedreamImageAdapter);
     registerModelAdapter(gptImageAdapter);
-    registerModelAdapter(forGptImageAdapter);
     registerModelAdapter(seedanceVideoAdapter);
     registerModelAdapter(happyHorseVideoAdapter);
   });
@@ -169,56 +151,6 @@ describe('model adapter registry', () => {
     );
 
     expect(adapter?.id).toBe('gpt-image');
-  });
-
-  it('routes For GPT Image schemas to the dedicated For GPT adapter', () => {
-    const adapter = resolveAdapterForBinding(
-      createBinding({
-        modelId: 'gpt-image-2',
-        requestSchema: 'for.image.gpt-generation-json',
-      }),
-      'image'
-    );
-
-    expect(adapter?.id).toBe('for-gpt-image-adapter');
-  });
-
-  it('routes For GPT Image edit schemas to the dedicated For GPT adapter', () => {
-    const adapter = resolveAdapterForBinding(
-      createBinding({
-        modelId: 'gpt-image-2',
-        requestSchema: 'for.image.gpt-edit-json',
-      }),
-      'image'
-    );
-
-    expect(adapter?.id).toBe('for-gpt-image-adapter');
-  });
-
-  it('keeps legacy For GPT Image schemas mapped to the canonical adapter', () => {
-    const generationAdapter = resolveAdapterForBinding(
-      createBinding({
-        modelId: 'gpt-image-2',
-        requestSchema: 'tuzi.image.gpt-generation-json',
-      }),
-      'image'
-    );
-    const editAdapter = resolveAdapterForBinding(
-      createBinding({
-        modelId: 'gpt-image-2',
-        requestSchema: 'tuzi.image.gpt-edit-json',
-      }),
-      'image'
-    );
-
-    expect(generationAdapter?.id).toBe('for-gpt-image-adapter');
-    expect(editAdapter?.id).toBe('for-gpt-image-adapter');
-  });
-
-  it('keeps the legacy For GPT Image adapter id as an alias only', () => {
-    expect(getModelAdapter('tuzi-gpt-image-adapter')?.id).toBe(
-      'for-gpt-image-adapter'
-    );
   });
 
   it('routes seedance bindings to the seedance adapter before generic video handlers', () => {

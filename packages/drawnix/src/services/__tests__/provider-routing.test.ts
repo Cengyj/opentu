@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
   getTextBindingMaxImageCount,
   inferBindingsForProviderModel,
@@ -426,20 +426,20 @@ describe('provider routing', () => {
       resolvedImageApiCompatibility: 'openai-gpt-image',
     });
     expect(forBindings.map((binding) => binding.requestSchema)).toEqual([
-      'for.image.gpt-generation-json',
-      'for.image.gpt-edit-json',
+      'openai.image.gpt-generation-json',
+      'openai.image.gpt-edit-form',
     ]);
     expect(forBindings[0]?.metadata?.image).toMatchObject({
       action: 'generation',
       imageApiCompatibility: 'auto',
-      resolvedImageApiCompatibility: 'for-gpt-image',
+      resolvedImageApiCompatibility: 'openai-gpt-image',
     });
     expect(forBindings[1]?.metadata?.image).toMatchObject({
       action: 'edit',
       maxImageCount: 16,
-      supportsMask: false,
+      supportsMask: true,
       imageApiCompatibility: 'auto',
-      resolvedImageApiCompatibility: 'for-gpt-image',
+      resolvedImageApiCompatibility: 'openai-gpt-image',
     });
     expect(genericBindings[0]?.requestSchema).toBe(
       'openai.image.gpt-generation-json'
@@ -526,7 +526,7 @@ describe('provider routing', () => {
     );
   });
 
-  it('routes business For GPT Image models with For GPT compatibility in auto mode', () => {
+  it('routes business GPT Image models to OpenAI GPT Image compatibility in auto mode', () => {
     const model: ModelConfig = {
       id: 'gpt-image-2',
       label: 'GPT Image 2',
@@ -548,16 +548,16 @@ describe('provider routing', () => {
     );
 
     expect(bindings.map((binding) => binding.requestSchema)).toEqual([
-      'for.image.gpt-generation-json',
-      'for.image.gpt-edit-json',
+      'openai.image.gpt-generation-json',
+      'openai.image.gpt-edit-form',
     ]);
     expect(bindings[0]?.metadata?.image).toMatchObject({
       imageApiCompatibility: 'auto',
-      resolvedImageApiCompatibility: 'for-gpt-image',
+      resolvedImageApiCompatibility: 'openai-gpt-image',
     });
   });
 
-  it('keeps discovered generateContent bindings below template image bindings for For GPT Image endpoints', () => {
+  it('keeps discovered generateContent bindings below template image bindings for ForOpenCode image endpoints', () => {
     const profile = {
       id: 'provider-b',
       name: 'Provider B',
@@ -599,7 +599,7 @@ describe('provider routing', () => {
     expect(plan.binding.submitPath).toBe('/images/generations');
   });
 
-  it('does not infer discovered official GPT edit bindings for non-official compatibility profiles', () => {
+  it('uses official GPT edit bindings after legacy For GPT compatibility migration', () => {
     const profile = {
       id: 'provider-foropencode',
       name: 'Provider ForOpenCode',
@@ -607,7 +607,7 @@ describe('provider routing', () => {
       baseUrl: 'https://foropencode.com/v1',
       apiKey: 'key-b',
       authType: 'bearer' as const,
-      imageApiCompatibility: 'for-gpt-image' as const,
+      imageApiCompatibility: 'openai-gpt-image' as const,
     };
     const model: ModelConfig = {
       id: 'gpt-image-2',
@@ -623,8 +623,8 @@ describe('provider routing', () => {
     });
 
     expect(bindings.map((binding) => binding.requestSchema)).toEqual([
-      'for.image.gpt-generation-json',
-      'for.image.gpt-edit-json',
+      'openai.image.gpt-generation-json',
+      'openai.image.gpt-edit-form',
     ]);
   });
 

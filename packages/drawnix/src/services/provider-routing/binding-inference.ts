@@ -1,15 +1,11 @@
-﻿import {
+import {
   isAsyncImageModel,
   ModelVendor,
   type ModelConfig,
 } from '../../constants/model-config';
 import type { PricingEndpointInfo } from '../../utils/model-pricing-types';
 import type { ImageApiCompatibility } from '../../utils/settings-types';
-import {
-  FOR_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
-  FOR_GPT_IMAGE_GENERATION_REQUEST_SCHEMA,
-  OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
-} from '../model-adapters/image-request-schemas';
+import { OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA } from '../model-adapters/image-request-schemas';
 import { inferAllBindingHintsFromEndpoints } from './endpoint-binding-inference';
 import type { ProviderModelBinding, ProviderProfileSnapshot } from './types';
 
@@ -225,14 +221,17 @@ function normalizeImageApiCompatibilityMode(
   if (
     value === 'auto' ||
     value === 'openai-gpt-image' ||
-    value === 'for-gpt-image' ||
     value === 'openai-compatible-basic'
   ) {
     return value;
   }
 
-  if (value === 'tuzi-gpt-image' || value === 'tuzi-compatible') {
-    return 'for-gpt-image';
+  if (
+    value === 'for-gpt-image' ||
+    value === 'tuzi-gpt-image' ||
+    value === 'tuzi-compatible'
+  ) {
+    return 'openai-gpt-image';
   }
 
   return 'auto';
@@ -255,7 +254,7 @@ function resolveImageApiCompatibility(
   }
 
   if (isForOpenCodeProfile(profile) && isGptImageModel(model)) {
-    return 'for-gpt-image';
+    return 'openai-gpt-image';
   }
 
   return 'openai-compatible-basic';
@@ -475,9 +474,6 @@ function inferImageBindings(
       : isGptImageModel(model) &&
         resolvedImageApiCompatibility === 'openai-gpt-image'
       ? 'openai.image.gpt-generation-json'
-      : isGptImageModel(model) &&
-        resolvedImageApiCompatibility === 'for-gpt-image'
-      ? FOR_GPT_IMAGE_GENERATION_REQUEST_SCHEMA
       : 'openai.image.basic-json';
 
     if (!isMidjourneyModel(model) && isAsyncImageModel(model.id)) {
@@ -534,33 +530,6 @@ function inferImageBindings(
               resolvedImageApiCompatibility,
               maxImageCount: 16,
               supportsMask: true,
-            },
-          },
-          priority: genericPriority - 1,
-          confidence: genericConfidence,
-          source: 'template',
-        })
-      );
-    }
-
-    if (
-      !isAsyncImageModel(model.id) &&
-      isGptImageModel(model) &&
-      resolvedImageApiCompatibility === 'for-gpt-image'
-    ) {
-      bindings.push(
-        buildBinding(profile, model, {
-          protocol: 'openai.images.generations',
-          requestSchema: FOR_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
-          responseSchema: 'openai.image.data',
-          submitPath: '/images/generations',
-          metadata: {
-            image: {
-              action: 'edit',
-              imageApiCompatibility,
-              resolvedImageApiCompatibility,
-              maxImageCount: 16,
-              supportsMask: false,
             },
           },
           priority: genericPriority - 1,

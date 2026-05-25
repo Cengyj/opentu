@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Media Executor Tests
  * 媒体执行器模块测试
  *
@@ -99,17 +99,17 @@ describe('Media Executor Module', () => {
       vi.doMock('../media-executor/task-storage-writer', () => ({
         taskStorageWriter: {
           isAvailable: async () => true,
-          createTask: async () => {},
-          updateTaskStatus: async () => {},
-          completeTask: async () => {},
-          failTask: async () => {},
+          createTask: async () => undefined,
+          updateTaskStatus: async () => undefined,
+          completeTask: async () => undefined,
+          failTask: async () => undefined,
         },
       }));
       vi.doMock('../unified-cache-service', () => ({
         unifiedCacheService: {
           getImageForAI: vi.fn(),
           isCached: vi.fn(async () => false),
-          cacheMediaFromBlob: vi.fn(async () => {}),
+          cacheMediaFromBlob: vi.fn(async () => undefined),
         },
       }));
 
@@ -140,17 +140,17 @@ describe('Media Executor Module', () => {
       vi.doMock('../media-executor/task-storage-writer', () => ({
         taskStorageWriter: {
           isAvailable: async () => true,
-          createTask: async () => {},
-          updateTaskStatus: async () => {},
-          completeTask: async () => {},
-          failTask: async () => {},
+          createTask: async () => undefined,
+          updateTaskStatus: async () => undefined,
+          completeTask: async () => undefined,
+          failTask: async () => undefined,
         },
       }));
       vi.doMock('../unified-cache-service', () => ({
         unifiedCacheService: {
           getImageForAI: vi.fn(),
           isCached: vi.fn(async () => false),
-          cacheMediaFromBlob: vi.fn(async () => {}),
+          cacheMediaFromBlob: vi.fn(async () => undefined),
         },
       }));
 
@@ -190,8 +190,8 @@ describe('Media Executor Module', () => {
       }));
       vi.doMock('../media-executor/task-storage-writer', () => ({
         taskStorageWriter: {
-          completeTask: vi.fn(async () => {}),
-          failTask: vi.fn(async () => {}),
+          completeTask: vi.fn(async () => undefined),
+          failTask: vi.fn(async () => undefined),
         },
       }));
       vi.doMock('../unified-cache-service', () => ({
@@ -201,7 +201,7 @@ describe('Media Executor Module', () => {
             value: 'data:image/png;base64,abc',
           })),
           isCached: vi.fn(async () => false),
-          cacheMediaFromBlob: vi.fn(async () => {}),
+          cacheMediaFromBlob: vi.fn(async () => undefined),
         },
       }));
       vi.doMock('../../utils/api-auth-error-event', () => ({
@@ -257,11 +257,7 @@ describe('Media Executor Module', () => {
         'image',
         'gpt-image-2',
         {
-          preferredRequestSchema: [
-            'openai.image.gpt-edit-form',
-            'for.image.gpt-edit-json',
-            'tuzi.image.gpt-edit-json',
-          ],
+          preferredRequestSchema: ['openai.image.gpt-edit-form'],
         }
       );
       expect(generateSpy).toHaveBeenCalledWith(
@@ -276,8 +272,8 @@ describe('Media Executor Module', () => {
     }, 15000);
 
     it('passes video adapter progress through fallback adapter routes', async () => {
-      const updateRemoteId = vi.fn(async () => {});
-      const completeTask = vi.fn(async () => {});
+      const updateRemoteId = vi.fn(async () => undefined);
+      const completeTask = vi.fn(async () => undefined);
       const onProgress = vi.fn();
 
       vi.doMock('../media-executor/llm-api-logger', () => ({
@@ -289,14 +285,14 @@ describe('Media Executor Module', () => {
         taskStorageWriter: {
           updateRemoteId,
           completeTask,
-          failTask: vi.fn(async () => {}),
+          failTask: vi.fn(async () => undefined),
         },
       }));
       vi.doMock('../unified-cache-service', () => ({
         unifiedCacheService: {
           getImageForAI: vi.fn(),
           isCached: vi.fn(async () => false),
-          cacheMediaFromBlob: vi.fn(async () => {}),
+          cacheMediaFromBlob: vi.fn(async () => undefined),
         },
       }));
       vi.doMock('../../utils/api-auth-error-event', () => ({
@@ -397,7 +393,7 @@ describe('Media Executor Module', () => {
         unifiedCacheService: {
           getImageForAI: vi.fn(),
           isCached: vi.fn(async () => false),
-          cacheMediaFromBlob: vi.fn(async () => {}),
+          cacheMediaFromBlob: vi.fn(async () => undefined),
         },
       }));
 

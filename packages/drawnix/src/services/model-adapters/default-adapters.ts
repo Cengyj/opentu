@@ -1,4 +1,4 @@
-﻿import { defaultGeminiClient } from '../../utils/gemini-api';
+import { defaultGeminiClient } from '../../utils/gemini-api';
 import { asyncImageAPIService } from '../async-image-api-service';
 import {
   audioAPIService,
@@ -35,7 +35,6 @@ import { registerFluxAdapter } from './flux-adapter';
 import { registerSeedreamAdapter } from './seedream-adapter';
 import { registerSeedanceAdapter } from './seedance-adapter';
 import { registerGPTImageAdapter } from './gpt-image-adapter';
-import { registerForGPTImageAdapter } from './for-gpt-image-adapter';
 import {
   isGPTImage2Model,
   resolveImageResolutionTier,
@@ -324,7 +323,6 @@ export const sunoAudioAdapter: AudioModelAdapter = {
 
 export function registerDefaultModelAdapters(): void {
   registerGPTImageAdapter();
-  registerForGPTImageAdapter();
   registerModelAdapter(geminiImageAdapter);
   registerHappyHorseAdapter();
   registerModelAdapter(geminiVideoAdapter);

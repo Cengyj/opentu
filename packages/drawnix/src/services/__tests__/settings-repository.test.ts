@@ -1,4 +1,4 @@
-﻿import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('settings-repository', () => {
   beforeEach(() => {
@@ -8,7 +8,7 @@ describe('settings-repository', () => {
   it('uses the saved legacy provider type and auth type in snapshots', async () => {
     vi.doMock('../../utils/settings-manager', () => ({
       DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
-      LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'for-gpt-image',
+      LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
       FOROPENCODE_DEFAULT_PROVIDER_NAME: 'ForOpenCode',
       FOROPENCODE_PROVIDER_DEFAULT_BASE_URL: 'https://foropencode.com/v1',
@@ -67,14 +67,14 @@ describe('settings-repository', () => {
       name: 'ForOpenCode',
       providerType: 'custom',
       authType: 'query',
-      imageApiCompatibility: 'for-gpt-image',
+      imageApiCompatibility: 'openai-gpt-image',
     });
   });
 
   it('normalizes saved legacy image compatibility overrides in snapshots', async () => {
     vi.doMock('../../utils/settings-manager', () => ({
       DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
-      LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'for-gpt-image',
+      LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
       FOROPENCODE_DEFAULT_PROVIDER_NAME: 'ForOpenCode',
       FOROPENCODE_PROVIDER_DEFAULT_BASE_URL: 'https://foropencode.com/v1',
@@ -130,7 +130,7 @@ describe('settings-repository', () => {
     const profiles = listSettingsProviderProfiles();
 
     expect(profiles[0]).toMatchObject({
-      imageApiCompatibility: 'for-gpt-image',
+      imageApiCompatibility: 'openai-gpt-image',
     });
   });
 });

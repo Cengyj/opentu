@@ -1,4 +1,4 @@
-﻿import { useDrawnix } from '../../hooks/use-drawnix';
+import { useDrawnix } from '../../hooks/use-drawnix';
 import { useDeviceType } from '../../hooks/useDeviceType';
 import './settings-dialog.scss';
 import {
@@ -143,7 +143,6 @@ const AUTH_TYPE_OPTIONS: ProviderProfile['authType'][] = [
 const IMAGE_API_COMPATIBILITY_OPTIONS: ImageApiCompatibility[] = [
   'auto',
   'openai-gpt-image',
-  'for-gpt-image',
   'openai-compatible-basic',
 ];
 
@@ -2211,32 +2210,6 @@ export const SettingsDialog = ({
                       >
                         foropencode.com/token
                       </a>
-                      <div
-                        style={{
-                          position: 'relative',
-                          width: '100%',
-                          paddingTop: '56.25%',
-                          marginTop: 8,
-                          borderRadius: 8,
-                          overflow: 'hidden',
-                          backgroundColor: '#000',
-                          boxShadow: '0 4px 16px rgba(0,0,0,0.2)',
-                        }}
-                      >
-                        <iframe
-                          title="Bilibili tutorial video"
-                          src="//player.bilibili.com/player.html?isOutside=true&aid=116171584049629&bvid=BV1k4PqzPEKz&cid=36455319822&p=1"
-                          allowFullScreen={true}
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            border: 0,
-                          }}
-                        ></iframe>
-                      </div>
                     </div>
                   }
                   placement="top"

@@ -16,13 +16,12 @@ export type ProviderAuthType = 'bearer' | 'header' | 'query' | 'custom';
 export type ImageApiCompatibility =
   | 'auto'
   | 'openai-gpt-image'
-  | 'for-gpt-image'
   | 'openai-compatible-basic';
 
 export const DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: ImageApiCompatibility =
   'openai-gpt-image';
 export const LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: ImageApiCompatibility =
-  'for-gpt-image';
+  'openai-gpt-image';
 
 export interface ProviderCapabilities {
   supportsModelsEndpoint: boolean;

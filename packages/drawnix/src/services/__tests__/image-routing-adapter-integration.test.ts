@@ -1,4 +1,4 @@
-﻿import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ModelVendor, type ModelConfig } from '../../constants/model-config';
 import { fluxImageAdapter } from '../model-adapters/flux-adapter';
 import { gptImageAdapter } from '../model-adapters/gpt-image-adapter';
@@ -10,7 +10,6 @@ import {
   resolveAdapterForInvocation,
 } from '../model-adapters/registry';
 import { seedreamImageAdapter } from '../model-adapters/seedream-adapter';
-import { forGPTImageAdapter } from '../model-adapters/for-gpt-image-adapter';
 import type { ImageModelAdapter } from '../model-adapters/types';
 import { inferBindingsForProviderModel } from '../provider-routing';
 import type { ProviderProfileSnapshot } from '../provider-routing';
@@ -78,7 +77,6 @@ describe('image routing to default registered adapters', () => {
   beforeEach(() => {
     clearModelAdapters();
     registerModelAdapter(gptImageAdapter);
-    registerModelAdapter(forGPTImageAdapter);
     registerModelAdapter(defaultBasicImageAdapter);
     registerModelAdapter(mjImageAdapter);
     registerModelAdapter(fluxImageAdapter);
@@ -122,7 +120,7 @@ describe('image routing to default registered adapters', () => {
     );
   });
 
-  it('routes For GPT Image compatibility to the dedicated adapter', () => {
+  it('routes ForOpenCode auto GPT Image compatibility to the official GPT Image adapter', () => {
     const binding = firstImageBinding(forOpenCodeProfile, {
       id: 'gpt-image-2',
       label: 'GPT Image 2',
@@ -130,13 +128,13 @@ describe('image routing to default registered adapters', () => {
       vendor: ModelVendor.GPT,
     });
 
-    expect(binding.requestSchema).toBe('for.image.gpt-generation-json');
+    expect(binding.requestSchema).toBe('openai.image.gpt-generation-json');
     expect(resolveAdapterForBinding(binding, 'image')?.id).toBe(
-      'for-gpt-image-adapter'
+      'gpt-image-adapter'
     );
   });
 
-  it('routes For GPT Image edit compatibility to the dedicated adapter', () => {
+  it('routes ForOpenCode auto GPT Image edits to the official GPT Image adapter', () => {
     const binding = imageBindingBySchema(
       forOpenCodeProfile,
       {
@@ -145,20 +143,20 @@ describe('image routing to default registered adapters', () => {
         type: 'image',
         vendor: ModelVendor.GPT,
       },
-      'for.image.gpt-edit-json'
+      'openai.image.gpt-edit-form'
     );
 
-    expect(binding.protocol).toBe('openai.images.generations');
-    expect(binding.submitPath).toBe('/images/generations');
+    expect(binding.protocol).toBe('openai.images.edits');
+    expect(binding.submitPath).toBe('/images/edits');
     expect(resolveAdapterForBinding(binding, 'image')?.id).toBe(
-      'for-gpt-image-adapter'
+      'gpt-image-adapter'
     );
   });
 
-  it('keeps legacy model-only GPT Image requests on the For GPT adapter', () => {
+  it('defaults legacy model-only GPT Image requests to the official GPT Image adapter', () => {
     const adapter = resolveAdapterForInvocation('image', 'gpt-image-2', null);
 
-    expect(adapter?.id).toBe('for-gpt-image-adapter');
+    expect(adapter?.id).toBe('gpt-image-adapter');
   });
 
   it('keeps generic non-GPT OpenAI-compatible image models on the default adapter', () => {
