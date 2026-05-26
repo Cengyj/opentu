@@ -45,9 +45,22 @@ export interface PsdGenerationPlan {
   layers: PsdLayerPlan[];
   exportSkeleton: {
     target: 'psd';
+    source: 'photoshop';
     status: 'planned';
     nativePsdReady: false;
+    apiNativePsdSupported: false;
+    downloadAction: 'pending-native-packager';
   };
+  workflowSteps: Array<{
+    id:
+      | 'image-generation'
+      | 'thinking-layer-split'
+      | 'photoshop-source'
+      | 'export-edit';
+    title: string;
+    description: string;
+    status: 'planned';
+  }>;
 }
 
 export interface PsdLayerImageTaskPlan {
@@ -60,19 +73,19 @@ export interface PsdLayerImageTaskPlan {
 export const PSD_LAYER_IMAGE_TASK_CONTRACT = {
   taskType: TaskType.IMAGE,
   generationMode: 'image_edit',
-  background: 'transparent',
+  background: 'auto',
   outputFormat: 'png',
   inputFidelity: 'high',
   exportTarget: 'psd',
   nativePsdReady: false,
-  promptMetaTags: ['psd-layer', 'transparent-layer-image'],
+  promptMetaTags: ['psd-layer', 'photoshop-source', 'layer-split'],
 } as const;
 
 export const PSD_LAYER_EXTRACTION_PROMPT_ZH =
-  '请将这张海报按视觉元素拆分成若干张独立图像，保持每个元素在原海报中的尺寸、比例、透明度和相对位置完全不变。每个导出的图层都使用与原图完全相同的画布尺寸和分辨率，元素保留在原始坐标位置，其余区域透明。确保所有图像导入 Photoshop 后无需移动、缩放或调整，即可按原位叠加还原完整海报。';
+  '参考这张图生成/还原设计稿，并进入 PSD 思考拆层流程：先识别独立视觉元素，再按背景、主体、文字、装饰和调整说明拆成可编辑图层。请用 JSON 写清画布尺寸、元素坐标、背景类型和图层堆叠顺序；源设置为 Photoshop/PSD。当前公共图片 API 不直接返回原生 PSD，先输出可用于后续 PSD 打包的分层素材与说明。';
 
 export const PSD_LAYER_EXTRACTION_PROMPT_EN =
-  'Split this poster into separate images by visual element. Keep each element exactly the same size, proportion, opacity, and relative position as in the original poster. Every exported layer must use the exact same canvas size and resolution as the source image, preserve the element at its original coordinates, and make all other areas transparent. Ensure the images can be imported into Photoshop and stacked in place to reconstruct the full poster without moving, scaling, or adjustment.';
+  'Use this reference image to generate or reconstruct a design, then follow a PSD thinking/layer-splitting flow: identify independent visual elements first, split them into editable background, subject, text, decoration, and adjustment-note layers, and describe canvas size, element coordinates, background type, and layer stacking order as JSON. Set the source/export target to Photoshop/PSD. The current public image API does not return native PSD directly, so prepare layer assets and metadata for later PSD packaging.';
 
 export function getDefaultPsdLayerExtractionPrompt(
   language: 'zh' | 'en'
@@ -181,6 +194,46 @@ function createStablePlanId(
     hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
   }
   return `psd-layer-${hash.toString(36)}`;
+}
+
+function buildPsdWorkflowSteps(
+  language: 'zh' | 'en'
+): PsdGenerationPlan['workflowSteps'] {
+  const isZh = language === 'zh';
+  return [
+    {
+      id: 'image-generation',
+      title: isZh ? '图像生成/还原' : 'Image generation/reconstruction',
+      description: isZh
+        ? '使用参考图和提示词生成或还原第一版设计。'
+        : 'Use the reference image and prompt to create or reconstruct the first design pass.',
+      status: 'planned',
+    },
+    {
+      id: 'thinking-layer-split',
+      title: isZh ? '思考拆层' : 'Thinking layer split',
+      description: isZh
+        ? '先识别独立视觉元素，再拆成背景、主体、文字、装饰和调整说明层。'
+        : 'Identify independent visual elements first, then split background, subject, text, decoration, and adjustment notes.',
+      status: 'planned',
+    },
+    {
+      id: 'photoshop-source',
+      title: isZh ? '源设置：Photoshop/PSD' : 'Source: Photoshop/PSD',
+      description: isZh
+        ? '图层素材保留同画布坐标，面向 Photoshop 原位叠放。'
+        : 'Keep layer assets on the same canvas and coordinates for in-place Photoshop stacking.',
+      status: 'planned',
+    },
+    {
+      id: 'export-edit',
+      title: isZh ? '导出与编辑' : 'Export and edit',
+      description: isZh
+        ? '公共图片 API 暂不直接返回原生 PSD；先准备可打包素材，打包接入后提供下载/打开 PSD。'
+        : 'The public image API does not return native PSD directly yet; prepare packable assets now and enable PSD download/open once packaging is wired.',
+      status: 'planned',
+    },
+  ];
 }
 
 function buildTextLayerPrompt(
@@ -315,9 +368,13 @@ export function buildLayerPlan(
     })),
     exportSkeleton: {
       target: 'psd',
+      source: 'photoshop',
       status: 'planned',
       nativePsdReady: false,
+      apiNativePsdSupported: false,
+      downloadAction: 'pending-native-packager',
     },
+    workflowSteps: buildPsdWorkflowSteps(language),
   };
 }
 
@@ -353,10 +410,11 @@ export function buildPsdLayerImageTaskPlans(
         `[PSD layer: ${layer.name}]`,
         plan.title,
         layer.description,
-        'Task: export ONLY this layer/visual element from the reference poster as an independent transparent PNG layer.',
-        'Keep the exact same canvas size and resolution as the original poster. Preserve the element at its original coordinates, original size, proportion, opacity, and relative position. Make every other pixel transparent.',
-        'Photoshop stacking requirement: when all exported layer images are imported into Photoshop, they must restore the complete poster by stacking in place without moving, scaling, or adjustment.',
-        'Do not claim or embed a native PSD file; generate a single transparent layer image for later PSD packaging.',
+        'Workflow: think step by step, identify this independent visual element, then prepare it as one Photoshop-ready layer.',
+        'Task: export ONLY this layer/visual element from the reference poster as an independent same-canvas PNG layer asset.',
+        'Keep the exact same canvas size and resolution as the original poster. Preserve the element at its original coordinates, original size, proportion, opacity, and relative position. If alpha output is supported, make every other pixel transparent; otherwise keep non-target regions clean and separable for later masking/PSD packaging.',
+        'Photoshop source setting: treat the export target as Photoshop/PSD so all layer assets can be stacked in place without moving, scaling, or adjustment.',
+        'Do not claim or embed a native PSD file; the public image API does not directly return PSD here, so generate one packable layer asset for later PSD packaging and download/open support.',
       ].join('\n'),
       width: options.width,
       height: options.height,
@@ -392,6 +450,9 @@ export function buildPsdLayerImageTaskPlans(
         textPolicy: plan.textPolicy,
         exportTarget: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
         nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
+        apiNativePsdSupported: false,
+        source: 'photoshop',
+        downloadAction: 'pending-native-packager',
       },
       ...(options.extraParams && Object.keys(options.extraParams).length > 0
         ? { params: options.extraParams }
