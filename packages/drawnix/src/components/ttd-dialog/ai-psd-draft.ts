@@ -144,6 +144,28 @@ function createStableDraftId(
   return `psd-draft-${hash.toString(36)}`;
 }
 
+function buildTextLayerPrompt(
+  description: string,
+  textPolicy: PsdPlanDraft['textPolicy'],
+  language: 'zh' | 'en'
+): string {
+  const isZh = language === 'zh';
+  const policyNotes = [
+    textPolicy.preferEditableText
+      ? isZh
+        ? '文字内容优先保留为后续可编辑文本层，图片任务只生成版式占位和氛围。'
+        : 'Prefer keeping copy as later editable text layers; image tasks should only provide layout placeholders and atmosphere.'
+      : null,
+    textPolicy.avoidBakedText
+      ? isZh
+        ? '重要文字请保留为后续可编辑文本层，不要让图片模型直接生成清晰文字。'
+        : 'Keep important copy as a later editable text layer; do not ask the image model to render crisp text directly.'
+      : null,
+  ].filter(Boolean);
+
+  return [description, ...policyNotes].join('\n');
+}
+
 export function buildLayerPlan(
   prompt: string,
   template: PsdTemplate,
@@ -238,13 +260,8 @@ export function buildLayerPlan(
       ...layer,
       id: `psd-layer-${index + 1}`,
       generationPrompt:
-        layer.type === 'text' && textPolicy.avoidBakedText
-          ? [
-              layer.description,
-              isZh
-                ? '重要文字请保留为后续可编辑文本层，不要让图片模型直接生成清晰文字。'
-                : 'Keep important copy as a later editable text layer; do not ask the image model to render crisp text directly.',
-            ].join('\n')
+        layer.type === 'text'
+          ? buildTextLayerPrompt(layer.description, textPolicy, language)
           : layer.description,
       visible: true,
       opacity: 100,
@@ -318,6 +335,7 @@ export function buildPsdLayerImageTaskDrafts(
         layerId: layer.id,
         layerName: layer.name,
         layerType: layer.type,
+        textPolicy: plan.textPolicy,
         exportTarget: plan.exportSkeleton.target,
         nativePsdReady: plan.exportSkeleton.nativePsdReady,
       },
