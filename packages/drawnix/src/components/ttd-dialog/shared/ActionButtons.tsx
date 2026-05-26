@@ -14,6 +14,7 @@ interface ActionButtonsProps {
   leftContent?: React.ReactNode;
   showQuantity?: boolean;
   generateLabel?: string;
+  showReset?: boolean;
 }
 
 const PRESETS = [1, 2, 3, 4, 5, 10, 20, 50, 100];
@@ -32,6 +33,7 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
   leftContent,
   showQuantity = true,
   generateLabel,
+  showReset = true,
 }) => {
   // Get type-specific storage key
   const storageKey = type === 'video' ? VIDEO_STORAGE_KEY : IMAGE_STORAGE_KEY;
@@ -244,20 +246,22 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
       </div>
 
       {/* Reset Button - Subtle icon-only version */}
-      <HoverTip
-        content={language === 'zh' ? '重置表单' : 'Reset form'}
-        theme="light"
-      >
-        <Button
-          data-track="ai_click_reset"
-          onClick={onReset}
-          disabled={isGenerating}
-          variant="text"
-          shape="circle"
-          icon={<RefreshIcon />}
-          className="action-button--reset-subtle"
-        />
-      </HoverTip>
+      {showReset && (
+        <HoverTip
+          content={language === 'zh' ? '重置表单' : 'Reset form'}
+          theme="light"
+        >
+          <Button
+            data-track="ai_click_reset"
+            onClick={onReset}
+            disabled={isGenerating}
+            variant="text"
+            shape="circle"
+            icon={<RefreshIcon />}
+            className="action-button--reset-subtle"
+          />
+        </HoverTip>
+      )}
     </div>
   );
 };

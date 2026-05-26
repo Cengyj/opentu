@@ -18,11 +18,8 @@
   }
 
   .psd-draft-hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 16px;
-    align-items: center;
-    padding: 16px;
+    display: block;
+    padding: 18px 18px 16px;
     border: 1px solid rgba(243, 156, 18, 0.34);
     border-radius: 14px;
     background: radial-gradient(
@@ -711,6 +708,66 @@
 }
 
 .ai-psd-generation-container {
+  .psd-gpt-composer {
+    display: grid;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid rgba(17, 24, 39, 0.08);
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, 0.08);
+  }
+
+  .psd-gpt-composer .reference-image-upload__label,
+  .psd-gpt-composer .form-label {
+    color: var(--color-text-primary, #222);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .psd-gpt-composer .reference-image-upload__placeholder {
+    min-height: 132px;
+    border-radius: 14px;
+    border-style: dashed;
+    background: linear-gradient(135deg, #fafafa, #fff7ed);
+  }
+
+  .psd-gpt-composer .prompt-textarea-wrapper .form-textarea {
+    min-height: 132px;
+    border-radius: 14px;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .psd-gpt-composer .unified-action-box--no-quantity {
+    width: 100%;
+  }
+
+  .psd-gpt-composer .generate-button {
+    width: 100%;
+    min-height: 44px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .psd-capability-disclosure {
+    border-top: 1px solid rgba(15, 23, 42, 0.06);
+    color: var(--color-text-secondary, #666);
+    font-size: 12px;
+  }
+
+  .psd-capability-disclosure summary {
+    padding-top: 8px;
+    cursor: pointer;
+    color: var(--color-text-secondary, #666);
+    font-weight: 600;
+  }
+
+  .psd-capability-disclosure p {
+    margin: 8px 0 0;
+    line-height: 1.6;
+  }
+
   .psd-prompt-tip {
     padding: 9px 11px;
     border: 1px solid rgba(59, 130, 246, 0.18);

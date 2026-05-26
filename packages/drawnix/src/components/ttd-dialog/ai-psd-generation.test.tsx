@@ -89,6 +89,7 @@ vi.mock('../../utils/model-selection', () => ({
 }));
 
 vi.mock('../../constants/model-config', () => ({
+  DEFAULT_IMAGE_MODEL_ID: 'gpt-image-2',
   getCompatibleParams: () => [
     {
       id: 'size',
@@ -133,6 +134,7 @@ interface MockActionButtonsProps {
   canGenerate: boolean;
   hasGenerated: boolean;
   generateLabel?: string;
+  showReset?: boolean;
 }
 
 interface MockPromptInputProps {
@@ -147,21 +149,25 @@ vi.mock('./shared', () => ({
     canGenerate,
     hasGenerated,
     generateLabel,
+    showReset = true,
   }: MockActionButtonsProps) =>
     (() => {
       mockState.actionButtonProps.push({
         canGenerate,
         hasGenerated,
         generateLabel,
+        showReset,
       });
       return (
         <div>
           <button type="button" onClick={onGenerate} disabled={!canGenerate}>
             {generateLabel || '生成'}
           </button>
-          <button type="button" onClick={onReset}>
-            重置
-          </button>
+          {showReset && (
+            <button type="button" onClick={onReset}>
+              重置
+            </button>
+          )}
         </div>
       );
     })(),
@@ -332,7 +338,13 @@ describe('buildLayerPlan', () => {
   });
 
   it('keeps PSD packaging explicitly unwired while layer assets stay IMAGE edits', () => {
-    const plan = buildLayerPlan('One-click PSD output', 'poster', 'quick', 3, 'en');
+    const plan = buildLayerPlan(
+      'One-click PSD output',
+      'poster',
+      'quick',
+      3,
+      'en'
+    );
     const taskDrafts = buildPsdLayerImageTaskDrafts(plan, {
       model: 'image-model',
       width: 1024,
@@ -370,11 +382,22 @@ describe('AIImagePsdGeneration contract', () => {
   it('renders an editable PSD draft editor and layer workflow skeleton', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(screen.getAllByRole('note')[0].textContent).toContain(
-      '只需上传参考图并输入提示词'
+    expect(screen.getByText(/像 GPT 一样生成 PSD 文件/)).toBeTruthy();
+    expect(screen.getByText(/无需选择模板、策略或图层数量/)).toBeTruthy();
+    expect(screen.getByText('当前能力说明')).toBeTruthy();
+    expect((screen.getByLabelText('prompt') as HTMLTextAreaElement).value).toBe(
+      ''
     );
-    expect(screen.getByText(/点击“生成 PSD 文件”/)).toBeTruthy();
-    expect(screen.getByText(/像 GPT 一样/)).toBeTruthy();
+    expect(screen.queryByTestId('model-dropdown')).toBeNull();
+    expect(screen.queryByTestId('parameters-dropdown')).toBeNull();
+    expect(screen.queryByText('重置')).toBeNull();
+    expect(
+      mockState.actionButtonProps[mockState.actionButtonProps.length - 1]
+    ).toMatchObject({
+      canGenerate: false,
+      generateLabel: '生成 PSD 文件',
+      showReset: false,
+    });
     expect(screen.queryByText('可编辑 PSD 草稿')).toBeNull();
     expect(screen.queryByText('尚未生成图层计划')).toBeNull();
     expect(
@@ -407,14 +430,14 @@ describe('AIImagePsdGeneration contract', () => {
         mockState.actionButtonProps[mockState.actionButtonProps.length - 1];
       expect(latestActionProps).toMatchObject({
         canGenerate: true,
-        hasGenerated: true,
-        generateLabel: '重新生成 PSD 文件',
+        hasGenerated: false,
+        generateLabel: '生成 PSD 文件',
       });
     });
     expect(screen.getByText(/已按参考图自动拆分透明图层/)).toBeTruthy();
     expect(mockState.createTask).toHaveBeenCalledTimes(4);
 
-    fireEvent.click(screen.getByText('查看自动拆层明细（可选）'));
+    fireEvent.click(screen.getByText('查看可选拆分明细'));
     const deleteButtons = screen.getAllByRole('button', { name: '删除' });
     expect((deleteButtons[0] as HTMLButtonElement).disabled).toBe(true);
     expect((deleteButtons[1] as HTMLButtonElement).disabled).toBe(false);
