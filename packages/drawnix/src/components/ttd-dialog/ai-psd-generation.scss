@@ -814,6 +814,10 @@
     overflow: hidden;
 
     summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
       padding: 11px 13px;
       cursor: pointer;
       color: var(--color-text-primary, #222);
@@ -827,9 +831,17 @@
 
       &::after {
         content: '⌄';
-        float: right;
         color: #b26b00;
+        font-size: 14px;
         transition: transform 0.18s ease;
+      }
+
+      small {
+        flex: 1;
+        color: var(--color-text-secondary, #777);
+        font-size: 11px;
+        font-weight: 500;
+        text-align: right;
       }
     }
 
@@ -840,11 +852,13 @@
         transform: rotate(180deg);
       }
     }
+  }
 
-    .psd-layer-list,
-    .psd-workflow-actions {
-      margin: 12px;
-    }
+  .psd-layer-details__body {
+    display: grid;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(248, 250, 252, 0.68);
   }
 }
 
@@ -855,7 +869,8 @@
       bottom: 0;
     }
 
-    .psd-advanced-settings summary {
+    .psd-advanced-settings summary,
+    .psd-layer-details summary {
       align-items: flex-start;
       flex-direction: column;
       gap: 4px;
