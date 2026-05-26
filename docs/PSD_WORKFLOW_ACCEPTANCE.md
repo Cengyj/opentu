@@ -10,6 +10,7 @@ PSD 模式仍然基于现有 AI 图片生成窗口与 `TaskType.IMAGE` 工作流
 - `buildLayerPlan` 只生成本地草稿：`draftId`、模板、策略、可编辑图层、图层状态和 `exportSkeleton`。`exportSkeleton.nativePsdReady` 必须保持 `false`，表示当前阶段只是后续 PSD 打包的骨架。
 - `buildPsdLayerImageTaskDrafts` 只为可见的视觉图层（背景、图片、装饰）准备 `TaskType.IMAGE` 任务草稿；文字层和调整/说明层保留为可编辑/待导出信息，不应创建 PSD 专属任务。
 - 图层任务参数可以携带轻量 `psdDraft` 元数据用于后续关联，但生成结果仍按现有图片素材路径处理，不能新增 `AssetType.PSD`。
+- 草稿首层（背景层）保持锁定，不能被删除，以免破坏 PSD 草稿结构；其余图层仍应可按当前编辑规则调整、复制、排序和隐藏。
 
 ## 自动化验证
 

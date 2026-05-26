@@ -1137,29 +1137,34 @@ const AIImagePsdGeneration = ({
                             type="button"
                             onClick={() => handleRemoveLayer(layer.id)}
                             disabled={layer.locked}
+                            title={
+                              layer.locked
+                                ? uiLanguage === 'zh'
+                                  ? '基础图层已锁定，避免破坏 PSD 草稿结构'
+                                  : 'Base layer is locked to preserve the PSD draft structure'
+                                : undefined
+                            }
                           >
                             {uiLanguage === 'zh' ? '删除' : 'Delete'}
                           </button>
                         </div>
                       </div>
                     </article>
-                  ))}
-                </div>
-                <div className="psd-workflow-actions">
-                  <button type="button" onClick={handleAddLayer}>
-                    {uiLanguage === 'zh' ? '+ 添加图层' : '+ Add layer'}
-                  </button>
-                  <button type="button" onClick={handleGenerateLayerAssets}>
-                    {uiLanguage === 'zh'
-                      ? '建立图层生成骨架'
-                      : 'Create layer-generation skeleton'}
-                  </button>
-                  <button type="button" onClick={handleExportSkeleton}>
-                    {uiLanguage === 'zh'
-                      ? '准备导出骨架'
-                      : 'Prepare export skeleton'}
-                  </button>
-                </div>
+                ))}
+              </div>
+              <div className="psd-workflow-actions">
+                <button type="button" onClick={handleAddLayer}>
+                  {uiLanguage === 'zh' ? '+ 添加图层' : '+ Add layer'}
+                </button>
+                <button type="button" onClick={handleGenerateLayerAssets}>
+                  {uiLanguage === 'zh'
+                    ? '建立图层生成骨架'
+                    : 'Create layer-generation skeleton'}
+                </button>
+                <button type="button" onClick={handleExportSkeleton}>
+                  {uiLanguage === 'zh' ? '准备导出骨架' : 'Prepare export skeleton'}
+                </button>
+              </div>
               </>
             ) : (
               <div className="psd-layer-empty-state">
