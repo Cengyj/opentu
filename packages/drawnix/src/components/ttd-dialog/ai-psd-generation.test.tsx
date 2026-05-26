@@ -230,7 +230,7 @@ describe('AIImagePsdGeneration contract', () => {
       '不直接返回原生 PSD'
     );
     expect(screen.getByText('PSD 输出配置')).toBeTruthy();
-    expect(screen.getByText('PSD 图层计划')).toBeTruthy();
+    expect(screen.getByText('可编辑 PSD 草稿')).toBeTruthy();
     expect(screen.getByText('尚未生成图层计划')).toBeTruthy();
     expect(
       screen.queryByText(/直接返回原生 PSD 文件|native PSD files returned/i)
