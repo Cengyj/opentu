@@ -149,6 +149,32 @@ const AIImagePsdGeneration = ({
   const { viewportWidth } = useDeviceType();
   const isCompactLayout = viewportWidth <= 768;
   const { imageHistory } = useGenerationHistory();
+  const draftMetrics = useMemo(() => {
+    const layers = plan?.layers ?? [];
+    const visibleLayers = layers.filter((layer) => layer.visible);
+    const statusCounts = layers.reduce(
+      (counts, layer) => ({
+        ...counts,
+        [layer.status]: counts[layer.status] + 1,
+      }),
+      {
+        draft: 0,
+        queued: 0,
+        ready: 0,
+        'export-pending': 0,
+      } as Record<PsdLayerDraft['status'], number>
+    );
+
+    return {
+      totalLayers: layers.length,
+      visibleLayers: visibleLayers.length,
+      hiddenLayers: layers.length - visibleLayers.length,
+      draftLayers: statusCounts.draft,
+      queuedLayers: statusCounts.queued,
+      readyLayers: statusCounts.ready,
+      exportPendingLayers: statusCounts['export-pending'],
+    };
+  }, [plan]);
 
   const visibleImageModels = useMemo(() => {
     const currentMatch = findMatchingSelectableModel(
@@ -536,9 +562,13 @@ const AIImagePsdGeneration = ({
                 ? 'ai-generation-mobile-switcher__tab--active'
                 : ''
             }`}
+            aria-pressed={mobilePanel === 'config'}
             onClick={() => setMobilePanel('config')}
           >
             {uiLanguage === 'zh' ? '生成配置' : 'Setup'}
+            <span className="ai-generation-mobile-switcher__count">
+              {uiLanguage === 'zh' ? '配置' : 'Config'}
+            </span>
           </button>
           <button
             type="button"
@@ -547,9 +577,13 @@ const AIImagePsdGeneration = ({
                 ? 'ai-generation-mobile-switcher__tab--active'
                 : ''
             }`}
+            aria-pressed={mobilePanel === 'preview'}
             onClick={() => setMobilePanel('preview')}
           >
             {uiLanguage === 'zh' ? 'PSD 预览' : 'PSD Preview'}
+            <span className="ai-generation-mobile-switcher__count">
+              {draftMetrics.totalLayers || '—'}
+            </span>
           </button>
         </div>
       ) : null}
