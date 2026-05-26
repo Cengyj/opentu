@@ -1,8 +1,12 @@
-﻿/**
+/**
  * 模型健康状态服务
  * 
- * 从 foropencode.com 获取模型健康状态数据
+ * 从独立状态服务获取模型健康状态数据
  * 使用单例模式控制接口调用频率（最小间隔 1 分钟）
+ *
+ * 注意：foropencode.com 本身是 OpenAI 兼容 API 网关，不保证提供
+ * /api/history/aggregated。健康状态端点必须显式配置，避免向模型网关
+ * 发送无效 URL 请求。
  */
 
 // 健康状态响应类型
@@ -50,8 +54,9 @@ export interface ModelHealthSelection {
     baseUrl?: string | null;
 }
 
-// API 端点
-const API_STATUS_BASE_URL = 'https://foropencode.com';
+// 健康状态 API 端点。默认关闭，避免把 OpenAI 兼容 API 网关误当状态后台。
+const API_STATUS_BASE_URL =
+    (import.meta.env.VITE_MODEL_HEALTH_STATUS_BASE_URL || '').trim();
 
 // 最小调用间隔（1 分钟）
 const MIN_FETCH_INTERVAL = 60 * 1000;
@@ -66,11 +71,13 @@ class ModelHealthFetcher {
     // 缓存的数据
     private cachedData: ModelHealthResponse[] = [];
     // 上次成功请求的时间
-    private lastFetchTime: number = 0;
+    private lastFetchTime = 0;
     // 当前进行中的请求 Promise（用于防止并发）
     private pendingFetch: Promise<ModelHealthResponse[]> | null = null;
 
-    private constructor() {}
+    private constructor() {
+        // Singleton: callers use getInstance().
+    }
 
     static getInstance(): ModelHealthFetcher {
         if (!ModelHealthFetcher.instance) {
@@ -84,7 +91,7 @@ class ModelHealthFetcher {
      * @param intervalMinutes 查询的时间范围（分钟），默认 5 分钟
      * @param force 是否强制刷新（忽略缓存间隔限制）
      */
-    async fetch(intervalMinutes: number = 5, force: boolean = false): Promise<ModelHealthResponse[]> {
+    async fetch(intervalMinutes = 5, force = false): Promise<ModelHealthResponse[]> {
         const now = Date.now();
         
         // 检查是否在最小间隔内（非强制模式）
@@ -112,6 +119,10 @@ class ModelHealthFetcher {
      * 实际执行 API 请求
      */
     private async doFetch(intervalMinutes: number): Promise<ModelHealthResponse[]> {
+        if (!API_STATUS_BASE_URL) {
+            return this.cachedData;
+        }
+
         const now = Math.floor(Date.now() / 1000);
         const startTime = now - intervalMinutes * 60;
 
@@ -293,8 +304,13 @@ export function isForOpenCodeApiUrl(baseUrl: string): boolean {
 export function shouldFetchModelHealthForSelections(
     selections: ModelHealthSelection[],
     providers: ModelHealthProviderSource[],
-    legacyBaseUrl?: string | null
+    legacyBaseUrl?: string | null,
+    healthStatusBaseUrl: string = API_STATUS_BASE_URL
 ): boolean {
+    if (!healthStatusBaseUrl.trim()) {
+        return false;
+    }
+
     if (selections.length === 0) {
         return false;
     }

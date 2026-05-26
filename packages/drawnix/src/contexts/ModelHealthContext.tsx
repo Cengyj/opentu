@@ -1,8 +1,9 @@
-﻿/**
+/**
  * 模型健康状态 Context
  * 
  * 提供全局共享的模型健康状态数据
  * 确保所有 ModelHealthBadge 组件使用同一份数据
+ * 默认不请求健康状态后台；只有配置 VITE_MODEL_HEALTH_STATUS_BASE_URL 后才启用。
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
@@ -28,7 +29,7 @@ export interface ModelHealthContextValue {
     loading: boolean;
     /** 错误信息 */
     error: string | null;
-    /** 是否应该显示健康状态（baseUrl 为 foropencode.com 时为 true） */
+    /** 是否应该显示健康状态（需配置状态服务，且当前模型使用 foropencode.com 供应商） */
     shouldShowHealth: boolean;
     /** 更新当前已选择的模型，用于决定是否请求健康状态 */
     setActiveSelections: (selections: ModelHealthSelection[]) => void;
@@ -70,7 +71,7 @@ export const ModelHealthProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return show;
     }, []);
 
-    const fetchData = useCallback(async (force: boolean = false) => {
+    const fetchData = useCallback(async (force = false) => {
         if (!checkShouldShow()) {
             return;
         }
@@ -206,8 +207,8 @@ export function useModelHealthContext(): ModelHealthContextValue {
             loading: false,
             error: null,
             shouldShowHealth: false,
-            setActiveSelections: () => {},
-            refresh: async () => {},
+            setActiveSelections: () => undefined,
+            refresh: () => Promise.resolve(),
             getHealthStatus: () => undefined,
         };
     }

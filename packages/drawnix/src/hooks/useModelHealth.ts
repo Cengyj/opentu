@@ -1,8 +1,8 @@
-﻿/**
+/**
  * 模型健康状态 Hook
  * 
  * 提供模型健康状态数据，支持自动刷新
- * 仅当 baseUrl 为 foropencode.com 时才启用
+ * 仅当配置了 VITE_MODEL_HEALTH_STATUS_BASE_URL，且当前模型使用 foropencode.com 供应商时才启用
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -28,7 +28,7 @@ export interface UseModelHealthResult {
     loading: boolean;
     /** 错误信息 */
     error: string | null;
-    /** 是否应该显示健康状态（baseUrl 为 foropencode.com 时为 true） */
+    /** 是否应该显示健康状态（需配置状态服务，且当前模型使用 foropencode.com 供应商） */
     shouldShowHealth: boolean;
     /** 更新当前已选择的模型，用于决定是否请求健康状态 */
     setActiveSelections: (selections: ModelHealthSelection[]) => void;
@@ -75,7 +75,7 @@ export function useModelHealth(): UseModelHealthResult {
     }, []);
 
     // 获取健康数据
-    const fetchData = useCallback(async (force: boolean = false) => {
+    const fetchData = useCallback(async (force = false) => {
         // 检查是否应该显示
         if (!checkShouldShow()) {
             return;

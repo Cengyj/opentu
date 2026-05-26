@@ -513,7 +513,10 @@ return withTextPastePlugin(withImagePlugin(newBoard));
 - API 请求失败时静默处理，不显示健康状态
 
 **API 来源**：
-- 端点：`https://foropencode.com/api/history/aggregated`
+- 端点：通过 `VITE_MODEL_HEALTH_STATUS_BASE_URL` 显式配置独立状态服务后，请求
+  `${VITE_MODEL_HEALTH_STATUS_BASE_URL}/api/history/aggregated`
+- 默认不请求 `https://foropencode.com/api/history/aggregated`，因为 `foropencode.com`
+  本身可能只是 OpenAI 兼容模型网关，不一定提供后台历史聚合接口
 - 返回字段：`model_name`、`status_label`、`status_color`、`error_rate` 等
 
 **使用示例**：
@@ -532,7 +535,7 @@ const status = getHealthStatus('gemini-2.0-flash-exp-image-generation');
 ```
 
 **显示规则**：
-- `shouldShowHealth` 为 `true` 时（baseUrl 包含 `foropencode.com`）才显示徽章
+- `shouldShowHealth` 为 `true` 时才显示徽章；默认值为 `false`，只有配置了 `VITE_MODEL_HEALTH_STATUS_BASE_URL` 且当前模型使用 `foropencode.com` 供应商时才会请求/显示健康状态
 - 没有匹配模型的健康数据时不显示徽章
 - 徽章颜色由 API 返回的 `statusColor` 决定（绿/黄/红等）
 
@@ -852,4 +855,3 @@ async getPaginatedTasks(params: PaginationParams): Promise<PaginatedResult> {
 | `packages/drawnix/src/components/version-update/version-update-prompt.tsx` | 升级提示 UI |
 
 ---
-

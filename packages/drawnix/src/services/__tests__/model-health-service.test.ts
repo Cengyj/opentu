@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import {
   buildHealthMap,
@@ -83,6 +83,22 @@ describe('model-health-service', () => {
     expect(isForOpenCodeApiUrl('https://example.com/v1')).toBe(false);
   });
 
+  it('does not fetch health without an explicit health status endpoint', () => {
+    expect(
+      shouldFetchModelHealthForSelections(
+        [{ modelId: 'gpt-image-2', profileId: 'foropencode-active' }],
+        [
+          {
+            id: 'foropencode-active',
+            baseUrl: 'https://foropencode.com/v1',
+            enabled: true,
+          },
+        ],
+        'https://foropencode.com/v1'
+      )
+    ).toBe(false);
+  });
+
   it('does not fetch health when selected models use non-ForOpenCode providers', () => {
     const providers = [
       {
@@ -101,7 +117,8 @@ describe('model-health-service', () => {
       shouldFetchModelHealthForSelections(
         [{ modelId: 'gpt-image-2', profileId: 'openai-active' }],
         providers,
-        'https://api.openai.com/v1'
+        'https://api.openai.com/v1',
+        'https://status.example.com'
       )
     ).toBe(false);
   });
@@ -127,7 +144,8 @@ describe('model-health-service', () => {
           { modelId: 'gpt-image-2', profileId: 'foropencode-active' },
         ],
         providers,
-        'https://gateway.example.com/v1'
+        'https://gateway.example.com/v1',
+        'https://status.example.com'
       )
     ).toBe(true);
   });
