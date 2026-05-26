@@ -42,11 +42,17 @@ import {
 } from '../../utils/model-selection';
 import {
   LAYER_COUNT_OPTIONS,
+  LAYER_TYPE_OPTIONS,
   STRATEGY_OPTIONS,
   TEMPLATE_OPTIONS,
   buildLayerPlan,
+  buildPsdLayerImageTaskDrafts,
   getLayerTypeLabel,
+  getStatusLabel,
+  getTemplateLabel,
+  type PsdLayerDraft,
   type PsdLayerStrategy,
+  type PsdLayerType,
   type PsdPlanDraft,
   type PsdTemplate,
 } from './ai-psd-draft';
@@ -565,26 +571,44 @@ const AIImagePsdGeneration = ({
 
   const handleGenerateLayerAssets = useCallback(() => {
     if (!plan) return;
+    const layerTaskDrafts = buildPsdLayerImageTaskDrafts(plan, {
+      model: currentModel,
+      modelRef: currentModelRef,
+      uploadedImages,
+      knowledgeContextRefs,
+      size: selectedParams.size || '1024x1024',
+      width: 1024,
+      height: 1024,
+      extraParams: selectedParams,
+    });
+    const queuedLayerIds = new Set(
+      layerTaskDrafts.map((draft) => draft.layerId)
+    );
     setPlan((current) =>
       current
         ? {
             ...current,
             layers: current.layers.map((layer) => ({
               ...layer,
-              status:
-                layer.type === 'text' || layer.type === 'adjustment'
-                  ? 'export-pending'
-                  : 'queued',
+              status: queuedLayerIds.has(layer.id) ? 'queued' : 'export-pending',
             })),
           }
         : current
     );
     void MessagePlugin.success(
       uiLanguage === 'zh'
-        ? '已建立图层素材生成骨架（沿用图片任务）'
-        : 'Layer asset generation skeleton created using image tasks'
+        ? `已建立 ${layerTaskDrafts.length} 个 IMAGE 图层任务草稿`
+        : `Created ${layerTaskDrafts.length} IMAGE layer task drafts`
     );
-  }, [plan, uiLanguage]);
+  }, [
+    currentModel,
+    currentModelRef,
+    knowledgeContextRefs,
+    plan,
+    selectedParams,
+    uiLanguage,
+    uploadedImages,
+  ]);
 
   const handleExportSkeleton = useCallback(() => {
     if (!plan) return;

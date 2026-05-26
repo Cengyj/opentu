@@ -14,13 +14,17 @@ export type PsdLayerType =
   | 'text'
   | 'decoration'
   | 'adjustment';
+export type PsdLayerStatus = 'draft' | 'queued' | 'export-pending';
 
 export interface PsdLayerDraft {
   id: string;
   name: string;
   type: PsdLayerType;
   description: string;
+  generationPrompt: string;
   visible: boolean;
+  opacity: number;
+  status: PsdLayerStatus;
   locked?: boolean;
 }
 
@@ -83,6 +87,13 @@ export const STRATEGY_OPTIONS: Array<{
 ];
 
 export const LAYER_COUNT_OPTIONS = [3, 5, 8];
+export const LAYER_TYPE_OPTIONS: PsdLayerType[] = [
+  'background',
+  'image',
+  'text',
+  'decoration',
+  'adjustment',
+];
 
 export function getTemplateLabel(
   template: PsdTemplate,
@@ -101,6 +112,18 @@ export function getLayerTypeLabel(type: PsdLayerType, language: 'zh' | 'en'): st
     adjustment: { zh: '调整', en: 'Adjustment' },
   };
   return labels[type][language];
+}
+
+export function getStatusLabel(
+  status: PsdLayerStatus,
+  language: 'zh' | 'en'
+): string {
+  const labels: Record<PsdLayerStatus, { zh: string; en: string }> = {
+    draft: { zh: '草稿', en: 'Draft' },
+    queued: { zh: '待生成', en: 'Queued' },
+    'export-pending': { zh: '待导出', en: 'Export pending' },
+  };
+  return labels[status][language];
 }
 
 function createStableDraftId(
@@ -203,7 +226,10 @@ export function buildLayerPlan(
     layers: layerSeeds.slice(0, count).map((layer, index) => ({
       ...layer,
       id: `psd-layer-${index + 1}`,
+      generationPrompt: layer.description,
       visible: true,
+      opacity: 100,
+      status: 'draft',
     })),
     exportSkeleton: {
       target: 'psd',
