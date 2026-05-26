@@ -72,9 +72,6 @@ const EMPTY_KNOWLEDGE_CONTEXT_REFS: KnowledgeContextRef[] = [];
 
 export { buildLayerPlan };
 
-const EMPTY_REFERENCE_IMAGES: ReferenceImage[] = [];
-const EMPTY_KNOWLEDGE_CONTEXT_REFS: KnowledgeContextRef[] = [];
-
 const AIImagePsdGeneration = ({
   initialPrompt = '',
   initialImages = EMPTY_REFERENCE_IMAGES,
