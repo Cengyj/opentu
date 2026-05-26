@@ -19,9 +19,9 @@ export type PsdLayerType =
   | 'text'
   | 'decoration'
   | 'adjustment';
-export type PsdLayerStatus = 'draft' | 'queued' | 'export-pending';
+export type PsdLayerStatus = 'planned' | 'queued' | 'export-pending';
 
-export interface PsdLayerDraft {
+export interface PsdLayerPlan {
   id: string;
   name: string;
   type: PsdLayerType;
@@ -33,8 +33,8 @@ export interface PsdLayerDraft {
   locked?: boolean;
 }
 
-export interface PsdPlanDraft {
-  draftId: string;
+export interface PsdGenerationPlan {
+  planId: string;
   title: string;
   template: PsdTemplate;
   strategy: PsdLayerStrategy;
@@ -42,15 +42,15 @@ export interface PsdPlanDraft {
     preferEditableText: boolean;
     avoidBakedText: boolean;
   };
-  layers: PsdLayerDraft[];
+  layers: PsdLayerPlan[];
   exportSkeleton: {
     target: 'psd';
-    status: 'draft';
+    status: 'planned';
     nativePsdReady: false;
   };
 }
 
-export interface PsdLayerImageTaskDraft {
+export interface PsdLayerImageTaskPlan {
   layerId: string;
   layerName: string;
   taskType: TaskType.IMAGE;
@@ -65,7 +65,7 @@ export const PSD_LAYER_IMAGE_TASK_CONTRACT = {
   inputFidelity: 'high',
   exportTarget: 'psd',
   nativePsdReady: false,
-  promptMetaTags: ['psd-draft', 'transparent-layer-image'],
+  promptMetaTags: ['psd-layer', 'transparent-layer-image'],
 } as const;
 
 export const PSD_LAYER_EXTRACTION_PROMPT_ZH =
@@ -162,14 +162,14 @@ export function getStatusLabel(
   language: 'zh' | 'en'
 ): string {
   const labels: Record<PsdLayerStatus, { zh: string; en: string }> = {
-    draft: { zh: '草稿', en: 'Draft' },
+    planned: { zh: '待生成', en: 'Planned' },
     queued: { zh: '待生成', en: 'Queued' },
     'export-pending': { zh: '待导出', en: 'Export pending' },
   };
   return labels[status][language];
 }
 
-function createStableDraftId(
+function createStablePlanId(
   prompt: string,
   template: PsdTemplate,
   strategy: PsdLayerStrategy,
@@ -180,12 +180,12 @@ function createStableDraftId(
   for (let index = 0; index < source.length; index += 1) {
     hash = (hash * 31 + source.charCodeAt(index)) >>> 0;
   }
-  return `psd-draft-${hash.toString(36)}`;
+  return `psd-layer-${hash.toString(36)}`;
 }
 
 function buildTextLayerPrompt(
   description: string,
-  textPolicy: PsdPlanDraft['textPolicy'],
+  textPolicy: PsdGenerationPlan['textPolicy'],
   language: 'zh' | 'en'
 ): string {
   const isZh = language === 'zh';
@@ -211,17 +211,17 @@ export function buildLayerPlan(
   strategy: PsdLayerStrategy,
   layerCount: number,
   language: 'zh' | 'en',
-  textPolicy: PsdPlanDraft['textPolicy'] = {
+  textPolicy: PsdGenerationPlan['textPolicy'] = {
     preferEditableText: true,
     avoidBakedText: true,
   }
-): PsdPlanDraft {
+): PsdGenerationPlan {
   const basePrompt = prompt.trim();
   const templateLabel = getTemplateLabel(template, language);
   const isZh = language === 'zh';
   const layerSeeds: Array<
     Omit<
-      PsdLayerDraft,
+      PsdLayerPlan,
       'id' | 'visible' | 'generationPrompt' | 'opacity' | 'status'
     >
   > = [
@@ -295,7 +295,7 @@ export function buildLayerPlan(
 
   const count = Math.min(Math.max(layerCount, 3), layerSeeds.length);
   return {
-    draftId: createStableDraftId(basePrompt, template, strategy, count),
+    planId: createStablePlanId(basePrompt, template, strategy, count),
     title:
       basePrompt ||
       (isZh ? `${templateLabel} PSD 计划` : `${templateLabel} PSD plan`),
@@ -311,17 +311,17 @@ export function buildLayerPlan(
           : layer.description,
       visible: true,
       opacity: 100,
-      status: 'draft',
+      status: 'planned',
     })),
     exportSkeleton: {
       target: 'psd',
-      status: 'draft',
+      status: 'planned',
       nativePsdReady: false,
     },
   };
 }
 
-export interface BuildPsdLayerImageTaskDraftsOptions {
+export interface BuildPsdLayerImageTaskPlansOptions {
   model: string;
   modelRef?: ModelRef | null;
   uploadedImages?: ReferenceImage[];
@@ -332,10 +332,10 @@ export interface BuildPsdLayerImageTaskDraftsOptions {
   extraParams?: Record<string, string>;
 }
 
-export function buildPsdLayerImageTaskDrafts(
-  plan: PsdPlanDraft,
-  options: BuildPsdLayerImageTaskDraftsOptions
-): PsdLayerImageTaskDraft[] {
+export function buildPsdLayerImageTaskPlans(
+  plan: PsdGenerationPlan,
+  options: BuildPsdLayerImageTaskPlansOptions
+): PsdLayerImageTaskPlan[] {
   const visualLayers = plan.layers.filter(
     (layer) =>
       layer.visible &&
@@ -350,7 +350,7 @@ export function buildPsdLayerImageTaskDrafts(
     taskType: PSD_LAYER_IMAGE_TASK_CONTRACT.taskType,
     params: {
       prompt: [
-        `[PSD draft layer: ${layer.name}]`,
+        `[PSD layer: ${layer.name}]`,
         plan.title,
         layer.description,
         'Task: export ONLY this layer/visual element from the reference poster as an independent transparent PNG layer.',
@@ -371,7 +371,7 @@ export function buildPsdLayerImageTaskDrafts(
       referenceImages: (options.uploadedImages || []).map((image) => image.url),
       knowledgeContextRefs: options.knowledgeContextRefs || [],
       autoInsertToCanvas: false,
-      batchId: `${plan.draftId}-layers`,
+      batchId: `${plan.planId}-layers`,
       batchIndex: index + 1,
       batchTotal: visualLayers.length,
       promptMeta: {
@@ -383,9 +383,9 @@ export function buildPsdLayerImageTaskDrafts(
       assetMetadata: {
         category: 'GENERAL',
       },
-      psdDraft: {
-        draftId: plan.draftId,
-        draftTitle: plan.title,
+      psdPlan: {
+        planId: plan.planId,
+        planTitle: plan.title,
         layerId: layer.id,
         layerName: layer.name,
         layerType: layer.type,

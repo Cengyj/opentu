@@ -37,6 +37,10 @@ interface PromptInputProps {
   label?: string;
   /** Optional placeholder override for specialized tools */
   placeholder?: string;
+  /** Whether to show the preset prompt shortcut */
+  showPresetButton?: boolean;
+  /** Whether to show the prompt optimization shortcut */
+  showOptimizeButton?: boolean;
 }
 
 export const PromptInput: React.FC<PromptInputProps> = ({
@@ -51,6 +55,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   videoProvider,
   label,
   placeholder,
+  showPresetButton = true,
+  showOptimizeButton = true,
 }) => {
   const [isPresetOpen, setIsPresetOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -284,20 +290,22 @@ export const PromptInput: React.FC<PromptInputProps> = ({
               ? `${type === 'image' ? '图片' : '视频'}描述`
               : `${type === 'image' ? 'Image' : 'Video'} Description`)}
         </label>
-        <div className="textarea-with-preset">
-          <div className="preset-tooltip-container" ref={containerRef}>
-            <button
-              ref={buttonRef}
-              type="button"
-              className="preset-icon-button"
-              disabled={disabled}
-              onClick={() => setIsPresetOpen(!isPresetOpen)}
-            >
-              <Lightbulb size={16} />
-            </button>
-            {renderTooltipContent()}
+        {showPresetButton && (
+          <div className="textarea-with-preset">
+            <div className="preset-tooltip-container" ref={containerRef}>
+              <button
+                ref={buttonRef}
+                type="button"
+                className="preset-icon-button"
+                disabled={disabled}
+                onClick={() => setIsPresetOpen(!isPresetOpen)}
+              >
+                <Lightbulb size={16} />
+              </button>
+              {renderTooltipContent()}
+            </div>
           </div>
-        </div>
+        )}
       </div>
       <div className="prompt-textarea-wrapper">
         <textarea
@@ -306,23 +314,27 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           value={prompt}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder || getPromptExample(language, type, videoProvider)}
+          placeholder={
+            placeholder || getPromptExample(language, type, videoProvider)
+          }
           rows={4}
           disabled={disabled}
         />
-        <PromptOptimizeButton
-          className="prompt-optimize-button"
-          originalPrompt={prompt}
-          language={language}
-          scenarioId={type === 'image' ? 'tool.image' : 'tool.video'}
-          disabled={disabled}
-          tooltipPlacement="top"
-          allowStructuredMode={true}
-          onApply={(optimizedPrompt) => {
-            onPromptChange(optimizedPrompt);
-            onError?.(null);
-          }}
-        />
+        {showOptimizeButton && (
+          <PromptOptimizeButton
+            className="prompt-optimize-button"
+            originalPrompt={prompt}
+            language={language}
+            scenarioId={type === 'image' ? 'tool.image' : 'tool.video'}
+            disabled={disabled}
+            tooltipPlacement="top"
+            allowStructuredMode={true}
+            onApply={(optimizedPrompt) => {
+              onPromptChange(optimizedPrompt);
+              onError?.(null);
+            }}
+          />
+        )}
       </div>
 
       {/* Character mention popup - rendered in portal style with fixed position */}

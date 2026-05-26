@@ -245,13 +245,17 @@ const TTDDialogComponent = ({
       }
     });
 
-  // 移动端/平板端自动切换回单图模式
+  // 移动端/平板端自动切换；PSD 模式允许带参考图/提示词进入
   useEffect(() => {
     const hasInitialContent =
       (aiImageData.initialImages && aiImageData.initialImages.length > 0) ||
       (aiImageData.initialPrompt && aiImageData.initialPrompt.trim() !== '');
 
-    if (hasInitialContent && imageGenerationMode !== 'single') {
+    if (
+      hasInitialContent &&
+      imageGenerationMode !== 'single' &&
+      imageGenerationMode !== 'psd'
+    ) {
       setImageGenerationMode('single');
       return;
     }
@@ -287,7 +291,7 @@ const TTDDialogComponent = ({
   // 这需要在 WinBox 组件渲染前确定，且逻辑需要与 AIImageGeneration 的模式判断一致
   useEffect(() => {
     if (appState.openDialogTypes.has(DialogType.aiImageGeneration)) {
-      // 如果有初始图片或初始提示词，说明是带内容进入，不自动放大（强制单图模式）
+      // 如果有初始图片或初始提示词，说明是带内容进入，不自动放大；PSD 模式仍保留
       const hasInitialContent =
         (aiImageData.initialImages && aiImageData.initialImages.length > 0) ||
         (aiImageData.initialPrompt && aiImageData.initialPrompt.trim() !== '');
@@ -374,8 +378,7 @@ const TTDDialogComponent = ({
               imageDialogInitialData.resultUrl,
             initialAspectRatio: imageDialogInitialData.initialAspectRatio,
             targetFrameId: imageDialogInitialData.targetFrameId,
-            targetFrameDimensions:
-              imageDialogInitialData.targetFrameDimensions,
+            targetFrameDimensions: imageDialogInitialData.targetFrameDimensions,
             pptSlideImage: imageDialogInitialData.pptSlideImage,
             pptSlidePrompt: imageDialogInitialData.pptSlidePrompt,
             pptReplaceElementId: imageDialogInitialData.pptReplaceElementId,
@@ -526,8 +529,7 @@ const TTDDialogComponent = ({
               videoDialogInitialData.initialModel ||
               videoDialogInitialData.model,
             initialSize:
-              videoDialogInitialData.initialSize ||
-              videoDialogInitialData.size,
+              videoDialogInitialData.initialSize || videoDialogInitialData.size,
             initialResultUrl:
               videoDialogInitialData.initialResultUrl ||
               videoDialogInitialData.resultUrl,
@@ -709,8 +711,8 @@ const TTDDialogComponent = ({
               : 'Batch Generation'
             : imageGenerationMode === 'psd'
             ? language === 'zh'
-              ? '分层 PSD'
-              : 'Layered PSD'
+              ? 'PSD 文件生成'
+              : 'PSD File Generator'
             : language === 'zh'
             ? 'AI 图片生成'
             : 'AI Image Generation'
@@ -763,10 +765,7 @@ const TTDDialogComponent = ({
                     handleImageModeChange('psd');
                   }}
                 >
-                  <span>{language === 'zh' ? '分层 PSD' : 'PSD'}</span>
-                  <span className="mode-tab__badge">
-                    {language === 'zh' ? '草稿' : 'Draft'}
-                  </span>
+                  <span>{language === 'zh' ? '生成 PSD' : 'PSD'}</span>
                 </button>
               ) : null}
             </div>
@@ -862,7 +861,9 @@ const TTDDialogComponent = ({
               onModelRefChange={handleImageModelRefChange}
               externalBatchId={imageDialogInitialData?.batchId}
               assetMetadata={imageDialogInitialData?.assetMetadata}
-              initialAutoInsertToCanvas={imageDialogInitialData?.autoInsertToCanvas}
+              initialAutoInsertToCanvas={
+                imageDialogInitialData?.autoInsertToCanvas
+              }
               onDraftChange={imageDialogInitialData?.onDraftChange}
             />
           ))}
@@ -905,7 +906,9 @@ const TTDDialogComponent = ({
             onModelChange={handleVideoModelChange}
             onModelRefChange={handleVideoModelRefChange}
             externalBatchId={videoDialogInitialData?.batchId}
-            initialAutoInsertToCanvas={videoDialogInitialData?.autoInsertToCanvas}
+            initialAutoInsertToCanvas={
+              videoDialogInitialData?.autoInsertToCanvas
+            }
             onDraftChange={videoDialogInitialData?.onDraftChange}
           />
         )}
