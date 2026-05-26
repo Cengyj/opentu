@@ -923,6 +923,11 @@ const AIImagePsdGeneration = ({
                       : 'Text: follow layer notes'}
                   </span>
                 </div>
+                <p className="psd-draft-summary__note">
+                  {uiLanguage === 'zh'
+                    ? '图层素材仍沿用 IMAGE 任务草稿；文本策略会写入本地 PSD 草稿元数据，不创建 PSD 专属任务类型。'
+                    : 'Layer assets still use IMAGE task drafts; text policy is kept in local PSD draft metadata without creating PSD-specific task types.'}
+                </p>
               </div>
             ) : null}
 
@@ -1137,24 +1142,89 @@ const AIImagePsdGeneration = ({
                           </button>
                         </div>
                       </div>
-                    </article>
-                  ))}
-                </div>
-                <div className="psd-workflow-actions">
-                  <button type="button" onClick={handleAddLayer}>
-                    {uiLanguage === 'zh' ? '+ 添加图层' : '+ Add layer'}
-                  </button>
-                  <button type="button" onClick={handleGenerateLayerAssets}>
-                    {uiLanguage === 'zh'
-                      ? '建立图层生成骨架'
-                      : 'Create layer-generation skeleton'}
-                  </button>
-                  <button type="button" onClick={handleExportSkeleton}>
-                    {uiLanguage === 'zh'
-                      ? '准备导出骨架'
-                      : 'Prepare export skeleton'}
-                  </button>
-                </div>
+                      <textarea
+                        className="psd-layer-description-input"
+                        value={layer.description}
+                        onChange={(event) =>
+                          handleLayerChange(layer.id, 'description', event.target.value)
+                        }
+                        aria-label={
+                          uiLanguage === 'zh'
+                            ? `${layer.name} 图层说明`
+                            : `${layer.name} layer description`
+                        }
+                      />
+                      <textarea
+                        className="psd-layer-prompt-input"
+                        value={layer.generationPrompt}
+                        onChange={(event) =>
+                          handleLayerChange(
+                            layer.id,
+                            'generationPrompt',
+                            event.target.value
+                          )
+                        }
+                        aria-label={
+                          uiLanguage === 'zh'
+                            ? `${layer.name} 生成提示词`
+                            : `${layer.name} generation prompt`
+                        }
+                        placeholder={
+                          uiLanguage === 'zh'
+                            ? '给图片生成任务的图层素材提示词'
+                            : 'Prompt for this layer asset image task'
+                        }
+                      />
+                      <div className="psd-layer-actions">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveLayer(layer.id, -1)}
+                          disabled={index === 0}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveLayer(layer.id, 1)}
+                          disabled={index === plan.layers.length - 1}
+                        >
+                          ↓
+                        </button>
+                        <button type="button" onClick={() => handleDuplicateLayer(layer.id)}>
+                          {uiLanguage === 'zh' ? '复制' : 'Duplicate'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveLayer(layer.id)}
+                          disabled={layer.locked}
+                          title={
+                            layer.locked
+                              ? uiLanguage === 'zh'
+                                ? '基础图层已锁定，避免破坏 PSD 草稿结构'
+                                : 'Base layer is locked to preserve the PSD draft structure'
+                              : undefined
+                          }
+                        >
+                          {uiLanguage === 'zh' ? '删除' : 'Delete'}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              <div className="psd-workflow-actions">
+                <button type="button" onClick={handleAddLayer}>
+                  {uiLanguage === 'zh' ? '+ 添加图层' : '+ Add layer'}
+                </button>
+                <button type="button" onClick={handleGenerateLayerAssets}>
+                  {uiLanguage === 'zh'
+                    ? '建立图层生成骨架'
+                    : 'Create layer-generation skeleton'}
+                </button>
+                <button type="button" onClick={handleExportSkeleton}>
+                  {uiLanguage === 'zh' ? '准备导出骨架' : 'Prepare export skeleton'}
+                </button>
+              </div>
               </>
             ) : (
               <div className="psd-layer-empty-state">

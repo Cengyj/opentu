@@ -335,6 +335,13 @@
   }
 }
 
+.psd-draft-summary__note {
+  margin: 0;
+  color: var(--color-text-secondary, #666);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .psd-preview-empty {
   display: flex;
   flex-direction: column;
