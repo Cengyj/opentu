@@ -1,11 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssetType } from '../../types/asset.types';
 import { TaskType } from '../../types/task.types';
 import AIImagePsdGeneration, { buildLayerPlan } from './ai-psd-generation';
 import { buildPsdLayerImageTaskDrafts } from './ai-psd-draft';
+
+const mockState = vi.hoisted(() => ({
+  actionButtonProps: [] as Array<Record<string, unknown>>,
+}));
 
 vi.mock('tdesign-react', () => ({
   MessagePlugin: {
@@ -111,6 +115,7 @@ interface MockActionButtonsProps {
   onGenerate: () => void;
   onReset: () => void;
   canGenerate: boolean;
+  hasGenerated: boolean;
   generateLabel?: string;
 }
 
@@ -124,16 +129,26 @@ vi.mock('./shared', () => ({
     onGenerate,
     onReset,
     canGenerate,
+    hasGenerated,
     generateLabel,
   }: MockActionButtonsProps) => (
-    <div>
-      <button type="button" onClick={onGenerate} disabled={!canGenerate}>
-        {generateLabel || '生成'}
-      </button>
-      <button type="button" onClick={onReset}>
-        重置
-      </button>
-    </div>
+    (() => {
+      mockState.actionButtonProps.push({
+        canGenerate,
+        hasGenerated,
+        generateLabel,
+      });
+      return (
+        <div>
+          <button type="button" onClick={onGenerate} disabled={!canGenerate}>
+            {generateLabel || '生成'}
+          </button>
+          <button type="button" onClick={onReset}>
+            重置
+          </button>
+        </div>
+      );
+    })()
   ),
   ErrorDisplay: ({ error }: { error: string | null }) =>
     error ? <div role="alert">{error}</div> : null,
@@ -220,6 +235,31 @@ describe('buildLayerPlan', () => {
     expect(plan.layers.every((layer) => layer.visible)).toBe(true);
   });
 
+  it('writes editable-text policy into local text-layer prompts', () => {
+    const plan = buildLayerPlan(
+      '新品发布海报，标题后续需要改字',
+      'poster',
+      'ai-plan',
+      5,
+      'zh',
+      {
+        preferEditableText: true,
+        avoidBakedText: true,
+      }
+    );
+
+    expect(plan.textPolicy).toEqual({
+      preferEditableText: true,
+      avoidBakedText: true,
+    });
+    expect(plan.layers[2].generationPrompt).toContain(
+      '图片任务只生成版式占位和氛围'
+    );
+    expect(plan.layers[2].generationPrompt).toContain(
+      '不要让图片模型直接生成清晰文字'
+    );
+  });
+
   it('builds IMAGE task drafts for visual layers without native PSD claims', () => {
     const plan = buildLayerPlan(
       '品牌活动海报，产品主体需要独立图层',
@@ -250,6 +290,7 @@ describe('buildLayerPlan', () => {
     expect(taskDrafts[0].params.psdDraft).toMatchObject({
       draftId: plan.draftId,
       layerId: 'psd-layer-1',
+      textPolicy: plan.textPolicy,
       exportTarget: 'psd',
       nativePsdReady: false,
     });
@@ -260,39 +301,13 @@ describe('buildLayerPlan', () => {
     expect(taskDrafts[0].params.promptMeta?.tags).toContain('psd-draft');
   });
 
-  it('keeps draft layers editable and includes export-skeleton guidance layers', () => {
-    const plan = buildLayerPlan(
-      '社媒封面，保留安全区参考',
-      'social',
-      'quick',
-      8,
-      'zh'
-    );
-
-    expect(plan.title).toBe('社媒封面，保留安全区参考');
-    expect(plan.layers).toHaveLength(8);
-    expect(plan.layers[0]).toMatchObject({
-      name: '背景层',
-      type: 'background',
-      visible: true,
-      locked: true,
-    });
-    expect(plan.layers.map((layer) => layer.name)).toEqual([
-      '背景层',
-      '视觉主体',
-      '标题文字',
-      '辅助信息',
-      '装饰元素',
-      '前景强调',
-      '调色/说明层',
-      '安全边距参考',
-    ]);
-    expect(plan.layers.every((layer) => layer.visible)).toBe(true);
-  });
 });
 
 describe('AIImagePsdGeneration contract', () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    mockState.actionButtonProps = [];
+  });
 
   it('exports the PSD mode component for lazy dialog loading', () => {
     expect(AIImagePsdGeneration).toBeTypeOf('function');
@@ -310,5 +325,32 @@ describe('AIImagePsdGeneration contract', () => {
     expect(
       screen.queryByText(/直接返回原生 PSD 文件|native PSD files returned/i)
     ).toBeNull();
+  });
+
+  it('updates PSD button state and prevents deleting locked base layers', () => {
+    render(<AIImagePsdGeneration initialPrompt="品牌活动海报" />);
+
+    let latestActionProps =
+      mockState.actionButtonProps[mockState.actionButtonProps.length - 1];
+    expect(latestActionProps).toMatchObject({
+      canGenerate: true,
+      hasGenerated: false,
+      generateLabel: '生成 PSD 结构',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 结构' }));
+
+    latestActionProps =
+      mockState.actionButtonProps[mockState.actionButtonProps.length - 1];
+    expect(latestActionProps).toMatchObject({
+      canGenerate: true,
+      hasGenerated: true,
+      generateLabel: '重新规划 PSD',
+    });
+    expect(screen.getByText(/图层素材仍沿用 IMAGE 任务草稿/)).toBeTruthy();
+
+    const deleteButtons = screen.getAllByRole('button', { name: '删除' });
+    expect((deleteButtons[0] as HTMLButtonElement).disabled).toBe(true);
+    expect((deleteButtons[1] as HTMLButtonElement).disabled).toBe(false);
   });
 });
