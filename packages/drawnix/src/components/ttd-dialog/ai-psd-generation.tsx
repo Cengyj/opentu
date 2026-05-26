@@ -56,7 +56,10 @@ const PSD_WORKFLOW_STEPS = {
   zh: [
     { title: '图像生成', description: '上传原图/参考图并描述目标海报' },
     { title: '思考拆层', description: '识别背景、主体、文字、装饰和层级' },
-    { title: '源设置', description: '按 Photoshop/PSD 兼容结构准备导出源' },
+    {
+      title: '源设置：Photoshop',
+      description: '按 Photoshop/PSD 兼容结构准备导出源',
+    },
     { title: '导出编辑', description: 'PSD 打包接入后下载并在 Photoshop 打开' },
   ],
   en: [
@@ -329,40 +332,6 @@ const AIImagePsdGeneration = ({
   const generatedLayerCount = plan?.layers.filter(
     (layer) => layer.status === 'queued'
   ).length;
-  const workflowStages = [
-    {
-      key: 'image',
-      title: uiLanguage === 'zh' ? '图像生成' : 'Image generation',
-      description:
-        uiLanguage === 'zh'
-          ? '使用参考图和提示词建立海报/设计基础。'
-          : 'Use the reference image and prompt to establish the poster/design base.',
-    },
-    {
-      key: 'thinking',
-      title: uiLanguage === 'zh' ? '思考拆层' : 'Thinking layer split',
-      description:
-        uiLanguage === 'zh'
-          ? '识别画布、元素坐标、层级顺序和可编辑文字。'
-          : 'Identify canvas, element coordinates, stacking order, and editable text.',
-    },
-    {
-      key: 'photoshop',
-      title: uiLanguage === 'zh' ? '源设置：Photoshop' : 'Source: Photoshop',
-      description:
-        uiLanguage === 'zh'
-          ? '为后续 Photoshop/PSD 打包保留导出元数据。'
-          : 'Keep export metadata ready for later Photoshop/PSD packaging.',
-    },
-    {
-      key: 'export',
-      title: uiLanguage === 'zh' ? '导出与编辑' : 'Export and edit',
-      description:
-        uiLanguage === 'zh'
-          ? '当前先准备可叠放图层素材，不伪装原生 PSD 下载。'
-          : 'Prepare stackable layer assets first; do not fake a native PSD download.',
-    },
-  ];
 
   return (
     <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--one-click">
@@ -444,28 +413,6 @@ const AIImagePsdGeneration = ({
             }
             showReset={false}
           />
-
-          <ol className="psd-workflow-stages" aria-label="PSD workflow stages">
-            {workflowStages.map((stage, index) => {
-              const isActive = Boolean(plan) || isQueuingLayerTasks;
-              return (
-                <li
-                  key={stage.key}
-                  className={
-                    isActive
-                      ? 'psd-workflow-stage psd-workflow-stage--active'
-                      : 'psd-workflow-stage'
-                  }
-                >
-                  <span className="psd-workflow-stage__index">{index + 1}</span>
-                  <span>
-                    <strong>{stage.title}</strong>
-                    <small>{stage.description}</small>
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
 
           {plan ? (
             <div className="psd-generation-status" role="status">

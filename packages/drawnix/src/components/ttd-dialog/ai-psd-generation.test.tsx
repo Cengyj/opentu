@@ -401,7 +401,9 @@ describe('buildLayerPlan', () => {
       expect(taskPlan.params.psdPlan?.exportSource).toBe('photoshop');
       expect(taskPlan.params.psdPlan?.apiNativePsdOutput).toBe(false);
       expect(taskPlan.params.outputFormat).toBe('png');
-      expect(taskPlan.params.background).toBe('transparent');
+      expect(taskPlan.params.background).toBe(
+        PSD_LAYER_IMAGE_TASK_CONTRACT.background
+      );
       expect(taskPlan.params.prompt).toMatch(/later app-side PSD packaging/i);
     }
   });
@@ -427,7 +429,7 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.getByText(/只需要参考图和提示词/)).toBeTruthy();
     expect(screen.getByText('思考拆层')).toBeTruthy();
     expect(screen.getByText('源设置：Photoshop')).toBeTruthy();
-    expect(screen.getByText('导出与编辑')).toBeTruthy();
+    expect(screen.getByText('导出编辑')).toBeTruthy();
     expect(screen.getByText('说明')).toBeTruthy();
     expect((screen.getByLabelText('prompt') as HTMLTextAreaElement).value).toBe(
       ''
@@ -466,7 +468,9 @@ describe('AIImagePsdGeneration contract', () => {
       showPresetButton: false,
       showOptimizeButton: false,
     });
-    expect(screen.getByText(/公共图片 API 暂不直接返回原生 PSD/)).toBeTruthy();
+    expect(
+      screen.getByText(/公开图片 API 当前返回图片数据而不是原生 .psd/)
+    ).toBeTruthy();
   });
 
   it('updates PSD button state and queues layer asset generation from one click', async () => {
@@ -499,7 +503,7 @@ describe('AIImagePsdGeneration contract', () => {
       });
     });
     expect(screen.getByText('PSD 工作流已启动')).toBeTruthy();
-    expect(screen.getByText(/已开始准备 4 个同画布分层素材/)).toBeTruthy();
+    expect(screen.getByText(/已排队 4 个同画布分层素材/)).toBeTruthy();
     expect(screen.getByText(/当前不会伪装成原生 PSD 下载/)).toBeTruthy();
     expect(mockState.createTask).toHaveBeenCalledTimes(4);
     expect(screen.queryByText(`查看可选${'拆分'}明细`)).toBeNull();
