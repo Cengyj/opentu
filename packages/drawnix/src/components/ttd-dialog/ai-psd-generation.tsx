@@ -67,6 +67,9 @@ interface AIImagePsdGenerationProps {
   onModelRefChange?: (value: ModelRef | null) => void;
 }
 
+const EMPTY_REFERENCE_IMAGES: ReferenceImage[] = [];
+const EMPTY_KNOWLEDGE_CONTEXT_REFS: KnowledgeContextRef[] = [];
+
 export { buildLayerPlan };
 const AIImagePsdGeneration = ({
   initialPrompt = '',
