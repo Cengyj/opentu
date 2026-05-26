@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssetType } from '../../types/asset.types';
 import { TaskType } from '../../types/task.types';
@@ -211,6 +211,36 @@ describe('buildLayerPlan', () => {
     expect(`${taskDrafts[0].taskType}`).not.toBe('psd');
     expect(taskDrafts[0].params.promptMeta?.tags).toContain('psd-draft');
   });
+
+  it('keeps draft layers editable and includes export-skeleton guidance layers', () => {
+    const plan = buildLayerPlan(
+      '社媒封面，保留安全区参考',
+      'social',
+      'quick',
+      8,
+      'zh'
+    );
+
+    expect(plan.title).toBe('社媒封面，保留安全区参考');
+    expect(plan.layers).toHaveLength(8);
+    expect(plan.layers[0]).toMatchObject({
+      name: '背景层',
+      type: 'background',
+      visible: true,
+      locked: true,
+    });
+    expect(plan.layers.map((layer) => layer.name)).toEqual([
+      '背景层',
+      '视觉主体',
+      '标题文字',
+      '辅助信息',
+      '装饰元素',
+      '前景强调',
+      '调色/说明层',
+      '安全边距参考',
+    ]);
+    expect(plan.layers.every((layer) => layer.visible)).toBe(true);
+  });
 });
 
 describe('AIImagePsdGeneration contract', () => {
@@ -223,23 +253,13 @@ describe('AIImagePsdGeneration contract', () => {
   it('renders an editable PSD draft editor and layer workflow skeleton', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(screen.getByText('PSD 草稿编辑器 · Beta')).toBeTruthy();
-
-    fireEvent.change(screen.getByLabelText('prompt'), {
-      target: { value: '夏季新品活动海报，主体和文字需要分层' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 结构' }));
-
-    const firstLayerName = screen.getByLabelText('图层 1 名称') as HTMLInputElement;
-    expect(firstLayerName.value).toBe('背景层');
-
-    fireEvent.change(firstLayerName, { target: { value: '品牌渐变背景' } });
-    expect(firstLayerName.value).toBe('品牌渐变背景');
-
-    fireEvent.click(screen.getByRole('button', { name: '+ 添加图层' }));
-    expect(screen.getByDisplayValue('新图层 6')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: '建立图层生成骨架' }));
-    expect(screen.getAllByText('待生成素材').length).toBeGreaterThan(0);
+    expect(screen.getByRole('note').textContent).toContain('不直接返回原生 PSD');
+    expect(screen.getByText('PSD 输出配置')).toBeTruthy();
+    expect(screen.getByText('PSD 图层计划')).toBeTruthy();
+    expect(screen.getByText('尚未生成图层计划')).toBeTruthy();
+    expect(
+      screen.queryByText(/直接返回原生 PSD 文件|native PSD files returned/i)
+    ).toBeNull();
   });
+
 });
