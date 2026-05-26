@@ -6,7 +6,6 @@ import { AssetType } from '../../types/asset.types';
 import { TaskType } from '../../types/task.types';
 import AIImagePsdGeneration, { buildLayerPlan } from './ai-psd-generation';
 import { buildPsdLayerImageTaskDrafts } from './ai-psd-draft';
-import { TaskType } from '../../types/task.types';
 
 vi.mock('tdesign-react', () => ({
   MessagePlugin: {
