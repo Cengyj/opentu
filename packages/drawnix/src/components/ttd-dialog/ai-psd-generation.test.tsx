@@ -329,12 +329,12 @@ describe('AIImagePsdGeneration contract', () => {
     render(<AIImagePsdGeneration />);
 
     expect(screen.getAllByRole('note')[0].textContent).toContain(
-      '不直接返回原生 PSD'
+      '只需上传参考图并输入提示词'
     );
-    expect(screen.getByText(/无需先选择模板、策略或图层数量/)).toBeTruthy();
-    expect(screen.getByText('PSD 输出配置')).toBeTruthy();
-    expect(screen.getByText('可编辑 PSD 草稿')).toBeTruthy();
-    expect(screen.getByText('尚未生成图层计划')).toBeTruthy();
+    expect(screen.getByText(/点击“生成 PSD 文件”/)).toBeTruthy();
+    expect(screen.getByText(/像 GPT 一样/)).toBeTruthy();
+    expect(screen.queryByText('可编辑 PSD 草稿')).toBeNull();
+    expect(screen.queryByText('尚未生成图层计划')).toBeNull();
     expect(
       screen.queryByText(/直接返回原生 PSD 文件|native PSD files returned/i)
     ).toBeNull();
@@ -355,10 +355,10 @@ describe('AIImagePsdGeneration contract', () => {
     expect(latestActionProps).toMatchObject({
       canGenerate: true,
       hasGenerated: false,
-      generateLabel: '开始拆层',
+      generateLabel: '生成 PSD 文件',
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '开始拆层' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 文件' }));
 
     await waitFor(() => {
       latestActionProps =
@@ -366,12 +366,13 @@ describe('AIImagePsdGeneration contract', () => {
       expect(latestActionProps).toMatchObject({
         canGenerate: true,
         hasGenerated: true,
-        generateLabel: '重新发送图层任务',
+        generateLabel: '重新生成 PSD 文件',
       });
     });
-    expect(screen.getByText(/图层素材仍沿用 IMAGE 任务草稿/)).toBeTruthy();
+    expect(screen.getByText(/已按参考图自动拆分透明图层/)).toBeTruthy();
     expect(mockState.createTask).toHaveBeenCalledTimes(4);
 
+    fireEvent.click(screen.getByText('查看自动拆层明细（可选）'));
     const deleteButtons = screen.getAllByRole('button', { name: '删除' });
     expect((deleteButtons[0] as HTMLButtonElement).disabled).toBe(true);
     expect((deleteButtons[1] as HTMLButtonElement).disabled).toBe(false);

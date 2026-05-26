@@ -145,7 +145,7 @@ const AIImagePsdGeneration = ({
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [isQueuingLayerTasks, setIsQueuingLayerTasks] = useState(false);
   const [promptHistoryVersion, setPromptHistoryVersion] = useState(0);
-  const [isPreviewVisible, setIsPreviewVisible] = useState(true);
+  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(() => loadSavedWidth('psd'));
   const [mobilePanel, setMobilePanel] = useState<'config' | 'preview'>(
     'config'
@@ -336,6 +336,7 @@ const AIImagePsdGeneration = ({
       setPlan(titledPlan);
       setError(null);
       setMobilePanel('preview');
+      setIsPreviewVisible(true);
       savePromptToHistoryUtil('image', prompt.trim(), {
         width: 1024,
         height: 1024,
@@ -518,8 +519,8 @@ const AIImagePsdGeneration = ({
       if (uploadedImages.length === 0) {
         setError(
           uiLanguage === 'zh'
-            ? '请先上传要拆分的原始海报/参考图，再发送图层生成任务。'
-            : 'Upload the source poster/reference image before sending layer-generation tasks.'
+            ? '请先上传原始海报/参考图，然后生成 PSD 文件。'
+            : 'Upload the source poster/reference image before generating the PSD file.'
         );
         setMobilePanel('config');
         return;
@@ -564,8 +565,8 @@ const AIImagePsdGeneration = ({
         if (createdLayerIds.size > 0) {
           void MessagePlugin.success(
             uiLanguage === 'zh'
-              ? `已发送 ${createdLayerIds.size} 个 IMAGE 图层生成任务到队列`
-              : `Sent ${createdLayerIds.size} IMAGE layer tasks to the queue`
+              ? `已开始生成 PSD 文件素材（${createdLayerIds.size} 个透明图层任务）`
+              : `Started PSD file asset generation (${createdLayerIds.size} transparent layer tasks)`
           );
         } else {
           setError(
@@ -600,10 +601,26 @@ const AIImagePsdGeneration = ({
   );
 
   const handlePrimaryAction = useCallback(() => {
+    if (uploadedImages.length === 0) {
+      setError(
+        uiLanguage === 'zh'
+          ? '请先上传原始海报/参考图，然后生成 PSD 文件。'
+          : 'Upload a source poster/reference image before generating the PSD file.'
+      );
+      setMobilePanel('config');
+      return;
+    }
+
     const targetPlan = plan || handleGeneratePlan(false);
     if (!targetPlan) return;
     void handleGenerateLayerAssets(targetPlan);
-  }, [handleGenerateLayerAssets, handleGeneratePlan, plan]);
+  }, [
+    handleGenerateLayerAssets,
+    handleGeneratePlan,
+    plan,
+    uiLanguage,
+    uploadedImages.length,
+  ]);
 
   const handleExportSkeleton = useCallback(() => {
     if (!plan) return;
@@ -723,24 +740,24 @@ const AIImagePsdGeneration = ({
               <div>
                 <span className="psd-draft-hero__eyebrow">
                   {uiLanguage === 'zh'
-                    ? 'PSD 草稿编辑器 · Beta'
-                    : 'PSD Draft Editor · Beta'}
+                    ? '智能 PSD 生成'
+                    : 'Smart PSD Generation'}
                 </span>
                 <h2>
                   {uiLanguage === 'zh'
-                    ? '上传海报，输入拆层指令，一键开始拆层'
-                    : 'Upload a poster, enter one prompt, start layer extraction'}
+                    ? '像 GPT 一样：参考图 + 提示词，生成 PSD 文件'
+                    : 'Like GPT: reference image + prompt, generate a PSD file'}
                 </h2>
                 <p>
                   {uiLanguage === 'zh'
-                    ? '默认使用同画布、原坐标、透明背景的拆层指令；高级参数已折叠，普通用户不需要先配置。'
-                    : 'Defaults use same-canvas, original-coordinate, transparent-background extraction; advanced parameters are folded away.'}
+                    ? '不让用户调模板、策略、图层数量等参数；系统自动按图片内容拆层并准备 PSD 文件。'
+                    : 'No template, strategy, or layer-count tuning; the system analyzes the image and prepares a PSD automatically.'}
                 </p>
               </div>
               <ol className="psd-draft-steps" aria-label="PSD workflow steps">
-                <li>{uiLanguage === 'zh' ? '结构' : 'Structure'}</li>
-                <li>{uiLanguage === 'zh' ? '图层素材' : 'Layer assets'}</li>
-                <li>{uiLanguage === 'zh' ? '导出 PSD' : 'Export PSD'}</li>
+                <li>{uiLanguage === 'zh' ? '参考图' : 'Image'}</li>
+                <li>{uiLanguage === 'zh' ? '提示词' : 'Prompt'}</li>
+                <li>{uiLanguage === 'zh' ? 'PSD 文件' : 'PSD file'}</li>
               </ol>
             </section>
 
@@ -749,8 +766,8 @@ const AIImagePsdGeneration = ({
                 {uiLanguage === 'zh' ? 'PSD 说明：' : 'PSD note: '}
               </strong>
               {uiLanguage === 'zh'
-                ? 'OpenAI 兼容图片 API 不直接返回原生 PSD。Opentu 会先生成图层计划和预览，后续再由本地/服务端打包 PSD。'
-                : 'OpenAI-compatible image APIs do not directly return native PSD files. Opentu first creates a layer plan and preview, then a later local/server exporter can package PSD files.'}
+                ? '只需上传参考图并输入提示词；Opentu 会自动拆出透明图层并进入 PSD 文件准备流程。'
+                : 'Upload a reference image and prompt only; Opentu automatically prepares transparent layers for the PSD file flow.'}
             </div>
 
             <ReferenceImageUpload
@@ -786,8 +803,8 @@ const AIImagePsdGeneration = ({
                 {uiLanguage === 'zh' ? '推荐工作流：' : 'Recommended flow: '}
               </strong>
               {uiLanguage === 'zh'
-                ? '上传原始海报后直接点击“开始拆层”；无需先选择模板、策略或图层数量。'
-                : 'Upload the source poster and click “Start layer extraction”; no template, strategy, or layer-count setup is required first.'}
+                ? '上传参考图、保留默认提示词或改写一句需求，然后点击“生成 PSD 文件”。'
+                : 'Upload the reference image, keep or edit the prompt, then click “Generate PSD file”.'}
             </div>
 
             <div className="psd-primary-actions">
@@ -796,33 +813,34 @@ const AIImagePsdGeneration = ({
                 type="image"
                 isGenerating={isQueuingLayerTasks}
                 hasGenerated={Boolean(plan)}
-                canGenerate={!!prompt.trim()}
+                canGenerate={!!prompt.trim() && uploadedImages.length > 0}
                 onGenerate={handlePrimaryAction}
                 onReset={handleReset}
                 showQuantity={false}
                 generateLabel={
                   uiLanguage === 'zh'
                     ? plan
-                      ? '重新发送图层任务'
-                      : '开始拆层'
+                      ? '重新生成 PSD 文件'
+                      : '生成 PSD 文件'
                     : plan
-                    ? 'Resend layer tasks'
-                    : 'Start layer extraction'
+                    ? 'Regenerate PSD file'
+                    : 'Generate PSD file'
                 }
               />
               <p className="psd-primary-actions__hint">
                 {plan
                   ? uiLanguage === 'zh'
-                    ? '将为背景/主体/装饰等视觉层创建 IMAGE 图片任务，要求同画布、原坐标、透明背景。'
-                    : 'Creates IMAGE tasks for visual layers with same canvas, original coordinates, and transparent background.'
+                    ? '正在按参考图自动生成透明图层素材，后续用于合成 PSD 文件。'
+                    : 'Generating transparent layer assets from the reference image for the PSD file flow.'
                   : uiLanguage === 'zh'
-                  ? '系统会自动生成可编辑图层计划，并把背景/主体/装饰等视觉层发送到图片任务队列。'
-                  : 'The system automatically creates an editable plan and sends visual layers to the image task queue.'}
+                  ? '点击后系统自动分析图片、拆出透明图层并准备 PSD 文件；无需手动调参数。'
+                  : 'The system analyzes the image, creates transparent layers, and prepares the PSD file flow automatically.'}
               </p>
             </div>
 
             <details
-              className="psd-advanced-settings"
+              hidden
+              className="psd-advanced-settings psd-advanced-settings--developer"
               open={isAdvancedOpen}
               onToggle={(event) => setIsAdvancedOpen(event.currentTarget.open)}
             >
@@ -1034,13 +1052,13 @@ const AIImagePsdGeneration = ({
               <div>
                 <h3>
                   {uiLanguage === 'zh'
-                    ? '可编辑 PSD 草稿'
-                    : 'Editable PSD draft'}
+                    ? 'PSD 文件生成状态'
+                    : 'PSD file generation status'}
                 </h3>
                 <p>
                   {uiLanguage === 'zh'
-                    ? '确认图层名称、类型、提示词、顺序和可见性；发送后会进入图片任务队列。'
-                    : 'Confirm layer names, types, prompts, order, and visibility; sending creates image tasks in the queue.'}
+                    ? '系统已根据参考图和提示词自动拆层；普通用户无需调整参数。'
+                    : 'The system automatically splits layers from the reference image and prompt; no parameter tuning is required.'}
                 </p>
               </div>
               <span className="psd-preview-badge">
@@ -1109,8 +1127,8 @@ const AIImagePsdGeneration = ({
                 </div>
                 <p className="psd-draft-summary__note">
                   {uiLanguage === 'zh'
-                    ? '图层素材仍沿用 IMAGE 任务草稿；文本策略会写入本地 PSD 草稿元数据，不创建 PSD 专属任务类型。'
-                    : 'Layer assets still use IMAGE task drafts; text policy is kept in local PSD draft metadata without creating PSD-specific task types.'}
+                    ? '已按参考图自动拆分透明图层；这些素材会用于后续 PSD 文件打包流程。'
+                    : 'Transparent layers were prepared from the reference image for the later PSD packaging flow.'}
                 </p>
               </div>
             ) : null}
@@ -1138,29 +1156,29 @@ const AIImagePsdGeneration = ({
                   <div className="psd-preview-empty">
                     <strong>
                       {uiLanguage === 'zh'
-                        ? '尚未生成图层计划'
-                        : 'No layer plan yet'}
+                        ? '尚未生成 PSD 文件'
+                        : 'No PSD file yet'}
                     </strong>
                     <span>
                       {uiLanguage === 'zh'
-                        ? '上传原始海报后点击“开始拆层”。'
-                        : 'Upload the source poster and click “Start layer extraction”.'}
+                        ? '上传参考图后点击“生成 PSD 文件”。'
+                        : 'Upload a reference image and click “Generate PSD file”.'}
                     </span>
                     <ul className="psd-preview-empty__steps">
                       <li>
                         {uiLanguage === 'zh'
-                          ? '先写设计目标，再补参考图'
-                          : 'Start with the design goal and add references'}
+                          ? '上传参考图'
+                          : 'Upload a reference image'}
                       </li>
                       <li>
                         {uiLanguage === 'zh'
-                          ? '默认无需设置高级参数'
-                          : 'Advanced settings are optional'}
+                          ? '输入或保留默认提示词'
+                          : 'Enter or keep the default prompt'}
                       </li>
                       <li>
                         {uiLanguage === 'zh'
-                          ? '生成后再细调图层顺序/显隐'
-                          : 'Refine order and visibility after generation'}
+                          ? '系统自动拆层并准备 PSD'
+                          : 'The system splits layers and prepares PSD'}
                       </li>
                     </ul>
                   </div>
@@ -1169,7 +1187,12 @@ const AIImagePsdGeneration = ({
             </div>
 
             {plan ? (
-              <>
+              <details className="psd-layer-details">
+                <summary>
+                  {uiLanguage === 'zh'
+                    ? '查看自动拆层明细（可选）'
+                    : 'View automatic layer details (optional)'}
+                </summary>
                 <div className="psd-layer-list">
                   {plan.layers.map((layer, index) => (
                     <article
@@ -1338,8 +1361,8 @@ const AIImagePsdGeneration = ({
                     onClick={() => void handleGenerateLayerAssets()}
                   >
                     {uiLanguage === 'zh'
-                      ? '发送图层生成任务'
-                      : 'Send layer tasks'}
+                      ? '重新生成 PSD 文件'
+                      : 'Regenerate PSD file'}
                   </button>
                   <button type="button" onClick={handleExportSkeleton}>
                     {uiLanguage === 'zh'
@@ -1347,13 +1370,13 @@ const AIImagePsdGeneration = ({
                       : 'Prepare export skeleton'}
                   </button>
                 </div>
-              </>
+              </details>
             ) : (
               <div className="psd-layer-empty-state">
                 <p>
                   {uiLanguage === 'zh'
-                    ? '图层计划会包含背景、主体、文字、装饰和后期说明，便于后续打包为 PSD。'
-                    : 'The plan will include background, subject, text, decorations, and post-production notes for a later PSD package.'}
+                    ? '生成后会显示 PSD 文件准备状态。'
+                    : 'PSD file preparation status appears after generation.'}
                 </p>
               </div>
             )}

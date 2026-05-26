@@ -806,6 +806,46 @@
     padding: 12px;
     background: rgba(248, 250, 252, 0.68);
   }
+
+  .psd-layer-details {
+    border: 1px solid var(--color-border-light, #e8e8e8);
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+
+    summary {
+      padding: 11px 13px;
+      cursor: pointer;
+      color: var(--color-text-primary, #222);
+      font-size: 13px;
+      font-weight: 700;
+      list-style: none;
+
+      &::-webkit-details-marker {
+        display: none;
+      }
+
+      &::after {
+        content: '⌄';
+        float: right;
+        color: #b26b00;
+        transition: transform 0.18s ease;
+      }
+    }
+
+    &[open] summary {
+      border-bottom: 1px solid var(--color-border-light, #e8e8e8);
+
+      &::after {
+        transform: rotate(180deg);
+      }
+    }
+
+    .psd-layer-list,
+    .psd-workflow-actions {
+      margin: 12px;
+    }
+  }
 }
 
 @media (max-width: 768px) {
