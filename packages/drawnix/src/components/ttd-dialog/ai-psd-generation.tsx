@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import './ttd-dialog.scss';
 import './ai-image-generation.scss';
 import './ai-psd-generation.scss';
@@ -14,7 +14,12 @@ import {
   savePromptToHistory as savePromptToHistoryUtil,
   type ReferenceImage,
 } from './shared';
-import { TaskType, type KnowledgeContextRef } from '../../types/task.types';
+import {
+  TaskStatus,
+  TaskType,
+  type KnowledgeContextRef,
+  type Task,
+} from '../../types/task.types';
 import { DEFAULT_IMAGE_MODEL_ID } from '../../constants/model-config';
 import {
   createModelRef,
@@ -51,6 +56,144 @@ const EMPTY_REFERENCE_IMAGES: ReferenceImage[] = [];
 const EMPTY_KNOWLEDGE_CONTEXT_REFS: KnowledgeContextRef[] = [];
 
 export { buildLayerPlan };
+
+type PsdStatusTone = 'queued' | 'active' | 'success' | 'warning' | 'error';
+
+interface PsdTaskStats {
+  total: number;
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  terminal: number;
+  progressPercent: number;
+  isActive: boolean;
+  tone: PsdStatusTone;
+  title: string;
+  countSummary: string;
+  detail: string;
+}
+
+function getTaskBatchId(task: Task): string | null {
+  const batchId = task.params?.batchId;
+  return typeof batchId === 'string' ? batchId : null;
+}
+
+function getTaskBatchTotal(task: Task): number {
+  const batchTotal = task.params?.batchTotal;
+  return typeof batchTotal === 'number' && Number.isFinite(batchTotal)
+    ? batchTotal
+    : 0;
+}
+
+function buildPsdTaskStats(
+  psdTasks: Task[],
+  expectedTotal: number,
+  uiLanguage: 'zh' | 'en'
+): PsdTaskStats {
+  const taskBatchTotal = psdTasks.reduce(
+    (max, task) => Math.max(max, getTaskBatchTotal(task)),
+    0
+  );
+  const total = Math.max(psdTasks.length, expectedTotal, taskBatchTotal);
+  const completed = psdTasks.filter(
+    (task) => task.status === TaskStatus.COMPLETED
+  ).length;
+  const failed = psdTasks.filter(
+    (task) => task.status === TaskStatus.FAILED
+  ).length;
+  const cancelled = psdTasks.filter(
+    (task) => task.status === TaskStatus.CANCELLED
+  ).length;
+  const processing = psdTasks.filter(
+    (task) => task.status === TaskStatus.PROCESSING
+  ).length;
+  const observedPending = psdTasks.filter(
+    (task) => task.status === TaskStatus.PENDING
+  ).length;
+  const pending = observedPending + Math.max(total - psdTasks.length, 0);
+  const terminal = completed + failed + cancelled;
+  const isActive = total > 0 && terminal < total;
+  const progressPercent = total > 0 ? Math.round((terminal / total) * 100) : 0;
+
+  let tone: PsdStatusTone = 'queued';
+  let title: string;
+  let detail: string;
+
+  if (total > 0 && failed === total) {
+    tone = 'error';
+    title = uiLanguage === 'zh' ? 'PSD 分层生成失败' : 'PSD layer generation failed';
+    detail =
+      uiLanguage === 'zh'
+        ? '全部图层任务失败。请在任务队列查看错误详情，调整提示词或参考图后重试。'
+        : 'All layer tasks failed. Check task queue errors, then adjust the prompt or reference image and retry.';
+  } else if (failed > 0 || cancelled > 0) {
+    tone = 'warning';
+    title =
+      uiLanguage === 'zh'
+        ? '部分图层生成失败'
+        : 'Some PSD layers failed';
+    detail =
+      uiLanguage === 'zh'
+        ? '请在任务队列查看失败原因或重试；已完成的同画布素材仍可在任务队列或素材库查看。'
+        : 'Check the task queue for failure details or retry; completed same-canvas assets remain available in the task queue or media library.';
+  } else if (total > 0 && completed === total) {
+    tone = 'success';
+    title =
+      uiLanguage === 'zh'
+        ? 'PSD 分层素材已生成完成'
+        : 'PSD layer assets are ready';
+    detail =
+      uiLanguage === 'zh'
+        ? '可在任务队列或素材库查看结果；当前仍不是原生 PSD 下载，后续接入 PSD 打包器后才会提供 .psd 文件。'
+        : 'View results in the task queue or media library; this is still not a native PSD download until PSD packaging is wired.';
+  } else if (processing > 0) {
+    tone = 'active';
+    title =
+      uiLanguage === 'zh'
+        ? 'PSD 分层生成中'
+        : 'PSD layers are generating';
+    detail =
+      uiLanguage === 'zh'
+        ? '正在生成同画布图层素材，请保持页面打开；任务完成或失败后这里会自动更新。'
+        : 'Generating same-canvas layer assets. Keep this page open; this status updates on completion or failure.';
+  } else {
+    title =
+      uiLanguage === 'zh'
+        ? 'PSD 图层任务已排队'
+        : 'PSD layer tasks queued';
+    detail =
+      uiLanguage === 'zh'
+        ? `已排队 ${total} 个图层任务，等待开始生成；若长时间无变化，请打开任务队列查看是否缺少密钥、额度或接口错误。`
+        : `${total} layer tasks are queued. If this does not change, open the task queue to check credentials, quota, or API errors.`;
+  }
+
+  const countSummary =
+    uiLanguage === 'zh'
+      ? failed > 0 || cancelled > 0 || processing > 0 || pending > 0
+        ? `成功 ${completed} / 失败 ${failed} / 进行中 ${processing} / 排队 ${pending} / 总计 ${total}`
+        : `成功 ${completed} / 总计 ${total}`
+      : failed > 0 || cancelled > 0 || processing > 0 || pending > 0
+        ? `Completed ${completed} / Failed ${failed} / Processing ${processing} / Queued ${pending} / Total ${total}`
+        : `Completed ${completed} / Total ${total}`;
+
+  return {
+    total,
+    pending,
+    processing,
+    completed,
+    failed,
+    cancelled,
+    terminal,
+    progressPercent,
+    isActive,
+    tone,
+    title,
+    countSummary,
+    detail,
+  };
+}
 
 const PSD_WORKFLOW_STEPS = {
   zh: [
@@ -117,11 +260,13 @@ const AIImagePsdGeneration = ({
   const [knowledgeContextRefs, setKnowledgeContextRefs] = useState<
     KnowledgeContextRef[]
   >(initialKnowledgeContextRefs);
-  const { createTask } = useTaskQueue();
+  const { createTask, tasks } = useTaskQueue();
   const template: PsdTemplate = 'poster';
   const strategy: PsdLayerStrategy = 'ai-plan';
   const layerCount = 8;
   const [plan, setPlan] = useState<PsdGenerationPlan | null>(null);
+  const [psdTaskIds, setPsdTaskIds] = useState<string[]>([]);
+  const [psdBatchId, setPsdBatchId] = useState<string | null>(null);
   const [isQueuingLayerTasks, setIsQueuingLayerTasks] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const preferEditableText = true;
@@ -142,6 +287,8 @@ const AIImagePsdGeneration = ({
     setUploadedImages([]);
     setKnowledgeContextRefs([]);
     setPlan(null);
+    setPsdTaskIds([]);
+    setPsdBatchId(null);
     setError(null);
   }, []);
 
@@ -249,14 +396,21 @@ const AIImagePsdGeneration = ({
           extraParams: selectedParams,
         });
         const createdLayerIds = new Set<string>();
+        const createdTaskIds: string[] = [];
+        const nextBatchId = `${targetPlan.planId}-layers`;
+
+        setPsdTaskIds([]);
+        setPsdBatchId(nextBatchId);
 
         for (const taskPlan of layerTaskPlans) {
           const task = createTask(taskPlan.params, TaskType.IMAGE);
           if (task) {
             createdLayerIds.add(taskPlan.layerId);
+            createdTaskIds.push(task.id);
           }
         }
 
+        setPsdTaskIds(createdTaskIds);
         setPlan((current) => {
           const basePlan = current || targetPlan;
           return {
@@ -332,6 +486,23 @@ const AIImagePsdGeneration = ({
   const generatedLayerCount = plan?.layers.filter(
     (layer) => layer.status === 'queued'
   ).length;
+  const psdTasks = useMemo(() => {
+    if (!plan || (!psdTaskIds.length && !psdBatchId)) {
+      return [];
+    }
+
+    const psdTaskIdSet = new Set(psdTaskIds);
+    return tasks.filter((task) => {
+      if (psdTaskIdSet.has(task.id)) return true;
+      return Boolean(psdBatchId && getTaskBatchId(task) === psdBatchId);
+    });
+  }, [plan, psdBatchId, psdTaskIds, tasks]);
+  const expectedPsdTaskTotal =
+    psdTaskIds.length || generatedLayerCount || plan?.layers.length || 0;
+  const psdTaskStats = useMemo(
+    () => buildPsdTaskStats(psdTasks, expectedPsdTaskTotal, uiLanguage),
+    [expectedPsdTaskTotal, psdTasks, uiLanguage]
+  );
 
   return (
     <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--one-click">
@@ -400,7 +571,7 @@ const AIImagePsdGeneration = ({
           <ActionButtons
             language={uiLanguage}
             type="image"
-            isGenerating={isQueuingLayerTasks}
+            isGenerating={isQueuingLayerTasks || psdTaskStats.isActive}
             hasGenerated={false}
             canGenerate={!!prompt.trim() && uploadedImages.length > 0}
             onGenerate={handlePrimaryAction}
@@ -415,21 +586,36 @@ const AIImagePsdGeneration = ({
           />
 
           {plan ? (
-            <div className="psd-generation-status" role="status">
-              <strong>
-                {uiLanguage === 'zh'
-                  ? 'PSD 工作流已启动'
-                  : 'PSD workflow started'}
-              </strong>
-              <span>
-                {uiLanguage === 'zh'
-                  ? `已排队 ${
-                      generatedLayerCount || plan.layers.length
-                    } 个同画布分层素材，保留原坐标和 Photoshop/PSD 导出元数据；当前不会伪装成原生 PSD 下载。`
-                  : `Started preparing ${
-                      generatedLayerCount || plan.layers.length
-                    } same-canvas layer assets while preserving coordinates and Photoshop/PSD export metadata; no fake native PSD download is shown.`}
+            <div
+              className={`psd-generation-status psd-generation-status--${psdTaskStats.tone}`}
+              role="status"
+            >
+              <strong>{psdTaskStats.title}</strong>
+              <span className="psd-generation-status__counts">
+                {psdTaskStats.countSummary}
               </span>
+              <span>{psdTaskStats.detail}</span>
+              <div
+                className="psd-generation-status__progress"
+                aria-label={
+                  uiLanguage === 'zh'
+                    ? 'PSD 分层任务进度'
+                    : 'PSD layer task progress'
+                }
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={psdTaskStats.progressPercent}
+                role="progressbar"
+              >
+                <span
+                  style={{ width: `${psdTaskStats.progressPercent}%` }}
+                />
+              </div>
+              <small>
+                {uiLanguage === 'zh'
+                  ? '当前流程会生成同画布透明 PNG 图层源和 Photoshop/PSD 元数据，不会把未打包素材伪装成原生 .psd。'
+                  : 'This flow generates same-canvas transparent PNG layer sources and Photoshop/PSD metadata; it does not pretend unpackaged assets are a native .psd.'}
+              </small>
             </div>
           ) : null}
 

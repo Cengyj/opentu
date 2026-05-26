@@ -9,7 +9,7 @@ import {
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssetType } from '../../types/asset.types';
-import { TaskType } from '../../types/task.types';
+import { TaskStatus, TaskType, type Task } from '../../types/task.types';
 import AIImagePsdGeneration, { buildLayerPlan } from './ai-psd-generation';
 import {
   buildPsdLayerImageTaskPlans,
@@ -20,7 +20,10 @@ const mockState = vi.hoisted(() => ({
   actionButtonProps: [] as Array<Record<string, unknown>>,
   referenceUploadProps: [] as Array<Record<string, unknown>>,
   promptInputProps: [] as Array<Record<string, unknown>>,
-  createTask: vi.fn(() => ({ id: 'task-1' })),
+  tasks: [] as Task[],
+  createTask: vi.fn(() => ({
+    id: `task-${mockState.createTask.mock.calls.length}`,
+  })),
 }));
 
 vi.mock('tdesign-react', () => ({
@@ -44,6 +47,7 @@ vi.mock('../../hooks/useGenerationHistory', () => ({
 vi.mock('../../hooks/useTaskQueue', () => ({
   useTaskQueue: () => ({
     createTask: mockState.createTask,
+    tasks: mockState.tasks,
   }),
 }));
 
@@ -415,6 +419,7 @@ describe('AIImagePsdGeneration contract', () => {
     mockState.actionButtonProps = [];
     mockState.referenceUploadProps = [];
     mockState.promptInputProps = [];
+    mockState.tasks = [];
     mockState.createTask.mockClear();
   });
 
@@ -502,11 +507,128 @@ describe('AIImagePsdGeneration contract', () => {
         generateLabel: '准备 PSD 分层/导出',
       });
     });
-    expect(screen.getByText('PSD 工作流已启动')).toBeTruthy();
-    expect(screen.getByText(/已排队 4 个同画布分层素材/)).toBeTruthy();
-    expect(screen.getByText(/当前不会伪装成原生 PSD 下载/)).toBeTruthy();
+    expect(screen.getByText('PSD 图层任务已排队')).toBeTruthy();
+    expect(
+      screen.getByText(/成功 0 \/ 失败 0 \/ 进行中 0 \/ 排队 4 \/ 总计 4/)
+    ).toBeTruthy();
+    expect(screen.getByText(/打开任务队列查看/)).toBeTruthy();
+    expect(screen.getByText(/不会把未打包素材伪装成原生 \.psd/)).toBeTruthy();
     expect(mockState.createTask).toHaveBeenCalledTimes(4);
     expect(screen.queryByText(`查看可选${'拆分'}明细`)).toBeNull();
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
   });
+
+  it('summarizes completed PSD layer tasks instead of staying on a static started state', async () => {
+    const { rerender } = render(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '准备 PSD 分层/导出' }));
+
+    await waitFor(() => {
+      expect(mockState.createTask).toHaveBeenCalledTimes(4);
+    });
+
+    const createdBatchId = mockState.createTask.mock.calls[0]?.[0]?.batchId;
+    mockState.tasks = [0, 1, 2, 3].map((index) =>
+      createMockPsdTask({
+        id: `task-${index + 1}`,
+        status: TaskStatus.COMPLETED,
+        params: {
+          batchId: createdBatchId,
+          batchIndex: index,
+          batchTotal: 4,
+        },
+      })
+    );
+    rerender(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('PSD 分层素材已生成完成')).toBeTruthy();
+    expect(screen.getByText(/成功 4 \/ 总计 4/)).toBeTruthy();
+    expect(screen.getByText(/可在任务队列或素材库查看结果/)).toBeTruthy();
+    expect(screen.queryByText(/原生 PSD 下载已完成/)).toBeNull();
+  });
+
+  it('shows failed PSD layer counts and points users to task queue errors', async () => {
+    const { rerender } = render(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '准备 PSD 分层/导出' }));
+
+    await waitFor(() => {
+      expect(mockState.createTask).toHaveBeenCalledTimes(4);
+    });
+
+    const createdBatchId = mockState.createTask.mock.calls[0]?.[0]?.batchId;
+    mockState.tasks = [
+      createMockPsdTask({
+        id: 'task-1',
+        status: TaskStatus.COMPLETED,
+        params: { batchId: createdBatchId, batchIndex: 0, batchTotal: 4 },
+      }),
+      createMockPsdTask({
+        id: 'task-2',
+        status: TaskStatus.FAILED,
+        params: { batchId: createdBatchId, batchIndex: 1, batchTotal: 4 },
+        error: { code: 'API_ERROR', message: 'quota exceeded' },
+      }),
+      createMockPsdTask({
+        id: 'task-3',
+        status: TaskStatus.PROCESSING,
+        params: { batchId: createdBatchId, batchIndex: 2, batchTotal: 4 },
+      }),
+      createMockPsdTask({
+        id: 'task-4',
+        status: TaskStatus.PENDING,
+        params: { batchId: createdBatchId, batchIndex: 3, batchTotal: 4 },
+      }),
+    ];
+    rerender(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('部分图层生成失败')).toBeTruthy();
+    expect(
+      screen.getByText(/成功 1 \/ 失败 1 \/ 进行中 1 \/ 排队 1 \/ 总计 4/)
+    ).toBeTruthy();
+    expect(screen.getByText(/请在任务队列查看失败原因或重试/)).toBeTruthy();
+  });
 });
+
+function createMockPsdTask(overrides: Partial<Task> = {}): Task {
+  return {
+    id: 'task-1',
+    type: TaskType.IMAGE,
+    status: TaskStatus.PENDING,
+    params: {
+      prompt: 'psd layer',
+      ...(overrides.params || {}),
+    },
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    ...overrides,
+  };
+}
