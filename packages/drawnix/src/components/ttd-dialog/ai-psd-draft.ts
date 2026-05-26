@@ -150,7 +150,9 @@ export function buildLayerPlan(
   const basePrompt = prompt.trim();
   const templateLabel = getTemplateLabel(template, language);
   const isZh = language === 'zh';
-  const layerSeeds: Array<Omit<PsdLayerDraft, 'id' | 'visible'>> = [
+  const layerSeeds: Array<
+    Omit<PsdLayerDraft, 'id' | 'visible' | 'generationPrompt' | 'opacity' | 'status'>
+  > = [
     {
       name: isZh ? '背景层' : 'Background',
       type: 'background',
