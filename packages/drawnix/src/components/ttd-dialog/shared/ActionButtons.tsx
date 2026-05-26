@@ -117,11 +117,11 @@ export const ActionButtons: React.FC<ActionButtonsProps> = ({
     if (isGenerating) {
       return language === 'zh' ? '生成中...' : 'Generating...';
     }
-    if (hasGenerated) {
-      return language === 'zh' ? '重新生成' : 'Regenerate';
-    }
     if (generateLabel) {
       return generateLabel;
+    }
+    if (hasGenerated) {
+      return language === 'zh' ? '重新生成' : 'Regenerate';
     }
     if (type === 'video') {
       return language === 'zh' ? '生成视频' : 'Generate Video';

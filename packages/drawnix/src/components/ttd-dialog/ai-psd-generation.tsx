@@ -67,6 +67,9 @@ interface AIImagePsdGenerationProps {
   onModelRefChange?: (value: ModelRef | null) => void;
 }
 
+const EMPTY_REFERENCE_IMAGES: ReferenceImage[] = [];
+const EMPTY_KNOWLEDGE_CONTEXT_REFS: KnowledgeContextRef[] = [];
+
 export { buildLayerPlan };
 const AIImagePsdGeneration = ({
   initialPrompt = '',
@@ -244,7 +247,11 @@ const AIImagePsdGeneration = ({
       template,
       strategy,
       layerCount,
-      uiLanguage
+      uiLanguage,
+      {
+        preferEditableText,
+        avoidBakedText,
+      }
     );
     const resolvedTitle = draftTitle.trim() || nextPlan.title;
     const titledPlan = { ...nextPlan, title: resolvedTitle };
@@ -257,7 +264,16 @@ const AIImagePsdGeneration = ({
     void MessagePlugin.success(
       uiLanguage === 'zh' ? '已生成 PSD 图层计划' : 'PSD layer plan generated'
     );
-  }, [draftTitle, layerCount, prompt, strategy, template, uiLanguage]);
+  }, [
+    avoidBakedText,
+    draftTitle,
+    layerCount,
+    preferEditableText,
+    prompt,
+    strategy,
+    template,
+    uiLanguage,
+  ]);
 
   const handleToggleLayer = useCallback((layerId: string) => {
     setPlan((current) =>
@@ -796,6 +812,15 @@ const AIImagePsdGeneration = ({
                   <span>
                     {uiLanguage === 'zh' ? '任务：沿用 IMAGE' : 'Tasks: IMAGE only'}
                   </span>
+                  <span>
+                    {plan.textPolicy.preferEditableText
+                      ? uiLanguage === 'zh'
+                        ? '文字：优先可编辑'
+                        : 'Text: editable first'
+                      : uiLanguage === 'zh'
+                      ? '文字：按图层说明'
+                      : 'Text: follow layer notes'}
+                  </span>
                 </div>
               </div>
             ) : null}
@@ -810,7 +835,11 @@ const AIImagePsdGeneration = ({
                       <span
                         key={layer.id}
                         className={`psd-preview-shape psd-preview-shape--${layer.type}`}
-                        style={{ ['--layer-index' as string]: index }}
+                        style={{
+                          transform: `translate(${(index - 2) * 18}px, ${
+                            (index - 2) * 12
+                          }px)`,
+                        }}
                       >
                         {getLayerTypeLabel(layer.type, uiLanguage)}
                       </span>

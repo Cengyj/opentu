@@ -33,6 +33,10 @@ export interface PsdPlanDraft {
   title: string;
   template: PsdTemplate;
   strategy: PsdLayerStrategy;
+  textPolicy: {
+    preferEditableText: boolean;
+    avoidBakedText: boolean;
+  };
   layers: PsdLayerDraft[];
   exportSkeleton: {
     target: 'psd';
@@ -145,7 +149,11 @@ export function buildLayerPlan(
   template: PsdTemplate,
   strategy: PsdLayerStrategy,
   layerCount: number,
-  language: 'zh' | 'en'
+  language: 'zh' | 'en',
+  textPolicy: PsdPlanDraft['textPolicy'] = {
+    preferEditableText: true,
+    avoidBakedText: true,
+  }
 ): PsdPlanDraft {
   const basePrompt = prompt.trim();
   const templateLabel = getTemplateLabel(template, language);
@@ -225,10 +233,19 @@ export function buildLayerPlan(
     title: basePrompt || (isZh ? `${templateLabel} PSD 计划` : `${templateLabel} PSD plan`),
     template,
     strategy,
+    textPolicy,
     layers: layerSeeds.slice(0, count).map((layer, index) => ({
       ...layer,
       id: `psd-layer-${index + 1}`,
-      generationPrompt: layer.description,
+      generationPrompt:
+        layer.type === 'text' && textPolicy.avoidBakedText
+          ? [
+              layer.description,
+              isZh
+                ? '重要文字请保留为后续可编辑文本层，不要让图片模型直接生成清晰文字。'
+                : 'Keep important copy as a later editable text layer; do not ask the image model to render crisp text directly.',
+            ].join('\n')
+          : layer.description,
       visible: true,
       opacity: 100,
       status: 'draft',

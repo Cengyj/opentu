@@ -83,4 +83,22 @@ describe('ActionButtons', () => {
 
     expect(onGenerate).toHaveBeenCalledWith(undefined);
   });
+
+  it('keeps a custom generate label after content has been generated', () => {
+    render(
+      <ActionButtons
+        language="zh"
+        type="image"
+        isGenerating={false}
+        hasGenerated={true}
+        canGenerate={true}
+        onGenerate={vi.fn()}
+        onReset={vi.fn()}
+        showQuantity={false}
+        generateLabel="重新规划 PSD"
+      />
+    );
+
+    expect(screen.getByRole('button', { name: '重新规划 PSD' })).toBeTruthy();
+  });
 });

@@ -247,10 +247,24 @@ const TTDDialogComponent = ({
 
   // 移动端/平板端自动切换回单图模式
   useEffect(() => {
+    const hasInitialContent =
+      (aiImageData.initialImages && aiImageData.initialImages.length > 0) ||
+      (aiImageData.initialPrompt && aiImageData.initialPrompt.trim() !== '');
+
+    if (hasInitialContent && imageGenerationMode !== 'single') {
+      setImageGenerationMode('single');
+      return;
+    }
+
     if (!showBatchTab && imageGenerationMode === 'batch') {
       setImageGenerationMode('single');
     }
-  }, [showBatchTab, imageGenerationMode]);
+  }, [
+    aiImageData.initialImages,
+    aiImageData.initialPrompt,
+    showBatchTab,
+    imageGenerationMode,
+  ]);
 
   // 处理图片生成模式变化
   const handleImageModeChange = useCallback((mode: ImageGenerationMode) => {

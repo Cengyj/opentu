@@ -327,7 +327,6 @@
   font-size: 12px;
   font-weight: 600;
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
-  transform: translate(calc((var(--layer-index) - 2) * 18px), calc((var(--layer-index) - 2) * 12px));
 }
 
 .psd-preview-shape--background {
