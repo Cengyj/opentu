@@ -3,6 +3,8 @@ import React from 'react';
 import { cleanup } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import AIImagePsdGeneration, { buildLayerPlan } from './ai-psd-generation';
+import { buildPsdLayerImageTaskDrafts } from './ai-psd-draft';
+import { TaskType } from '../../types/task.types';
 
 vi.mock('tdesign-react', () => ({
   MessagePlugin: {
@@ -157,6 +159,49 @@ describe('buildLayerPlan', () => {
     expect(plan.layers.every((layer) => !layer.id.includes('TaskType.PSD'))).toBe(
       true
     );
+    expect(plan.exportSkeleton).toEqual({
+      target: 'psd',
+      status: 'draft',
+      nativePsdReady: false,
+    });
+  });
+
+  it('builds IMAGE task drafts for visual PSD layers without native PSD claims', () => {
+    const plan = buildLayerPlan(
+      '品牌活动海报，产品主体需要独立图层',
+      'poster',
+      'ai-plan',
+      5,
+      'zh'
+    );
+
+    const taskDrafts = buildPsdLayerImageTaskDrafts(plan, {
+      model: 'image-model',
+      modelRef: { profileId: 'default', modelId: 'image-model' },
+      size: '1024x1024',
+      width: 1024,
+      height: 1024,
+      extraParams: { size: '1024x1024' },
+    });
+
+    expect(taskDrafts).toHaveLength(3);
+    expect(taskDrafts.every((draft) => draft.taskType === TaskType.IMAGE)).toBe(
+      true
+    );
+    expect(taskDrafts.map((draft) => draft.layerId)).toEqual([
+      'psd-layer-1',
+      'psd-layer-2',
+      'psd-layer-5',
+    ]);
+    expect(taskDrafts[0].params.psdDraft).toMatchObject({
+      draftId: plan.draftId,
+      layerId: 'psd-layer-1',
+      exportTarget: 'psd',
+      nativePsdReady: false,
+    });
+    expect(taskDrafts[0].params.prompt).toContain('Do not claim or embed a native PSD file');
+    expect(`${taskDrafts[0].taskType}`).not.toBe('psd');
+    expect(taskDrafts[0].params.promptMeta?.tags).toContain('psd-draft');
   });
 });
 
