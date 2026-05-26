@@ -16,7 +16,6 @@ import {
 } from './shared';
 import {
   TaskStatus,
-  TaskType,
   type KnowledgeContextRef,
   type Task,
 } from '../../types/task.types';
@@ -35,7 +34,7 @@ import {
 } from '../../utils/model-selection';
 import {
   buildLayerPlan,
-  buildPsdLayerImageTaskPlans,
+  buildPsdReadyImageTaskPlan,
   getDefaultPsdLayerExtractionPrompt,
   type PsdLayerStrategy,
   type PsdGenerationPlan,
@@ -123,50 +122,51 @@ function buildPsdTaskStats(
 
   if (total > 0 && failed === total) {
     tone = 'error';
-    title = uiLanguage === 'zh' ? 'PSD 分层生成失败' : 'PSD layer generation failed';
+    title =
+      uiLanguage === 'zh'
+        ? 'PSD-ready 生成失败'
+        : 'PSD-ready generation failed';
     detail =
       uiLanguage === 'zh'
-        ? '全部图层任务失败。请在任务队列查看错误详情，调整提示词或参考图后重试。'
-        : 'All layer tasks failed. Check task queue errors, then adjust the prompt or reference image and retry.';
+        ? '任务失败。请在任务队列查看错误详情，调整提示词或参考图后重试。'
+        : 'The task failed. Check task queue errors, then adjust the prompt or reference image and retry.';
   } else if (failed > 0 || cancelled > 0) {
     tone = 'warning';
     title =
       uiLanguage === 'zh'
-        ? '部分图层生成失败'
-        : 'Some PSD layers failed';
+        ? 'PSD-ready 任务未完成'
+        : 'PSD-ready task did not complete';
     detail =
       uiLanguage === 'zh'
-        ? '请在任务队列查看失败原因或重试；已完成的同画布素材仍可在任务队列或素材库查看。'
-        : 'Check the task queue for failure details or retry; completed same-canvas assets remain available in the task queue or media library.';
+        ? '请在任务队列查看失败原因或重试；已完成结果仍可在任务队列或素材库查看。'
+        : 'Check the task queue for failure details or retry; completed results remain available in the task queue or media library.';
   } else if (total > 0 && completed === total) {
     tone = 'success';
     title =
       uiLanguage === 'zh'
-        ? 'PSD 分层素材已生成完成'
-        : 'PSD layer assets are ready';
+        ? 'PSD-ready 图片已生成完成'
+        : 'PSD-ready image is ready';
     detail =
       uiLanguage === 'zh'
-        ? '可在任务队列或素材库查看结果；当前仍不是原生 PSD 下载，后续接入 PSD 打包器后才会提供 .psd 文件。'
-        : 'View results in the task queue or media library; this is still not a native PSD download until PSD packaging is wired.';
+        ? '可在任务队列或素材库查看结果；当前不是原生 PSD 下载，后续接入 PSD 打包器后再提供 .psd 文件。'
+        : 'View results in the task queue or media library; this is not a native PSD download until PSD packaging is wired.';
   } else if (processing > 0) {
     tone = 'active';
     title =
       uiLanguage === 'zh'
-        ? 'PSD 分层生成中'
-        : 'PSD layers are generating';
+        ? 'PSD-ready 生成中'
+        : 'PSD-ready image is generating';
     detail =
       uiLanguage === 'zh'
-        ? '正在生成同画布图层素材，请保持页面打开；任务完成或失败后这里会自动更新。'
-        : 'Generating same-canvas layer assets. Keep this page open; this status updates on completion or failure.';
+        ? '正在生成 PSD-ready 结果，请保持页面打开；任务完成或失败后这里会自动更新。'
+        : 'Generating the PSD-ready result. Keep this page open; this status updates on completion or failure.';
   } else {
     title =
-      uiLanguage === 'zh'
-        ? 'PSD 图层任务已排队'
-        : 'PSD layer tasks queued';
+      uiLanguage === 'zh' ? 'PSD-ready 任务已排队' : 'PSD-ready task queued';
     detail =
       uiLanguage === 'zh'
-        ? `已排队 ${total} 个图层任务，等待开始生成；若长时间无变化，请打开任务队列查看是否缺少密钥、额度或接口错误。`
-        : `${total} layer tasks are queued. If this does not change, open the task queue to check credentials, quota, or API errors.`;
+        ? '已排队 1 个 GPT Image 编辑任务，等待开始生成；若长时间无变化，请打开任务队列查看是否缺少密钥、额度或接口错误。'
+        : 'One GPT Image edit task is queued. If this does not change, open the task queue to check credentials, quota, or API errors.';
   }
 
   const countSummary =
@@ -175,8 +175,8 @@ function buildPsdTaskStats(
         ? `成功 ${completed} / 失败 ${failed} / 进行中 ${processing} / 排队 ${pending} / 总计 ${total}`
         : `成功 ${completed} / 总计 ${total}`
       : failed > 0 || cancelled > 0 || processing > 0 || pending > 0
-        ? `Completed ${completed} / Failed ${failed} / Processing ${processing} / Queued ${pending} / Total ${total}`
-        : `Completed ${completed} / Total ${total}`;
+      ? `Completed ${completed} / Failed ${failed} / Processing ${processing} / Queued ${pending} / Total ${total}`
+      : `Completed ${completed} / Total ${total}`;
 
   return {
     total,
@@ -376,8 +376,8 @@ const AIImagePsdGeneration = ({
       if (uploadedImages.length === 0) {
         setError(
           uiLanguage === 'zh'
-            ? '请先上传原始海报或参考图，再准备 PSD 分层。'
-            : 'Upload the source poster or reference image before preparing PSD layers.'
+            ? '请先上传原始海报或参考图，再生成 PSD-ready 结果。'
+            : 'Upload the source poster or reference image before generating a PSD-ready result.'
         );
         return;
       }
@@ -385,7 +385,7 @@ const AIImagePsdGeneration = ({
       setIsQueuingLayerTasks(true);
       try {
         const serializableImages = await convertUploadedImagesToSerializable();
-        const layerTaskPlans = buildPsdLayerImageTaskPlans(targetPlan, {
+        const taskPlan = buildPsdReadyImageTaskPlan(targetPlan, {
           model: currentModel,
           modelRef: currentModelRef,
           uploadedImages: serializableImages,
@@ -394,56 +394,44 @@ const AIImagePsdGeneration = ({
           width: 1024,
           height: 1024,
           extraParams: selectedParams,
+          language: uiLanguage,
         });
-        const createdLayerIds = new Set<string>();
-        const createdTaskIds: string[] = [];
-        const nextBatchId = `${targetPlan.planId}-layers`;
+        const nextBatchId = taskPlan.params.batchId as string;
+        const task = createTask(taskPlan.params, taskPlan.taskType);
 
-        setPsdTaskIds([]);
+        setPsdTaskIds(task ? [task.id] : []);
         setPsdBatchId(nextBatchId);
-
-        for (const taskPlan of layerTaskPlans) {
-          const task = createTask(taskPlan.params, TaskType.IMAGE);
-          if (task) {
-            createdLayerIds.add(taskPlan.layerId);
-            createdTaskIds.push(task.id);
-          }
-        }
-
-        setPsdTaskIds(createdTaskIds);
         setPlan((current) => {
           const basePlan = current || targetPlan;
           return {
             ...basePlan,
             layers: basePlan.layers.map((layer) => ({
               ...layer,
-              status: createdLayerIds.has(layer.id)
-                ? 'queued'
-                : 'export-pending',
+              status: task ? 'queued' : 'export-pending',
             })),
           };
         });
         setError(null);
 
-        if (createdLayerIds.size > 0) {
+        if (task) {
           void MessagePlugin.success(
             uiLanguage === 'zh'
-              ? `已开始 PSD 分层准备（排队 ${createdLayerIds.size} 个 Photoshop 图层源）`
-              : `Started PSD layer preparation (${createdLayerIds.size} Photoshop layer sources queued)`
+              ? '已开始生成 PSD-ready 图片（1 个 GPT Image 编辑任务）'
+              : 'Started PSD-ready generation (1 GPT Image edit task)'
           );
         } else {
           setError(
             uiLanguage === 'zh'
-              ? 'PSD 素材准备失败，请检查输入后重试。'
-              : 'Failed to prepare PSD assets. Check the input and try again.'
+              ? 'PSD-ready 任务创建失败，请检查输入后重试。'
+              : 'Failed to create the PSD-ready task. Check the input and try again.'
           );
         }
       } catch (err) {
-        console.error('Failed to create PSD layer tasks:', err);
+        console.error('Failed to create PSD-ready task:', err);
         setError(
           uiLanguage === 'zh'
-            ? 'PSD 素材准备失败，请检查参考图后重试。'
-            : 'Failed to prepare PSD assets. Check the reference image and try again.'
+            ? 'PSD-ready 任务创建失败，请检查参考图后重试。'
+            : 'Failed to create the PSD-ready task. Check the reference image and try again.'
         );
       } finally {
         setIsQueuingLayerTasks(false);
@@ -467,8 +455,8 @@ const AIImagePsdGeneration = ({
     if (uploadedImages.length === 0) {
       setError(
         uiLanguage === 'zh'
-          ? '请先上传原始海报/参考图，然后准备 PSD 分层。'
-          : 'Upload a source poster/reference image before preparing PSD layers.'
+          ? '请先上传原始海报/参考图，然后生成 PSD-ready 结果。'
+          : 'Upload a source poster/reference image before generating a PSD-ready result.'
       );
       return;
     }
@@ -483,9 +471,7 @@ const AIImagePsdGeneration = ({
     uploadedImages.length,
   ]);
 
-  const generatedLayerCount = plan?.layers.filter(
-    (layer) => layer.status === 'queued'
-  ).length;
+  const generatedLayerCount = plan ? 1 : 0;
   const psdTasks = useMemo(() => {
     if (!plan || (!psdTaskIds.length && !psdBatchId)) {
       return [];
@@ -579,8 +565,8 @@ const AIImagePsdGeneration = ({
             showQuantity={false}
             generateLabel={
               uiLanguage === 'zh'
-                ? '准备 PSD 分层/导出'
-                : 'Prepare PSD layers/export'
+                ? '生成 PSD-ready 结果'
+                : 'Generate PSD-ready result'
             }
             showReset={false}
           />
@@ -599,22 +585,20 @@ const AIImagePsdGeneration = ({
                 className="psd-generation-status__progress"
                 aria-label={
                   uiLanguage === 'zh'
-                    ? 'PSD 分层任务进度'
-                    : 'PSD layer task progress'
+                    ? 'PSD-ready 任务进度'
+                    : 'PSD-ready task progress'
                 }
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={psdTaskStats.progressPercent}
                 role="progressbar"
               >
-                <span
-                  style={{ width: `${psdTaskStats.progressPercent}%` }}
-                />
+                <span style={{ width: `${psdTaskStats.progressPercent}%` }} />
               </div>
               <small>
                 {uiLanguage === 'zh'
-                  ? '当前流程会生成同画布透明 PNG 图层源和 Photoshop/PSD 元数据，不会把未打包素材伪装成原生 .psd。'
-                  : 'This flow generates same-canvas transparent PNG layer sources and Photoshop/PSD metadata; it does not pretend unpackaged assets are a native .psd.'}
+                  ? '当前流程会生成 1 张 PSD-ready 图片和 Photoshop/PSD 元数据，不会把图片结果伪装成原生 .psd。'
+                  : 'This flow generates one PSD-ready image plus Photoshop/PSD metadata; it does not pretend the image result is a native .psd.'}
               </small>
             </div>
           ) : null}
@@ -623,8 +607,8 @@ const AIImagePsdGeneration = ({
             <summary>{uiLanguage === 'zh' ? '说明' : 'Note'}</summary>
             <p>
               {uiLanguage === 'zh'
-                ? '系统会自动处理生成设置；公开图片 API 当前返回图片数据而不是原生 .psd，Opentu 先生成/编辑同画布分层素材，并把 Photoshop/PSD 打包作为后续本地或服务端导出能力。'
-                : 'Opentu handles generation settings automatically; the public Image API currently returns image data rather than a native .psd, so Opentu first generates/edits same-canvas layer assets and keeps Photoshop/PSD packaging for a later local or server export step.'}
+                ? '系统会自动处理生成设置；公开 GPT Image API 当前返回图片数据而不是原生 .psd，Opentu 先生成 1 张 PSD-ready 图片和拆层元数据，并把真正 Photoshop/PSD 打包作为后续本地或服务端导出能力。'
+                : 'Opentu handles generation settings automatically; the public GPT Image API currently returns image data rather than a native .psd, so Opentu generates one PSD-ready image plus layer metadata and leaves true Photoshop/PSD packaging for a later local or server export step.'}
             </p>
           </details>
 

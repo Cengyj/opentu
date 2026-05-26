@@ -13,6 +13,7 @@ import { TaskStatus, TaskType, type Task } from '../../types/task.types';
 import AIImagePsdGeneration, { buildLayerPlan } from './ai-psd-generation';
 import {
   buildPsdLayerImageTaskPlans,
+  buildPsdReadyImageTaskPlan,
   PSD_LAYER_IMAGE_TASK_CONTRACT,
 } from './ai-psd-plan';
 
@@ -355,7 +356,6 @@ describe('buildLayerPlan', () => {
       generationMode: PSD_LAYER_IMAGE_TASK_CONTRACT.generationMode,
       background: PSD_LAYER_IMAGE_TASK_CONTRACT.background,
       outputFormat: PSD_LAYER_IMAGE_TASK_CONTRACT.outputFormat,
-      inputFidelity: PSD_LAYER_IMAGE_TASK_CONTRACT.inputFidelity,
       autoInsertToCanvas: false,
     });
     expect(taskPlans[0].params.prompt).toContain('Public Image API limitation');
@@ -370,6 +370,62 @@ describe('buildLayerPlan', () => {
       ...PSD_LAYER_IMAGE_TASK_CONTRACT.promptMetaTags,
     ]);
     expect(taskPlans[0].params.promptMeta?.tags).not.toContain('layer-plan');
+  });
+
+  it('builds one PSD-ready image edit task without GPT Image 2 unsupported params', () => {
+    const plan = buildLayerPlan(
+      '品牌活动海报，产品主体需要独立图层',
+      'poster',
+      'ai-plan',
+      5,
+      'zh'
+    );
+
+    const taskPlan = buildPsdReadyImageTaskPlan(plan, {
+      model: 'gpt-image-2',
+      modelRef: { profileId: 'default', modelId: 'gpt-image-2' },
+      uploadedImages: [
+        { url: 'data:image/png;base64,poster', name: 'poster.png' },
+      ],
+      size: '1024x1024',
+      width: 1024,
+      height: 1024,
+      extraParams: {
+        size: '1024x1024',
+        response_format: 'url',
+        inputFidelity: 'high',
+        background: 'transparent',
+      },
+    });
+
+    expect(taskPlan.taskType).toBe(TaskType.IMAGE);
+    expect(taskPlan.params).toMatchObject({
+      model: 'gpt-image-2',
+      generationMode: 'image_edit',
+      background: 'auto',
+      outputFormat: 'png',
+      batchIndex: 1,
+      batchTotal: 1,
+      autoInsertToCanvas: false,
+    });
+    expect(taskPlan.params.referenceImages).toEqual([
+      'data:image/png;base64,poster',
+    ]);
+    expect(taskPlan.params.inputFidelity).toBeUndefined();
+    expect(taskPlan.params.params).toEqual({
+      size: '1024x1024',
+      background: 'auto',
+    });
+    expect(taskPlan.params.prompt).toContain(
+      '公开 GPT Image API 当前返回图片数据'
+    );
+    expect(taskPlan.params.psdPlan).toMatchObject({
+      layerId: 'psd-ready-composite',
+      exportTarget: 'psd',
+      packaging: 'app-side-required',
+      apiNativePsdOutput: false,
+    });
+    expect(taskPlan.params.promptMeta?.tags).toContain('psd-ready');
   });
 
   it('keeps PSD packaging explicitly unwired while layer assets stay IMAGE edits', () => {
@@ -456,7 +512,7 @@ describe('AIImagePsdGeneration contract', () => {
       mockState.actionButtonProps[mockState.actionButtonProps.length - 1]
     ).toMatchObject({
       canGenerate: false,
-      generateLabel: '准备 PSD 分层/导出',
+      generateLabel: '生成 PSD-ready 结果',
       showReset: false,
     });
     expect(
@@ -474,7 +530,7 @@ describe('AIImagePsdGeneration contract', () => {
       showOptimizeButton: false,
     });
     expect(
-      screen.getByText(/公开图片 API 当前返回图片数据而不是原生 .psd/)
+      screen.getByText(/公开 GPT Image API 当前返回图片数据而不是原生 .psd/)
     ).toBeTruthy();
   });
 
@@ -493,10 +549,12 @@ describe('AIImagePsdGeneration contract', () => {
     expect(latestActionProps).toMatchObject({
       canGenerate: true,
       hasGenerated: false,
-      generateLabel: '准备 PSD 分层/导出',
+      generateLabel: '生成 PSD-ready 结果',
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '准备 PSD 分层/导出' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: '生成 PSD-ready 结果' })
+    );
 
     await waitFor(() => {
       latestActionProps =
@@ -504,16 +562,16 @@ describe('AIImagePsdGeneration contract', () => {
       expect(latestActionProps).toMatchObject({
         canGenerate: true,
         hasGenerated: false,
-        generateLabel: '准备 PSD 分层/导出',
+        generateLabel: '生成 PSD-ready 结果',
       });
     });
-    expect(screen.getByText('PSD 图层任务已排队')).toBeTruthy();
+    expect(screen.getByText('PSD-ready 任务已排队')).toBeTruthy();
     expect(
-      screen.getByText(/成功 0 \/ 失败 0 \/ 进行中 0 \/ 排队 4 \/ 总计 4/)
+      screen.getByText(/成功 0 \/ 失败 0 \/ 进行中 0 \/ 排队 1 \/ 总计 1/)
     ).toBeTruthy();
     expect(screen.getByText(/打开任务队列查看/)).toBeTruthy();
-    expect(screen.getByText(/不会把未打包素材伪装成原生 \.psd/)).toBeTruthy();
-    expect(mockState.createTask).toHaveBeenCalledTimes(4);
+    expect(screen.getByText(/不会把图片结果伪装成原生 \.psd/)).toBeTruthy();
+    expect(mockState.createTask).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(`查看可选${'拆分'}明细`)).toBeNull();
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
   });
@@ -528,24 +586,26 @@ describe('AIImagePsdGeneration contract', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '准备 PSD 分层/导出' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: '生成 PSD-ready 结果' })
+    );
 
     await waitFor(() => {
-      expect(mockState.createTask).toHaveBeenCalledTimes(4);
+      expect(mockState.createTask).toHaveBeenCalledTimes(1);
     });
 
     const createdBatchId = mockState.createTask.mock.calls[0]?.[0]?.batchId;
-    mockState.tasks = [0, 1, 2, 3].map((index) =>
+    mockState.tasks = [
       createMockPsdTask({
-        id: `task-${index + 1}`,
+        id: 'task-1',
         status: TaskStatus.COMPLETED,
         params: {
           batchId: createdBatchId,
-          batchIndex: index,
-          batchTotal: 4,
+          batchIndex: 1,
+          batchTotal: 1,
         },
-      })
-    );
+      }),
+    ];
     rerender(
       <AIImagePsdGeneration
         initialPrompt="品牌活动海报"
@@ -555,8 +615,8 @@ describe('AIImagePsdGeneration contract', () => {
       />
     );
 
-    expect(screen.getByText('PSD 分层素材已生成完成')).toBeTruthy();
-    expect(screen.getByText(/成功 4 \/ 总计 4/)).toBeTruthy();
+    expect(screen.getByText('PSD-ready 图片已生成完成')).toBeTruthy();
+    expect(screen.getByText(/成功 1 \/ 总计 1/)).toBeTruthy();
     expect(screen.getByText(/可在任务队列或素材库查看结果/)).toBeTruthy();
     expect(screen.queryByText(/原生 PSD 下载已完成/)).toBeNull();
   });
@@ -571,34 +631,21 @@ describe('AIImagePsdGeneration contract', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '准备 PSD 分层/导出' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: '生成 PSD-ready 结果' })
+    );
 
     await waitFor(() => {
-      expect(mockState.createTask).toHaveBeenCalledTimes(4);
+      expect(mockState.createTask).toHaveBeenCalledTimes(1);
     });
 
     const createdBatchId = mockState.createTask.mock.calls[0]?.[0]?.batchId;
     mockState.tasks = [
       createMockPsdTask({
         id: 'task-1',
-        status: TaskStatus.COMPLETED,
-        params: { batchId: createdBatchId, batchIndex: 0, batchTotal: 4 },
-      }),
-      createMockPsdTask({
-        id: 'task-2',
         status: TaskStatus.FAILED,
-        params: { batchId: createdBatchId, batchIndex: 1, batchTotal: 4 },
+        params: { batchId: createdBatchId, batchIndex: 1, batchTotal: 1 },
         error: { code: 'API_ERROR', message: 'quota exceeded' },
-      }),
-      createMockPsdTask({
-        id: 'task-3',
-        status: TaskStatus.PROCESSING,
-        params: { batchId: createdBatchId, batchIndex: 2, batchTotal: 4 },
-      }),
-      createMockPsdTask({
-        id: 'task-4',
-        status: TaskStatus.PENDING,
-        params: { batchId: createdBatchId, batchIndex: 3, batchTotal: 4 },
       }),
     ];
     rerender(
@@ -610,11 +657,11 @@ describe('AIImagePsdGeneration contract', () => {
       />
     );
 
-    expect(screen.getByText('部分图层生成失败')).toBeTruthy();
+    expect(screen.getByText('PSD-ready 生成失败')).toBeTruthy();
     expect(
-      screen.getByText(/成功 1 \/ 失败 1 \/ 进行中 1 \/ 排队 1 \/ 总计 4/)
+      screen.getByText(/成功 0 \/ 失败 1 \/ 进行中 0 \/ 排队 0 \/ 总计 1/)
     ).toBeTruthy();
-    expect(screen.getByText(/请在任务队列查看失败原因或重试/)).toBeTruthy();
+    expect(screen.getByText(/任务失败。请在任务队列查看错误详情/)).toBeTruthy();
   });
 });
 

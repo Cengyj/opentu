@@ -72,12 +72,16 @@ export interface PsdLayerImageTaskPlan {
   params: GenerationParams;
 }
 
+export interface PsdReadyImageTaskPlan {
+  taskType: TaskType.IMAGE;
+  params: GenerationParams;
+}
+
 export const PSD_LAYER_IMAGE_TASK_CONTRACT = {
   taskType: TaskType.IMAGE,
   generationMode: 'image_edit',
   background: 'auto',
   outputFormat: 'png',
-  inputFidelity: 'high',
   exportTarget: 'psd',
   exportSource: 'photoshop',
   sourceSetting: 'photoshop',
@@ -89,10 +93,10 @@ export const PSD_LAYER_IMAGE_TASK_CONTRACT = {
 } as const;
 
 export const PSD_LAYER_EXTRACTION_PROMPT_ZH =
-  '请按 GPT-Image2 的 PSD 工作流思考：先理解整张图的画布尺寸、元素坐标、图层顺序和背景类型，再将海报按视觉元素拆分成若干张独立图像。每个导出的图层都使用与原图完全相同的画布尺寸和分辨率，元素保留在原始坐标位置，其余区域透明。请同时在提示词中明确 Photoshop/PSD 导出意图，但不要宣称公开图片 API 会直接返回原生 PSD。';
+  '请参考这张图片，按 GPT 官网的 PSD/Photoshop 工作流理解画布、元素、层级、文字和透明关系，然后生成一张 PSD-ready 的结果图与清晰的拆层说明。保持原图主体、比例、布局和视觉风格；需要后续在 Photoshop 里拆成背景、主体、文字、装饰和调整层。公开 API 只返回图片数据，不要宣称会直接返回原生 .psd 文件。';
 
 export const PSD_LAYER_EXTRACTION_PROMPT_EN =
-  'Think through the GPT-Image2 PSD workflow first: understand the canvas size, element coordinates, layer order, and background type, then split this poster into separate images by visual element. Every exported layer must use the exact same canvas size and resolution as the source image, preserve the element at its original coordinates, and make all other areas transparent. State the Photoshop/PSD export intent in the prompt, but do not claim that the public image API directly returns a native PSD.';
+  'Use the reference image like the GPT web PSD/Photoshop workflow: understand the canvas, elements, hierarchy, text, and transparency relationships, then generate one PSD-ready result image with clear layer-splitting guidance. Preserve the subject, proportions, layout, and visual style; the result should be ready for later Photoshop packaging into background, subject, text, decoration, and adjustment layers. The public API returns image data, not a native .psd file.';
 
 export function getDefaultPsdLayerExtractionPrompt(
   language: 'zh' | 'en'
@@ -398,6 +402,117 @@ export interface BuildPsdLayerImageTaskPlansOptions {
   extraParams?: Record<string, string>;
 }
 
+function buildPsdPromptSections(
+  plan: PsdGenerationPlan,
+  language: 'zh' | 'en'
+): string[] {
+  const layerGuide = plan.layers
+    .map((layer, index) => `${index + 1}. ${layer.name}: ${layer.description}`)
+    .join('\n');
+
+  if (language === 'zh') {
+    return [
+      '[PSD-ready workflow]',
+      plan.title,
+      '请像 GPT 官网的图片编辑/PSD 工作流一样处理：用户只提供参考图和提示词，系统自动理解图像并生成可用于后续 Photoshop 分层打包的结果。',
+      '目标：基于参考图生成或还原一张 PSD-ready 图片；保持主体、布局、相对位置、比例、画面风格和重要透明/遮挡关系。',
+      '拆层意图：请在生成时按背景、主体、文字、装饰、前景和调整说明来组织视觉元素，方便应用后续用本地/服务端 PSD 打包器制作 .psd。',
+      '建议图层结构：',
+      layerGuide,
+      '重要限制：公开 GPT Image API 当前返回图片数据，不会直接返回原生 .psd；不要在图像或元数据里伪装已生成原生 PSD 下载。',
+    ];
+  }
+
+  return [
+    '[PSD-ready workflow]',
+    plan.title,
+    'Handle this like the GPT web image editing/PSD workflow: the user only supplies a reference image and prompt, while the app automatically prepares a result suitable for later Photoshop layer packaging.',
+    'Goal: generate or reconstruct one PSD-ready image from the reference; preserve subject, layout, relative positions, proportions, visual style, and important transparency/occlusion relationships.',
+    'Layering intent: organize visual elements as background, subject, text, decoration, foreground, and adjustment notes so a later local/server PSD packer can create a .psd.',
+    'Suggested layer structure:',
+    layerGuide,
+    'Important limitation: the public GPT Image API returns image data, not a native .psd; do not pretend a native PSD download has already been generated.',
+  ];
+}
+
+function stripUnsupportedGPTImage2Params(
+  params: Record<string, string> | undefined
+): Record<string, string> | undefined {
+  if (!params) return undefined;
+  const next = { ...params };
+  delete next.inputFidelity;
+  delete next.input_fidelity;
+  delete next.response_format;
+  if (next.background === 'transparent') {
+    next.background = 'auto';
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+export function buildPsdReadyImageTaskPlan(
+  plan: PsdGenerationPlan,
+  options: BuildPsdLayerImageTaskPlansOptions & { language?: 'zh' | 'en' }
+): PsdReadyImageTaskPlan {
+  const sanitizedExtraParams = stripUnsupportedGPTImage2Params(
+    options.extraParams
+  );
+  const batchId = `${plan.planId}-psd-ready`;
+
+  return {
+    taskType: PSD_LAYER_IMAGE_TASK_CONTRACT.taskType,
+    params: {
+      prompt: buildPsdPromptSections(plan, options.language || 'zh').join('\n'),
+      width: options.width,
+      height: options.height,
+      size: options.size,
+      model: options.model,
+      modelRef: options.modelRef || null,
+      generationMode: PSD_LAYER_IMAGE_TASK_CONTRACT.generationMode,
+      background: PSD_LAYER_IMAGE_TASK_CONTRACT.background,
+      outputFormat: PSD_LAYER_IMAGE_TASK_CONTRACT.outputFormat,
+      uploadedImages: options.uploadedImages || [],
+      referenceImages: (options.uploadedImages || []).map((image) => image.url),
+      knowledgeContextRefs: options.knowledgeContextRefs || [],
+      autoInsertToCanvas: false,
+      batchId,
+      batchIndex: 1,
+      batchTotal: 1,
+      promptMeta: {
+        category: 'image',
+        title: `${plan.title} · PSD-ready`,
+        tags: [...PSD_LAYER_IMAGE_TASK_CONTRACT.promptMetaTags, 'psd-ready'],
+        knowledgeContextRefs: options.knowledgeContextRefs || [],
+      },
+      assetMetadata: {
+        category: 'GENERAL',
+      },
+      psdPlan: {
+        planId: plan.planId,
+        planTitle: plan.title,
+        layerId: 'psd-ready-composite',
+        layerName: 'PSD-ready composite',
+        layerType: 'image',
+        suggestedLayers: plan.layers.map((layer) => ({
+          id: layer.id,
+          name: layer.name,
+          type: layer.type,
+          description: layer.description,
+        })),
+        textPolicy: plan.textPolicy,
+        exportTarget: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
+        exportSource: PSD_LAYER_IMAGE_TASK_CONTRACT.exportSource,
+        sourceSetting: PSD_LAYER_IMAGE_TASK_CONTRACT.sourceSetting,
+        packaging: PSD_LAYER_IMAGE_TASK_CONTRACT.packaging,
+        nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
+        apiNativePsdOutput: PSD_LAYER_IMAGE_TASK_CONTRACT.apiNativePsdOutput,
+        downloadWhenSupported:
+          PSD_LAYER_IMAGE_TASK_CONTRACT.downloadWhenSupported,
+      },
+      ...(sanitizedExtraParams ? { params: sanitizedExtraParams } : {}),
+    },
+  };
+}
+
 export function buildPsdLayerImageTaskPlans(
   plan: PsdGenerationPlan,
   options: BuildPsdLayerImageTaskPlansOptions
@@ -434,7 +549,6 @@ export function buildPsdLayerImageTaskPlans(
       generationMode: PSD_LAYER_IMAGE_TASK_CONTRACT.generationMode,
       background: PSD_LAYER_IMAGE_TASK_CONTRACT.background,
       outputFormat: PSD_LAYER_IMAGE_TASK_CONTRACT.outputFormat,
-      inputFidelity: PSD_LAYER_IMAGE_TASK_CONTRACT.inputFidelity,
       uploadedImages: options.uploadedImages || [],
       referenceImages: (options.uploadedImages || []).map((image) => image.url),
       knowledgeContextRefs: options.knowledgeContextRefs || [],
@@ -467,8 +581,8 @@ export function buildPsdLayerImageTaskPlans(
         downloadWhenSupported:
           PSD_LAYER_IMAGE_TASK_CONTRACT.downloadWhenSupported,
       },
-      ...(options.extraParams && Object.keys(options.extraParams).length > 0
-        ? { params: options.extraParams }
+      ...(stripUnsupportedGPTImage2Params(options.extraParams)
+        ? { params: stripUnsupportedGPTImage2Params(options.extraParams) }
         : {}),
     },
   }));
