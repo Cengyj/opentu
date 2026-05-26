@@ -11,7 +11,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssetType } from '../../types/asset.types';
 import { TaskType } from '../../types/task.types';
 import AIImagePsdGeneration, { buildLayerPlan } from './ai-psd-generation';
-import { buildPsdLayerImageTaskDrafts } from './ai-psd-draft';
+import {
+  buildPsdLayerImageTaskDrafts,
+  PSD_LAYER_IMAGE_TASK_CONTRACT,
+} from './ai-psd-draft';
 
 const mockState = vi.hoisted(() => ({
   actionButtonProps: [] as Array<Record<string, unknown>>,
@@ -291,9 +294,11 @@ describe('buildLayerPlan', () => {
     });
 
     expect(taskDrafts).toHaveLength(3);
-    expect(taskDrafts.every((draft) => draft.taskType === TaskType.IMAGE)).toBe(
-      true
-    );
+    expect(
+      taskDrafts.every(
+        (draft) => draft.taskType === PSD_LAYER_IMAGE_TASK_CONTRACT.taskType
+      )
+    ).toBe(true);
     expect(taskDrafts.map((draft) => draft.layerId)).toEqual([
       'psd-layer-1',
       'psd-layer-2',
@@ -303,14 +308,51 @@ describe('buildLayerPlan', () => {
       draftId: plan.draftId,
       layerId: 'psd-layer-1',
       textPolicy: plan.textPolicy,
-      exportTarget: 'psd',
-      nativePsdReady: false,
+      exportTarget: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
+      nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
+    });
+    expect(taskDrafts[0].params).toMatchObject({
+      generationMode: PSD_LAYER_IMAGE_TASK_CONTRACT.generationMode,
+      background: PSD_LAYER_IMAGE_TASK_CONTRACT.background,
+      outputFormat: PSD_LAYER_IMAGE_TASK_CONTRACT.outputFormat,
+      inputFidelity: PSD_LAYER_IMAGE_TASK_CONTRACT.inputFidelity,
+      autoInsertToCanvas: false,
     });
     expect(taskDrafts[0].params.prompt).toContain(
       'Do not claim or embed a native PSD file'
     );
+    expect(taskDrafts[0].params.prompt).toContain(
+      'independent transparent PNG layer'
+    );
     expect(`${taskDrafts[0].taskType}`).not.toBe('psd');
-    expect(taskDrafts[0].params.promptMeta?.tags).toContain('psd-draft');
+    expect(taskDrafts[0].params.promptMeta?.tags).toEqual([
+      ...PSD_LAYER_IMAGE_TASK_CONTRACT.promptMetaTags,
+    ]);
+    expect(taskDrafts[0].params.promptMeta?.tags).not.toContain('layer-plan');
+  });
+
+  it('keeps PSD packaging explicitly unwired while layer assets stay IMAGE edits', () => {
+    const plan = buildLayerPlan('One-click PSD output', 'poster', 'quick', 3, 'en');
+    const taskDrafts = buildPsdLayerImageTaskDrafts(plan, {
+      model: 'image-model',
+      width: 1024,
+      height: 1024,
+    });
+
+    expect(plan.exportSkeleton).toEqual({
+      target: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
+      status: 'draft',
+      nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
+    });
+    expect(taskDrafts).not.toHaveLength(0);
+    for (const draft of taskDrafts) {
+      expect(draft.taskType).toBe(TaskType.IMAGE);
+      expect(draft.params.psdDraft?.nativePsdReady).toBe(false);
+      expect(draft.params.psdDraft?.exportTarget).toBe('psd');
+      expect(draft.params.outputFormat).toBe('png');
+      expect(draft.params.background).toBe('transparent');
+      expect(draft.params.prompt).toMatch(/later PSD packaging/i);
+    }
   });
 });
 

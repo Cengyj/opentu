@@ -57,6 +57,17 @@ export interface PsdLayerImageTaskDraft {
   params: GenerationParams;
 }
 
+export const PSD_LAYER_IMAGE_TASK_CONTRACT = {
+  taskType: TaskType.IMAGE,
+  generationMode: 'image_edit',
+  background: 'transparent',
+  outputFormat: 'png',
+  inputFidelity: 'high',
+  exportTarget: 'psd',
+  nativePsdReady: false,
+  promptMetaTags: ['psd-draft', 'transparent-layer-image'],
+} as const;
+
 export const PSD_LAYER_EXTRACTION_PROMPT_ZH =
   '请将这张海报按视觉元素拆分成若干张独立图像，保持每个元素在原海报中的尺寸、比例、透明度和相对位置完全不变。每个导出的图层都使用与原图完全相同的画布尺寸和分辨率，元素保留在原始坐标位置，其余区域透明。确保所有图像导入 Photoshop 后无需移动、缩放或调整，即可按原位叠加还原完整海报。';
 
@@ -336,7 +347,7 @@ export function buildPsdLayerImageTaskDrafts(
   return visualLayers.map((layer, index) => ({
     layerId: layer.id,
     layerName: layer.name,
-    taskType: TaskType.IMAGE,
+    taskType: PSD_LAYER_IMAGE_TASK_CONTRACT.taskType,
     params: {
       prompt: [
         `[PSD draft layer: ${layer.name}]`,
@@ -352,10 +363,10 @@ export function buildPsdLayerImageTaskDrafts(
       size: options.size,
       model: options.model,
       modelRef: options.modelRef || null,
-      generationMode: 'image_edit',
-      background: 'transparent',
-      outputFormat: 'png',
-      inputFidelity: 'high',
+      generationMode: PSD_LAYER_IMAGE_TASK_CONTRACT.generationMode,
+      background: PSD_LAYER_IMAGE_TASK_CONTRACT.background,
+      outputFormat: PSD_LAYER_IMAGE_TASK_CONTRACT.outputFormat,
+      inputFidelity: PSD_LAYER_IMAGE_TASK_CONTRACT.inputFidelity,
       uploadedImages: options.uploadedImages || [],
       referenceImages: (options.uploadedImages || []).map((image) => image.url),
       knowledgeContextRefs: options.knowledgeContextRefs || [],
@@ -366,7 +377,7 @@ export function buildPsdLayerImageTaskDrafts(
       promptMeta: {
         category: 'image',
         title: `${plan.title} · ${layer.name}`,
-        tags: ['psd-draft', 'layer-plan'],
+        tags: [...PSD_LAYER_IMAGE_TASK_CONTRACT.promptMetaTags],
         knowledgeContextRefs: options.knowledgeContextRefs || [],
       },
       assetMetadata: {
@@ -379,8 +390,8 @@ export function buildPsdLayerImageTaskDrafts(
         layerName: layer.name,
         layerType: layer.type,
         textPolicy: plan.textPolicy,
-        exportTarget: plan.exportSkeleton.target,
-        nativePsdReady: plan.exportSkeleton.nativePsdReady,
+        exportTarget: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
+        nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
       },
       ...(options.extraParams && Object.keys(options.extraParams).length > 0
         ? { params: options.extraParams }
