@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AssetType } from '../../types/asset.types';
+import { TaskType } from '../../types/task.types';
 import AIImagePsdGeneration, { buildLayerPlan } from './ai-psd-generation';
 import { buildPsdLayerImageTaskDrafts } from './ai-psd-draft';
 import { TaskType } from '../../types/task.types';
@@ -137,6 +145,13 @@ vi.mock('./shared', () => ({
 }));
 
 describe('buildLayerPlan', () => {
+  it('keeps PSD workflow on existing image task and asset contracts', () => {
+    expect(Object.values(TaskType)).not.toContain('psd');
+    expect(Object.keys(TaskType)).not.toContain('PSD');
+    expect(Object.values(AssetType)).not.toContain('PSD');
+    expect(Object.keys(AssetType)).not.toContain('PSD');
+  });
+
   it('builds a local editable PSD plan without creating PSD task types', () => {
     const plan = buildLayerPlan(
       '品牌活动海报，产品主体需要独立图层',
@@ -210,5 +225,48 @@ describe('AIImagePsdGeneration contract', () => {
 
   it('exports the PSD mode component for lazy dialog loading', () => {
     expect(AIImagePsdGeneration).toBeTypeOf('function');
+  });
+
+  it('renders the PSD draft editor with an explicit native-PSD API limitation', () => {
+    render(<AIImagePsdGeneration initialPrompt="电商主图，产品和标题分层" />);
+
+    expect(screen.getByRole('note').textContent).toContain('不直接返回原生 PSD');
+    expect(screen.getByText('PSD 输出配置')).toBeTruthy();
+    expect(screen.getByText('PSD 图层计划')).toBeTruthy();
+    expect(screen.getByText('尚未生成图层计划')).toBeTruthy();
+    expect(
+      screen.queryByText(/直接返回原生 PSD 文件|native PSD files returned/i)
+    ).toBeNull();
+  });
+
+  it('generates an editable draft plan, supports layer visibility toggles, and stays local-only', () => {
+    render(<AIImagePsdGeneration initialPrompt="品牌活动海报，主标题可编辑" />);
+
+    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 结构' }));
+
+    expect(MessagePlugin.success).toHaveBeenCalledWith('已生成 PSD 图层计划');
+    expect(screen.getByText('5 层')).toBeTruthy();
+    expect(screen.getByText('背景层')).toBeTruthy();
+    expect(screen.getByText('标题文字')).toBeTruthy();
+    expect(screen.getByText('文字')).toBeTruthy();
+
+    const previewCanvas = screen.getByLabelText('PSD preview canvas');
+    expect(within(previewCanvas).getByText('背景')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '隐藏背景层' }));
+
+    expect(within(previewCanvas).queryByText('背景')).toBeNull();
+    expect(screen.getByRole('button', { name: '显示背景层' })).toBeTruthy();
+  });
+
+  it('updates draft layer count before generation for export-skeleton validation', () => {
+    render(<AIImagePsdGeneration initialPrompt="社媒封面，保留安全区参考" />);
+
+    fireEvent.click(screen.getByRole('button', { name: '8' }));
+    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 结构' }));
+
+    expect(screen.getByText('8 层')).toBeTruthy();
+    expect(screen.getByText('安全边距参考')).toBeTruthy();
+    expect(screen.getByText('调色/说明层')).toBeTruthy();
   });
 });
