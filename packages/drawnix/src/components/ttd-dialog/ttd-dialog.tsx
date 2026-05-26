@@ -740,7 +740,7 @@ const TTDDialogComponent = ({
               {showPsdTab ? (
                 <button
                   type="button"
-                  className={`mode-tab ${
+                  className={`mode-tab mode-tab--psd ${
                     imageGenerationMode === 'psd' ? 'active' : ''
                   }`}
                   onClick={(e) => {
@@ -749,7 +749,10 @@ const TTDDialogComponent = ({
                     handleImageModeChange('psd');
                   }}
                 >
-                  {language === 'zh' ? '分层 PSD' : 'PSD'}
+                  <span>{language === 'zh' ? '分层 PSD' : 'PSD'}</span>
+                  <span className="mode-tab__badge">
+                    {language === 'zh' ? '草稿' : 'Draft'}
+                  </span>
                 </button>
               ) : null}
             </div>
