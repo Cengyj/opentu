@@ -313,8 +313,8 @@ const AIImagePsdGeneration = ({
       if (!prompt.trim()) {
         setError(
           uiLanguage === 'zh'
-            ? '请输入 PSD 设计描述'
-            : 'Please enter a PSD design description'
+            ? '请输入 PSD 文件生成需求'
+            : 'Please enter what the PSD file should look like'
         );
         return null;
       }
@@ -345,8 +345,8 @@ const AIImagePsdGeneration = ({
       if (showSuccess) {
         void MessagePlugin.success(
           uiLanguage === 'zh'
-            ? '已生成 PSD 图层计划'
-            : 'PSD layer plan generated'
+            ? '已准备 PSD 文件生成方案'
+            : 'PSD file generation setup prepared'
         );
       }
       return titledPlan;
@@ -519,8 +519,8 @@ const AIImagePsdGeneration = ({
       if (uploadedImages.length === 0) {
         setError(
           uiLanguage === 'zh'
-            ? '请先上传原始海报/参考图，然后生成 PSD 文件。'
-            : 'Upload the source poster/reference image before generating the PSD file.'
+            ? '请先上传原始海报或参考图，再生成 PSD 文件。'
+            : 'Upload the source poster or reference image before generating the PSD file.'
         );
         setMobilePanel('config');
         return;
@@ -571,16 +571,16 @@ const AIImagePsdGeneration = ({
         } else {
           setError(
             uiLanguage === 'zh'
-              ? '图层任务创建失败，请检查参数或稍后重试。'
-              : 'Failed to create layer tasks. Check the settings and try again.'
+              ? 'PSD 素材准备失败，请检查输入后重试。'
+              : 'Failed to prepare PSD assets. Check the input and try again.'
           );
         }
       } catch (err) {
         console.error('Failed to create PSD layer tasks:', err);
         setError(
           uiLanguage === 'zh'
-            ? '图层任务创建失败，请检查参考图后重试。'
-            : 'Failed to create layer tasks. Check the reference image and try again.'
+            ? 'PSD 素材准备失败，请检查参考图后重试。'
+            : 'Failed to prepare PSD assets. Check the reference image and try again.'
         );
       } finally {
         setIsQueuingLayerTasks(false);
@@ -638,8 +638,8 @@ const AIImagePsdGeneration = ({
     );
     void MessagePlugin.success(
       uiLanguage === 'zh'
-        ? '已准备 PSD 导出流程；真实 PSD 打包由后续导出流程接入。'
-        : 'PSD export skeleton prepared; real PSD packaging connects in a later export flow.'
+        ? '已准备 PSD 文件导出；真实 PSD 打包由后续流程接入。'
+        : 'PSD file export prepared; real PSD packaging connects in a later flow.'
     );
   }, [plan, uiLanguage]);
 
@@ -740,34 +740,34 @@ const AIImagePsdGeneration = ({
               <div>
                 <span className="psd-draft-hero__eyebrow">
                   {uiLanguage === 'zh'
-                    ? '智能 PSD 生成'
-                    : 'Smart PSD Generation'}
+                    ? 'PSD 文件生成 · Beta'
+                    : 'PSD File Generator · Beta'}
                 </span>
                 <h2>
                   {uiLanguage === 'zh'
-                    ? '像 GPT 一样：参考图 + 提示词，生成 PSD 文件'
-                    : 'Like GPT: reference image + prompt, generate a PSD file'}
+                    ? '上传参考图，输入需求，一键生成 PSD 文件'
+                    : 'Upload references, enter one prompt, generate a PSD file'}
                 </h2>
                 <p>
                   {uiLanguage === 'zh'
-                    ? '不让用户调模板、策略、图层数量等参数；系统自动按图片内容拆层并准备 PSD 文件。'
-                    : 'No template, strategy, or layer-count tuning; the system analyzes the image and prepares a PSD automatically.'}
+                    ? '普通用户只需要提供源图/参考图和一句需求；高级拆分细节已自动处理。'
+                    : 'Most users only need source/reference images and one prompt; advanced decomposition details are handled automatically.'}
                 </p>
               </div>
               <ol className="psd-draft-steps" aria-label="PSD workflow steps">
-                <li>{uiLanguage === 'zh' ? '参考图' : 'Image'}</li>
-                <li>{uiLanguage === 'zh' ? '提示词' : 'Prompt'}</li>
+                <li>{uiLanguage === 'zh' ? '参考图' : 'References'}</li>
+                <li>{uiLanguage === 'zh' ? '需求' : 'Prompt'}</li>
                 <li>{uiLanguage === 'zh' ? 'PSD 文件' : 'PSD file'}</li>
               </ol>
             </section>
 
             <div className="psd-api-note" role="note">
               <strong>
-                {uiLanguage === 'zh' ? 'PSD 说明：' : 'PSD note: '}
+                {uiLanguage === 'zh' ? '当前能力说明：' : 'Current capability: '}
               </strong>
               {uiLanguage === 'zh'
-                ? '只需上传参考图并输入提示词；Opentu 会自动拆出透明图层并进入 PSD 文件准备流程。'
-                : 'Upload a reference image and prompt only; Opentu automatically prepares transparent layers for the PSD file flow.'}
+                ? '图片 API 暂不直接返回原生 PSD。Opentu 当前会先准备同画布、原坐标、透明背景的分层图片素材；PSD 打包流程接入后再输出文件。'
+                : 'Image APIs do not directly return native PSD files yet. Opentu currently prepares same-canvas, original-coordinate, transparent-background layer images; PSD packaging will output the file once wired.'}
             </div>
 
             <ReferenceImageUpload
@@ -793,18 +793,18 @@ const AIImagePsdGeneration = ({
               disabled={isQueuingLayerTasks}
               onError={setError}
               label={
-                uiLanguage === 'zh' ? '拆层指令' : 'Layer extraction prompt'
+                uiLanguage === 'zh' ? 'PSD 文件需求' : 'PSD file prompt'
               }
               placeholder={defaultPsdPrompt}
             />
 
             <div className="psd-prompt-tip" role="note">
               <strong>
-                {uiLanguage === 'zh' ? '推荐工作流：' : 'Recommended flow: '}
+                {uiLanguage === 'zh' ? '使用方式：' : 'How to use: '}
               </strong>
               {uiLanguage === 'zh'
-                ? '上传参考图、保留默认提示词或改写一句需求，然后点击“生成 PSD 文件”。'
-                : 'Upload the reference image, keep or edit the prompt, then click “Generate PSD file”.'}
+                ? '上传源图/参考图，写清楚想要的 PSD 效果，然后点击“生成 PSD 文件”。'
+                : 'Upload source/reference images, describe the desired PSD, then click “Generate PSD file”.'}
             </div>
 
             <div className="psd-primary-actions">
@@ -830,11 +830,11 @@ const AIImagePsdGeneration = ({
               <p className="psd-primary-actions__hint">
                 {plan
                   ? uiLanguage === 'zh'
-                    ? '正在按参考图自动生成透明图层素材，后续用于合成 PSD 文件。'
-                    : 'Generating transparent layer assets from the reference image for the PSD file flow.'
+                    ? '将按同画布、原坐标和透明背景准备可叠放素材；PSD 打包接入前不会宣称已得到原生 PSD。'
+                    : 'Prepares stackable assets with the same canvas, original coordinates, and transparent background; it will not claim a native PSD before packaging is wired.'
                   : uiLanguage === 'zh'
-                  ? '点击后系统自动分析图片、拆出透明图层并准备 PSD 文件；无需手动调参数。'
-                  : 'The system analyzes the image, creates transparent layers, and prepares the PSD file flow automatically.'}
+                  ? '系统会自动处理拆分细节；普通用户无需调整模板、策略或图层数量。'
+                  : 'The system handles decomposition automatically; no template, strategy, or layer-count tuning is needed.'}
               </p>
             </div>
 
@@ -852,8 +852,8 @@ const AIImagePsdGeneration = ({
                 </span>
                 <small>
                   {uiLanguage === 'zh'
-                    ? '默认已按 GPT 官方拆层提示词配置'
-                    : 'Defaults already follow the GPT-style layer extraction prompt'}
+                    ? '默认已按一键 PSD 流程配置'
+                    : 'Defaults already follow the one-click PSD flow'}
                 </small>
               </summary>
 
@@ -1052,13 +1052,13 @@ const AIImagePsdGeneration = ({
               <div>
                 <h3>
                   {uiLanguage === 'zh'
-                    ? 'PSD 文件生成状态'
-                    : 'PSD file generation status'}
+                    ? 'PSD 文件预览'
+                    : 'PSD file preview'}
                 </h3>
                 <p>
                   {uiLanguage === 'zh'
-                    ? '系统已根据参考图和提示词自动拆层；普通用户无需调整参数。'
-                    : 'The system automatically splits layers from the reference image and prompt; no parameter tuning is required.'}
+                    ? '预览自动准备的 PSD 结构；如需细调，可展开下方的可选明细。'
+                    : 'Preview the automatically prepared PSD structure; expand optional details only when you need fine tuning.'}
                 </p>
               </div>
               <span className="psd-preview-badge">
@@ -1087,15 +1087,15 @@ const AIImagePsdGeneration = ({
               </span>
               <span>
                 {uiLanguage === 'zh'
-                  ? `待生成 ${planLayerStats.queuedCount}`
-                  : `${planLayerStats.queuedCount} queued`}
+                  ? `已准备 ${planLayerStats.queuedCount}`
+                  : `${planLayerStats.queuedCount} prepared`}
               </span>
             </div>
 
             {plan ? (
               <div className="psd-draft-summary" aria-label="PSD draft status">
                 <label htmlFor="psd-draft-title-preview">
-                  {uiLanguage === 'zh' ? '草稿标题' : 'Draft title'}
+                  {uiLanguage === 'zh' ? 'PSD 文件名' : 'PSD filename'}
                 </label>
                 <input
                   id="psd-draft-title-preview"
@@ -1112,8 +1112,8 @@ const AIImagePsdGeneration = ({
                   </span>
                   <span>
                     {uiLanguage === 'zh'
-                      ? '任务：沿用 IMAGE'
-                      : 'Tasks: IMAGE only'}
+                      ? '素材：透明分层'
+                      : 'Assets: transparent layers'}
                   </span>
                   <span>
                     {plan.textPolicy.preferEditableText
@@ -1127,8 +1127,8 @@ const AIImagePsdGeneration = ({
                 </div>
                 <p className="psd-draft-summary__note">
                   {uiLanguage === 'zh'
-                    ? '已按参考图自动拆分透明图层；这些素材会用于后续 PSD 文件打包流程。'
-                    : 'Transparent layers were prepared from the reference image for the later PSD packaging flow.'}
+                    ? '当前底层仍通过透明背景图片素材准备 PSD；文本策略会写入本地元数据，原生 PSD 打包待后续接入。'
+                    : 'Under the hood, PSD assets are still prepared as transparent layer images; text policy stays in local metadata until native PSD packaging is wired.'}
                 </p>
               </div>
             ) : null}
@@ -1156,29 +1156,29 @@ const AIImagePsdGeneration = ({
                   <div className="psd-preview-empty">
                     <strong>
                       {uiLanguage === 'zh'
-                        ? '尚未生成 PSD 文件'
-                        : 'No PSD file yet'}
+                        ? '准备生成 PSD 文件'
+                        : 'Ready to generate a PSD file'}
                     </strong>
                     <span>
                       {uiLanguage === 'zh'
-                        ? '上传参考图后点击“生成 PSD 文件”。'
-                        : 'Upload a reference image and click “Generate PSD file”.'}
+                        ? '上传参考图并填写需求后点击“生成 PSD 文件”。'
+                        : 'Upload references, enter the prompt, then click “Generate PSD file”.'}
                     </span>
                     <ul className="psd-preview-empty__steps">
                       <li>
                         {uiLanguage === 'zh'
-                          ? '上传参考图'
-                          : 'Upload a reference image'}
+                          ? '上传源图 / 参考图'
+                          : 'Upload source / reference images'}
                       </li>
                       <li>
                         {uiLanguage === 'zh'
-                          ? '输入或保留默认提示词'
-                          : 'Enter or keep the default prompt'}
+                          ? '填写 PSD 文件需求'
+                          : 'Describe the PSD file'}
                       </li>
                       <li>
                         {uiLanguage === 'zh'
-                          ? '系统自动拆层并准备 PSD'
-                          : 'The system splits layers and prepares PSD'}
+                          ? '点击生成 PSD 文件'
+                          : 'Click Generate PSD file'}
                       </li>
                     </ul>
                   </div>
@@ -1189,194 +1189,207 @@ const AIImagePsdGeneration = ({
             {plan ? (
               <details className="psd-layer-details">
                 <summary>
-                  {uiLanguage === 'zh'
-                    ? '查看自动拆层明细（可选）'
-                    : 'View automatic layer details (optional)'}
+                  <span>
+                    {uiLanguage === 'zh'
+                      ? '查看可选拆分明细'
+                      : 'View optional decomposition details'}
+                  </span>
+                  <small>
+                    {uiLanguage === 'zh'
+                      ? '普通生成无需调整'
+                      : 'No changes needed for normal generation'}
+                  </small>
                 </summary>
-                <div className="psd-layer-list">
-                  {plan.layers.map((layer, index) => (
-                    <article
-                      key={layer.id}
-                      className={`psd-layer-item ${
-                        layer.visible ? '' : 'psd-layer-item--hidden'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        className={`psd-layer-visibility ${
-                          layer.visible ? 'psd-layer-visibility--on' : ''
+                <div className="psd-layer-details__body">
+                  <div className="psd-layer-list">
+                    {plan.layers.map((layer, index) => (
+                      <article
+                        key={layer.id}
+                        className={`psd-layer-item ${
+                          layer.visible ? '' : 'psd-layer-item--hidden'
                         }`}
-                        onClick={() => handleToggleLayer(layer.id)}
-                        aria-label={
-                          uiLanguage === 'zh'
-                            ? `${layer.visible ? '隐藏' : '显示'}${layer.name}`
-                            : `${layer.visible ? 'Hide' : 'Show'} ${layer.name}`
-                        }
                       >
-                        {layer.visible ? '●' : '○'}
-                      </button>
-                      <div className="psd-layer-index">{index + 1}</div>
-                      <div className="psd-layer-content">
-                        <div className="psd-layer-title-row">
-                          <input
-                            className="psd-layer-name-input"
-                            value={layer.name}
+                        <button
+                          type="button"
+                          className={`psd-layer-visibility ${
+                            layer.visible ? 'psd-layer-visibility--on' : ''
+                          }`}
+                          onClick={() => handleToggleLayer(layer.id)}
+                          aria-label={
+                            uiLanguage === 'zh'
+                              ? `${layer.visible ? '隐藏' : '显示'}${
+                                  layer.name
+                                }`
+                              : `${layer.visible ? 'Hide' : 'Show'} ${
+                                  layer.name
+                                }`
+                          }
+                        >
+                          {layer.visible ? '●' : '○'}
+                        </button>
+                        <div className="psd-layer-index">{index + 1}</div>
+                        <div className="psd-layer-content">
+                          <div className="psd-layer-title-row">
+                            <input
+                              className="psd-layer-name-input"
+                              value={layer.name}
+                              onChange={(event) =>
+                                handleLayerChange(
+                                  layer.id,
+                                  'name',
+                                  event.target.value
+                                )
+                              }
+                              aria-label={
+                                uiLanguage === 'zh'
+                                  ? `图层 ${index + 1} 名称`
+                                  : `Layer ${index + 1} name`
+                              }
+                            />
+                            <span
+                              className={`psd-layer-status psd-layer-status--${layer.status}`}
+                            >
+                              {getStatusLabel(layer.status, uiLanguage)}
+                            </span>
+                          </div>
+                          <div className="psd-layer-field-row">
+                            <select
+                              value={layer.type}
+                              onChange={(event) =>
+                                handleLayerChange(
+                                  layer.id,
+                                  'type',
+                                  event.target.value as PsdLayerType
+                                )
+                              }
+                              aria-label={
+                                uiLanguage === 'zh'
+                                  ? `${layer.name} 类型`
+                                  : `${layer.name} type`
+                              }
+                            >
+                              {LAYER_TYPE_OPTIONS.map((type) => (
+                                <option key={type} value={type}>
+                                  {getLayerTypeLabel(type, uiLanguage)}
+                                </option>
+                              ))}
+                            </select>
+                            <label>
+                              {uiLanguage === 'zh' ? '不透明度' : 'Opacity'}
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={layer.opacity}
+                                onChange={(event) =>
+                                  handleLayerChange(
+                                    layer.id,
+                                    'opacity',
+                                    Math.max(
+                                      0,
+                                      Math.min(100, Number(event.target.value))
+                                    ) as PsdLayerDraft['opacity']
+                                  )
+                                }
+                              />
+                            </label>
+                          </div>
+                          <textarea
+                            className="psd-layer-description-input"
+                            value={layer.description}
                             onChange={(event) =>
                               handleLayerChange(
                                 layer.id,
-                                'name',
+                                'description',
                                 event.target.value
                               )
                             }
                             aria-label={
                               uiLanguage === 'zh'
-                                ? `图层 ${index + 1} 名称`
-                                : `Layer ${index + 1} name`
+                                ? `${layer.name} 图层说明`
+                                : `${layer.name} layer description`
                             }
                           />
-                          <span
-                            className={`psd-layer-status psd-layer-status--${layer.status}`}
-                          >
-                            {getStatusLabel(layer.status, uiLanguage)}
-                          </span>
-                        </div>
-                        <div className="psd-layer-field-row">
-                          <select
-                            value={layer.type}
+                          <textarea
+                            className="psd-layer-prompt-input"
+                            value={layer.generationPrompt}
                             onChange={(event) =>
                               handleLayerChange(
                                 layer.id,
-                                'type',
-                                event.target.value as PsdLayerType
+                                'generationPrompt',
+                                event.target.value
                               )
                             }
                             aria-label={
                               uiLanguage === 'zh'
-                                ? `${layer.name} 类型`
-                                : `${layer.name} type`
+                                ? `${layer.name} 生成提示词`
+                                : `${layer.name} generation prompt`
                             }
-                          >
-                            {LAYER_TYPE_OPTIONS.map((type) => (
-                              <option key={type} value={type}>
-                                {getLayerTypeLabel(type, uiLanguage)}
-                              </option>
-                            ))}
-                          </select>
-                          <label>
-                            {uiLanguage === 'zh' ? '不透明度' : 'Opacity'}
-                            <input
-                              type="number"
-                              min={0}
-                              max={100}
-                              value={layer.opacity}
-                              onChange={(event) =>
-                                handleLayerChange(
-                                  layer.id,
-                                  'opacity',
-                                  Math.max(
-                                    0,
-                                    Math.min(100, Number(event.target.value))
-                                  ) as PsdLayerDraft['opacity']
-                                )
-                              }
-                            />
-                          </label>
+                            placeholder={
+                              uiLanguage === 'zh'
+                                ? '给图片生成任务的图层素材提示词'
+                                : 'Prompt for this layer asset image task'
+                            }
+                          />
+                          <div className="psd-layer-actions">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveLayer(layer.id, -1)}
+                              disabled={index === 0}
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveLayer(layer.id, 1)}
+                              disabled={index === plan.layers.length - 1}
+                            >
+                              ↓
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDuplicateLayer(layer.id)}
+                            >
+                              {uiLanguage === 'zh' ? '复制' : 'Duplicate'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveLayer(layer.id)}
+                              disabled={layer.locked}
+                            >
+                              {uiLanguage === 'zh' ? '删除' : 'Delete'}
+                            </button>
+                          </div>
                         </div>
-                        <textarea
-                          className="psd-layer-description-input"
-                          value={layer.description}
-                          onChange={(event) =>
-                            handleLayerChange(
-                              layer.id,
-                              'description',
-                              event.target.value
-                            )
-                          }
-                          aria-label={
-                            uiLanguage === 'zh'
-                              ? `${layer.name} 图层说明`
-                              : `${layer.name} layer description`
-                          }
-                        />
-                        <textarea
-                          className="psd-layer-prompt-input"
-                          value={layer.generationPrompt}
-                          onChange={(event) =>
-                            handleLayerChange(
-                              layer.id,
-                              'generationPrompt',
-                              event.target.value
-                            )
-                          }
-                          aria-label={
-                            uiLanguage === 'zh'
-                              ? `${layer.name} 生成提示词`
-                              : `${layer.name} generation prompt`
-                          }
-                          placeholder={
-                            uiLanguage === 'zh'
-                              ? '给图片生成任务的图层素材提示词'
-                              : 'Prompt for this layer asset image task'
-                          }
-                        />
-                        <div className="psd-layer-actions">
-                          <button
-                            type="button"
-                            onClick={() => handleMoveLayer(layer.id, -1)}
-                            disabled={index === 0}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveLayer(layer.id, 1)}
-                            disabled={index === plan.layers.length - 1}
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDuplicateLayer(layer.id)}
-                          >
-                            {uiLanguage === 'zh' ? '复制' : 'Duplicate'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLayer(layer.id)}
-                            disabled={layer.locked}
-                          >
-                            {uiLanguage === 'zh' ? '删除' : 'Delete'}
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-                <div className="psd-workflow-actions">
-                  <button type="button" onClick={handleAddLayer}>
-                    {uiLanguage === 'zh' ? '+ 添加图层' : '+ Add layer'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleGenerateLayerAssets()}
-                  >
-                    {uiLanguage === 'zh'
-                      ? '重新生成 PSD 文件'
-                      : 'Regenerate PSD file'}
-                  </button>
-                  <button type="button" onClick={handleExportSkeleton}>
-                    {uiLanguage === 'zh'
-                      ? '准备导出 PSD'
-                      : 'Prepare export skeleton'}
-                  </button>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="psd-workflow-actions">
+                    <button type="button" onClick={handleAddLayer}>
+                      {uiLanguage === 'zh' ? '+ 添加图层' : '+ Add layer'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleGenerateLayerAssets()}
+                    >
+                      {uiLanguage === 'zh'
+                        ? '重新准备素材'
+                        : 'Prepare assets again'}
+                    </button>
+                    <button type="button" onClick={handleExportSkeleton}>
+                      {uiLanguage === 'zh'
+                        ? '准备文件导出'
+                        : 'Prepare file export'}
+                    </button>
+                  </div>
                 </div>
               </details>
             ) : (
               <div className="psd-layer-empty-state">
                 <p>
                   {uiLanguage === 'zh'
-                    ? '生成后会显示 PSD 文件准备状态。'
-                    : 'PSD file preparation status appears after generation.'}
+                    ? '生成后会显示 PSD 文件预览；高级拆分明细默认收起，避免干扰主流程。'
+                    : 'After generation, a PSD preview appears; advanced decomposition details stay folded away from the main flow.'}
                 </p>
               </div>
             )}
