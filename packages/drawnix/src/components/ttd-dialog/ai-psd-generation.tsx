@@ -67,6 +67,9 @@ interface AIImagePsdGenerationProps {
   onModelRefChange?: (value: ModelRef | null) => void;
 }
 
+const EMPTY_REFERENCE_IMAGES: ReferenceImage[] = [];
+const EMPTY_KNOWLEDGE_CONTEXT_REFS: KnowledgeContextRef[] = [];
+
 type PsdTemplate = 'poster' | 'ecommerce' | 'character' | 'social' | 'custom';
 type PsdLayerStrategy = 'ai-plan' | 'quick' | 'canvas-selection';
 type PsdLayerType = 'background' | 'image' | 'text' | 'decoration' | 'adjustment';
@@ -267,8 +270,8 @@ export function buildLayerPlan(
 
 const AIImagePsdGeneration = ({
   initialPrompt = '',
-  initialImages = [],
-  initialKnowledgeContextRefs = [],
+  initialImages = EMPTY_REFERENCE_IMAGES,
+  initialKnowledgeContextRefs = EMPTY_KNOWLEDGE_CONTEXT_REFS,
   selectedModel,
   selectedModelRef,
   onModelChange,
