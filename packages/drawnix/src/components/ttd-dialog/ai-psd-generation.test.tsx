@@ -25,6 +25,11 @@ const mockState = vi.hoisted(() => ({
   createTask: vi.fn(() => ({
     id: `task-${mockState.createTask.mock.calls.length}`,
   })),
+  smartDownload: vi.fn(async () => ({
+    openedCount: 0,
+    downloadedCount: 1,
+    failedCount: 0,
+  })),
 }));
 
 vi.mock('tdesign-react', () => ({
@@ -119,6 +124,20 @@ vi.mock('../../services/ai-generation-preferences-service', () => ({
   loadScopedAIImageToolPreferences: () => ({
     extraParams: { size: '1024x1024' },
   }),
+}));
+
+vi.mock('../../utils/download-utils', () => ({
+  buildTaskDownloadItems: (task: Task) =>
+    task.result?.url
+      ? [
+          {
+            url: task.result.url,
+            type: 'image',
+            filename: 'psd-ready.png',
+          },
+        ]
+      : [],
+  smartDownload: mockState.smartDownload,
 }));
 
 vi.mock('../ai-input-bar/ModelDropdown', () => ({
@@ -477,6 +496,7 @@ describe('AIImagePsdGeneration contract', () => {
     mockState.promptInputProps = [];
     mockState.tasks = [];
     mockState.createTask.mockClear();
+    mockState.smartDownload.mockClear();
   });
 
   it('exports the PSD mode component for lazy dialog loading', () => {
@@ -604,6 +624,13 @@ describe('AIImagePsdGeneration contract', () => {
           batchIndex: 1,
           batchTotal: 1,
         },
+        result: {
+          url: 'data:image/png;base64,generated',
+          format: 'png',
+          size: 100,
+          width: 1024,
+          height: 1024,
+        },
       }),
     ];
     rerender(
@@ -617,7 +644,17 @@ describe('AIImagePsdGeneration contract', () => {
 
     expect(screen.getByText('PSD-ready 图片已生成完成')).toBeTruthy();
     expect(screen.getByText(/成功 1 \/ 总计 1/)).toBeTruthy();
-    expect(screen.getByText(/可在任务队列或素材库查看结果/)).toBeTruthy();
+    expect(screen.getByText(/可在下方直接预览、打开或下载图片/)).toBeTruthy();
+    expect(screen.getByText('PSD-ready 结果预览')).toBeTruthy();
+    expect(
+      screen
+        .getByRole('img', { name: 'PSD-ready 生成结果' })
+        .getAttribute('src')
+    ).toBe('data:image/png;base64,generated');
+    fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
+    await waitFor(() => {
+      expect(mockState.smartDownload).toHaveBeenCalledTimes(1);
+    });
     expect(screen.queryByText(/原生 PSD 下载已完成/)).toBeNull();
   });
 

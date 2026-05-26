@@ -40,6 +40,10 @@ import {
   type PsdGenerationPlan,
   type PsdTemplate,
 } from './ai-psd-plan';
+import {
+  buildTaskDownloadItems,
+  smartDownload,
+} from '../../utils/download-utils';
 
 interface AIImagePsdGenerationProps {
   initialPrompt?: string;
@@ -84,6 +88,14 @@ function getTaskBatchTotal(task: Task): number {
   return typeof batchTotal === 'number' && Number.isFinite(batchTotal)
     ? batchTotal
     : 0;
+}
+
+function getTaskResultUrls(task: Task | undefined): string[] {
+  if (!task?.result) return [];
+  if (Array.isArray(task.result.urls) && task.result.urls.length > 0) {
+    return task.result.urls.filter((url): url is string => Boolean(url));
+  }
+  return task.result.url ? [task.result.url] : [];
 }
 
 function buildPsdTaskStats(
@@ -148,8 +160,8 @@ function buildPsdTaskStats(
         : 'PSD-ready image is ready';
     detail =
       uiLanguage === 'zh'
-        ? '可在任务队列或素材库查看结果；当前不是原生 PSD 下载，后续接入 PSD 打包器后再提供 .psd 文件。'
-        : 'View results in the task queue or media library; this is not a native PSD download until PSD packaging is wired.';
+        ? '可在下方直接预览、打开或下载图片；当前不是原生 PSD 下载，后续接入 PSD 打包器后再提供 .psd 文件。'
+        : 'Preview, open, or download the image below; this is not a native PSD download until PSD packaging is wired.';
   } else if (processing > 0) {
     tone = 'active';
     title =
@@ -489,6 +501,58 @@ const AIImagePsdGeneration = ({
     () => buildPsdTaskStats(psdTasks, expectedPsdTaskTotal, uiLanguage),
     [expectedPsdTaskTotal, psdTasks, uiLanguage]
   );
+  const completedPsdTask = useMemo(
+    () =>
+      psdTasks.find(
+        (task) =>
+          task.status === TaskStatus.COMPLETED &&
+          getTaskResultUrls(task).length > 0
+      ),
+    [psdTasks]
+  );
+  const completedPsdResultUrls = useMemo(
+    () => getTaskResultUrls(completedPsdTask),
+    [completedPsdTask]
+  );
+  const completedPsdPreviewUrl = completedPsdResultUrls[0];
+
+  const handleDownloadPsdReadyResult = useCallback(async () => {
+    if (!completedPsdTask) return;
+
+    const downloadItems = buildTaskDownloadItems(completedPsdTask);
+    if (downloadItems.length === 0) {
+      setError(
+        uiLanguage === 'zh'
+          ? '当前任务没有可下载的图片结果。'
+          : 'This task has no downloadable image result.'
+      );
+      return;
+    }
+
+    try {
+      const result = await smartDownload(downloadItems);
+      void MessagePlugin.success(
+        uiLanguage === 'zh'
+          ? result.openedCount > 0 && result.downloadedCount === 0
+            ? '资源不支持直接下载，已打开链接'
+            : downloadItems.length > 1
+            ? 'PSD-ready 图片已开始批量下载'
+            : 'PSD-ready 图片下载成功'
+          : result.openedCount > 0 && result.downloadedCount === 0
+          ? 'The image cannot be downloaded directly; opened the link instead'
+          : downloadItems.length > 1
+          ? 'PSD-ready images are downloading'
+          : 'PSD-ready image downloaded'
+      );
+    } catch (err) {
+      console.error('Failed to download PSD-ready result:', err);
+      setError(
+        uiLanguage === 'zh'
+          ? 'PSD-ready 图片下载失败，请在新标签页打开后手动保存。'
+          : 'Failed to download the PSD-ready image. Open it in a new tab and save it manually.'
+      );
+    }
+  }, [completedPsdTask, uiLanguage]);
 
   return (
     <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--one-click">
@@ -601,6 +665,73 @@ const AIImagePsdGeneration = ({
                   : 'This flow generates one PSD-ready image plus Photoshop/PSD metadata; it does not pretend the image result is a native .psd.'}
               </small>
             </div>
+          ) : null}
+
+          {completedPsdPreviewUrl ? (
+            <section
+              className="psd-result-preview"
+              aria-label={
+                uiLanguage === 'zh'
+                  ? 'PSD-ready 结果预览'
+                  : 'PSD-ready result preview'
+              }
+            >
+              <div className="psd-result-preview__header">
+                <div>
+                  <strong>
+                    {uiLanguage === 'zh'
+                      ? 'PSD-ready 结果预览'
+                      : 'PSD-ready result preview'}
+                  </strong>
+                  <span>
+                    {uiLanguage === 'zh'
+                      ? completedPsdResultUrls.length > 1
+                        ? `已生成 ${completedPsdResultUrls.length} 张图片，可下载全部结果。`
+                        : '已生成 1 张图片，可直接下载或打开查看。'
+                      : completedPsdResultUrls.length > 1
+                      ? `${completedPsdResultUrls.length} images generated; download all results.`
+                      : 'One image generated; download or open it directly.'}
+                  </span>
+                </div>
+                <div className="psd-result-preview__actions">
+                  <a
+                    className="psd-result-preview__button"
+                    href={completedPsdPreviewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {uiLanguage === 'zh' ? '打开原图' : 'Open'}
+                  </a>
+                  <button
+                    type="button"
+                    className="psd-result-preview__button psd-result-preview__button--primary"
+                    onClick={handleDownloadPsdReadyResult}
+                  >
+                    {uiLanguage === 'zh' ? '下载图片' : 'Download'}
+                  </button>
+                </div>
+              </div>
+              <a
+                className="psd-result-preview__image-link"
+                href={completedPsdPreviewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <img
+                  src={completedPsdPreviewUrl}
+                  alt={
+                    uiLanguage === 'zh'
+                      ? 'PSD-ready 生成结果'
+                      : 'PSD-ready generated result'
+                  }
+                />
+              </a>
+              <small>
+                {uiLanguage === 'zh'
+                  ? '这是 GPT Image 返回的图片结果；真正 .psd 文件需要后续 PSD 打包器接入后再下载。'
+                  : 'This is the image returned by GPT Image; a real .psd download requires the future PSD packer.'}
+              </small>
+            </section>
           ) : null}
 
           <details className="psd-capability-disclosure">
