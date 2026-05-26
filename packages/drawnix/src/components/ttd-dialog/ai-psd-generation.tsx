@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import './ttd-dialog.scss';
 import './ai-image-generation.scss';
 import './ai-psd-generation.scss';
@@ -89,15 +95,20 @@ const AIImagePsdGeneration = ({
     findMatchingSelectableModel(
       imageModels,
       selectedModel || initialRoute.modelId,
-      selectedModelRef || createModelRef(initialRoute.profileId, initialRoute.modelId)
+      selectedModelRef ||
+        createModelRef(initialRoute.profileId, initialRoute.modelId)
     ) ||
     getPinnedSelectableModel(
       'image',
       selectedModel || initialRoute.modelId,
-      selectedModelRef || createModelRef(initialRoute.profileId, initialRoute.modelId)
+      selectedModelRef ||
+        createModelRef(initialRoute.profileId, initialRoute.modelId)
     );
   const initialModel =
-    selectedModel || initialMatchedModel?.id || imageModels[0]?.id || 'gpt-image-2';
+    selectedModel ||
+    initialMatchedModel?.id ||
+    imageModels[0]?.id ||
+    'gpt-image-2';
   const initialModelRef =
     selectedModelRef ||
     getModelRefFromConfig(initialMatchedModel) ||
@@ -131,7 +142,9 @@ const AIImagePsdGeneration = ({
   const [promptHistoryVersion, setPromptHistoryVersion] = useState(0);
   const [isPreviewVisible, setIsPreviewVisible] = useState(true);
   const [previewWidth, setPreviewWidth] = useState(() => loadSavedWidth('psd'));
-  const [mobilePanel, setMobilePanel] = useState<'config' | 'preview'>('config');
+  const [mobilePanel, setMobilePanel] = useState<'config' | 'preview'>(
+    'config'
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const { viewportWidth } = useDeviceType();
   const isCompactLayout = viewportWidth <= 768;
@@ -146,7 +159,11 @@ const AIImagePsdGeneration = ({
     if (currentMatch || !currentModel) {
       return imageModels;
     }
-    const pinned = getPinnedSelectableModel('image', currentModel, currentModelRef);
+    const pinned = getPinnedSelectableModel(
+      'image',
+      currentModel,
+      currentModelRef
+    );
     return pinned ? [pinned, ...imageModels] : imageModels;
   }, [currentModel, currentModelRef, imageModels]);
 
@@ -161,6 +178,21 @@ const AIImagePsdGeneration = ({
     void promptHistoryVersion;
     return getMergedPresetPrompts('image', language as Language, imageHistory);
   }, [imageHistory, language, promptHistoryVersion]);
+
+  const planLayerStats = useMemo(() => {
+    const layers = plan?.layers ?? [];
+    const visibleLayers = layers.filter((layer) => layer.visible);
+    const hiddenLayers = layers.length - visibleLayers.length;
+    const queuedLayers = layers.filter((layer) => layer.status === 'queued');
+    const textLayers = layers.filter((layer) => layer.type === 'text');
+
+    return {
+      visibleCount: visibleLayers.length,
+      hiddenCount: hiddenLayers,
+      queuedCount: queuedLayers.length,
+      textCount: textLayers.length,
+    };
+  }, [plan]);
 
   useEffect(() => {
     return promptStorageService.subscribeChanges(() => {
@@ -186,8 +218,16 @@ const AIImagePsdGeneration = ({
       selectedModel,
       selectedModelRef
     );
-    setCurrentModelRef(getModelRefFromConfig(matched) || selectedModelRef || null);
-  }, [currentModel, currentModelRef, selectedModel, selectedModelRef, visibleImageModels]);
+    setCurrentModelRef(
+      getModelRefFromConfig(matched) || selectedModelRef || null
+    );
+  }, [
+    currentModel,
+    currentModelRef,
+    selectedModel,
+    selectedModelRef,
+    visibleImageModels,
+  ]);
 
   useEffect(() => {
     const handleSettingsChange = (newSettings: GeminiSettings) => {
@@ -260,7 +300,10 @@ const AIImagePsdGeneration = ({
     setPlan(titledPlan);
     setError(null);
     setMobilePanel('preview');
-    savePromptToHistoryUtil('image', prompt.trim(), { width: 1024, height: 1024 });
+    savePromptToHistoryUtil('image', prompt.trim(), {
+      width: 1024,
+      height: 1024,
+    });
     setPromptHistoryVersion((version) => version + 1);
     void MessagePlugin.success(
       uiLanguage === 'zh' ? '已生成 PSD 图层计划' : 'PSD layer plan generated'
@@ -320,7 +363,8 @@ const AIImagePsdGeneration = ({
     setPlan((current) => {
       if (!current) return current;
       const nextIndex = current.layers.length + 1;
-      const name = uiLanguage === 'zh' ? `新图层 ${nextIndex}` : `New layer ${nextIndex}`;
+      const name =
+        uiLanguage === 'zh' ? `新图层 ${nextIndex}` : `New layer ${nextIndex}`;
       const description =
         uiLanguage === 'zh'
           ? '描述这个图层的视觉内容、位置和后续生成要求。'
@@ -349,7 +393,9 @@ const AIImagePsdGeneration = ({
       if (!current) return current;
       const source = current.layers.find((layer) => layer.id === layerId);
       if (!source) return current;
-      const sourceIndex = current.layers.findIndex((layer) => layer.id === layerId);
+      const sourceIndex = current.layers.findIndex(
+        (layer) => layer.id === layerId
+      );
       const copy: PsdLayerDraft = {
         ...source,
         id: `psd-layer-${Date.now()}`,
@@ -415,7 +461,9 @@ const AIImagePsdGeneration = ({
             ...current,
             layers: current.layers.map((layer) => ({
               ...layer,
-              status: queuedLayerIds.has(layer.id) ? 'queued' : 'export-pending',
+              status: queuedLayerIds.has(layer.id)
+                ? 'queued'
+                : 'export-pending',
             })),
           }
         : current
@@ -443,7 +491,8 @@ const AIImagePsdGeneration = ({
             ...current,
             layers: current.layers.map((layer) => ({
               ...layer,
-              status: layer.status === 'queued' ? 'export-pending' : layer.status,
+              status:
+                layer.status === 'queued' ? 'export-pending' : layer.status,
             })),
           }
         : current
@@ -556,7 +605,9 @@ const AIImagePsdGeneration = ({
             <section className="psd-draft-hero" aria-label="PSD draft editor">
               <div>
                 <span className="psd-draft-hero__eyebrow">
-                  {uiLanguage === 'zh' ? 'PSD 草稿编辑器 · Beta' : 'PSD Draft Editor · Beta'}
+                  {uiLanguage === 'zh'
+                    ? 'PSD 草稿编辑器 · Beta'
+                    : 'PSD Draft Editor · Beta'}
                 </span>
                 <h2>
                   {uiLanguage === 'zh'
@@ -619,7 +670,9 @@ const AIImagePsdGeneration = ({
             <section className="psd-config-card" aria-label="PSD configuration">
               <div className="psd-config-card__header">
                 <div>
-                  <h3>{uiLanguage === 'zh' ? 'PSD 输出配置' : 'PSD output setup'}</h3>
+                  <h3>
+                    {uiLanguage === 'zh' ? 'PSD 输出配置' : 'PSD output setup'}
+                  </h3>
                   <p>
                     {uiLanguage === 'zh'
                       ? '先规划图层结构，避免把文字和主体全部烘焙到一张图里。'
@@ -639,7 +692,9 @@ const AIImagePsdGeneration = ({
                   id="psd-draft-title"
                   className="psd-draft-input"
                   value={draftTitle}
-                  onChange={(event) => handlePlanTitleChange(event.target.value)}
+                  onChange={(event) =>
+                    handlePlanTitleChange(event.target.value)
+                  }
                   placeholder={
                     uiLanguage === 'zh'
                       ? '例如：新品发布海报 PSD'
@@ -649,7 +704,9 @@ const AIImagePsdGeneration = ({
               </div>
 
               <div className="psd-control-group">
-                <label>{uiLanguage === 'zh' ? 'PSD 模板' : 'PSD template'}</label>
+                <label>
+                  {uiLanguage === 'zh' ? 'PSD 模板' : 'PSD template'}
+                </label>
                 <div className="psd-chip-grid">
                   {TEMPLATE_OPTIONS.map((option) => (
                     <button
@@ -667,7 +724,9 @@ const AIImagePsdGeneration = ({
               </div>
 
               <div className="psd-control-group">
-                <label>{uiLanguage === 'zh' ? '图层策略' : 'Layer strategy'}</label>
+                <label>
+                  {uiLanguage === 'zh' ? '图层策略' : 'Layer strategy'}
+                </label>
                 <div className="psd-strategy-list">
                   {STRATEGY_OPTIONS.map((option) => (
                     <button
@@ -690,7 +749,9 @@ const AIImagePsdGeneration = ({
               </div>
 
               <div className="psd-control-group psd-control-group--inline">
-                <label>{uiLanguage === 'zh' ? '图层数量' : 'Layer count'}</label>
+                <label>
+                  {uiLanguage === 'zh' ? '图层数量' : 'Layer count'}
+                </label>
                 <div className="psd-chip-grid psd-chip-grid--compact">
                   {LAYER_COUNT_OPTIONS.map((count) => (
                     <button
@@ -712,7 +773,9 @@ const AIImagePsdGeneration = ({
                   <input
                     type="checkbox"
                     checked={preferEditableText}
-                    onChange={(event) => setPreferEditableText(event.target.checked)}
+                    onChange={(event) =>
+                      setPreferEditableText(event.target.checked)
+                    }
                   />
                   {uiLanguage === 'zh'
                     ? '文字尽量作为可编辑文本层'
@@ -722,7 +785,9 @@ const AIImagePsdGeneration = ({
                   <input
                     type="checkbox"
                     checked={avoidBakedText}
-                    onChange={(event) => setAvoidBakedText(event.target.checked)}
+                    onChange={(event) =>
+                      setAvoidBakedText(event.target.checked)
+                    }
                   />
                   {uiLanguage === 'zh'
                     ? '避免让模型生成重要文字'
@@ -776,12 +841,18 @@ const AIImagePsdGeneration = ({
                 : ''
             }`}
             style={
-              isCompactLayout ? undefined : { width: previewWidth, flexShrink: 0 }
+              isCompactLayout
+                ? undefined
+                : { width: previewWidth, flexShrink: 0 }
             }
           >
             <div className="psd-preview-header">
               <div>
-                <h3>{uiLanguage === 'zh' ? '可编辑 PSD 草稿' : 'Editable PSD draft'}</h3>
+                <h3>
+                  {uiLanguage === 'zh'
+                    ? '可编辑 PSD 草稿'
+                    : 'Editable PSD draft'}
+                </h3>
                 <p>
                   {uiLanguage === 'zh'
                     ? '编辑图层名称、类型、提示词、顺序和可见性；后续生成/导出按钮先提供可接线的 UI 骨架。'
@@ -791,6 +862,31 @@ const AIImagePsdGeneration = ({
               <span className="psd-preview-badge">
                 {plan ? plan.layers.length : 0}{' '}
                 {uiLanguage === 'zh' ? '层' : 'layers'}
+              </span>
+            </div>
+            <div
+              className="psd-preview-header__meta"
+              aria-label="PSD draft summary"
+            >
+              <span>
+                {uiLanguage === 'zh'
+                  ? `可见 ${planLayerStats.visibleCount}`
+                  : `${planLayerStats.visibleCount} visible`}
+              </span>
+              <span>
+                {uiLanguage === 'zh'
+                  ? `隐藏 ${planLayerStats.hiddenCount}`
+                  : `${planLayerStats.hiddenCount} hidden`}
+              </span>
+              <span>
+                {uiLanguage === 'zh'
+                  ? `文字层 ${planLayerStats.textCount}`
+                  : `${planLayerStats.textCount} text`}
+              </span>
+              <span>
+                {uiLanguage === 'zh'
+                  ? `待生成 ${planLayerStats.queuedCount}`
+                  : `${planLayerStats.queuedCount} queued`}
               </span>
             </div>
 
@@ -803,7 +899,9 @@ const AIImagePsdGeneration = ({
                   id="psd-draft-title-preview"
                   className="psd-draft-input"
                   value={plan.title}
-                  onChange={(event) => handlePlanTitleChange(event.target.value)}
+                  onChange={(event) =>
+                    handlePlanTitleChange(event.target.value)
+                  }
                 />
                 <div className="psd-draft-summary__meta">
                   <span>
@@ -811,7 +909,9 @@ const AIImagePsdGeneration = ({
                     {getTemplateLabel(plan.template, uiLanguage)}
                   </span>
                   <span>
-                    {uiLanguage === 'zh' ? '任务：沿用 IMAGE' : 'Tasks: IMAGE only'}
+                    {uiLanguage === 'zh'
+                      ? '任务：沿用 IMAGE'
+                      : 'Tasks: IMAGE only'}
                   </span>
                   <span>
                     {plan.textPolicy.preferEditableText
@@ -857,6 +957,23 @@ const AIImagePsdGeneration = ({
                         ? '填写描述后点击“生成 PSD 结构”。'
                         : 'Write a description and click “Generate PSD plan”.'}
                     </span>
+                    <ul className="psd-preview-empty__steps">
+                      <li>
+                        {uiLanguage === 'zh'
+                          ? '先写设计目标，再补参考图'
+                          : 'Start with the design goal and add references'}
+                      </li>
+                      <li>
+                        {uiLanguage === 'zh'
+                          ? '选择模板与图层策略'
+                          : 'Choose a template and layer strategy'}
+                      </li>
+                      <li>
+                        {uiLanguage === 'zh'
+                          ? '生成后再细调图层顺序/显隐'
+                          : 'Refine order and visibility after generation'}
+                      </li>
+                    </ul>
                   </div>
                 )}
               </div>
@@ -864,157 +981,180 @@ const AIImagePsdGeneration = ({
 
             {plan ? (
               <>
-              <div className="psd-layer-list">
-                {plan.layers.map((layer, index) => (
-                  <article key={layer.id} className="psd-layer-item">
-                    <button
-                      type="button"
-                      className={`psd-layer-visibility ${
-                        layer.visible ? 'psd-layer-visibility--on' : ''
+                <div className="psd-layer-list">
+                  {plan.layers.map((layer, index) => (
+                    <article
+                      key={layer.id}
+                      className={`psd-layer-item ${
+                        layer.visible ? '' : 'psd-layer-item--hidden'
                       }`}
-                      onClick={() => handleToggleLayer(layer.id)}
-                      aria-label={
-                        uiLanguage === 'zh'
-                          ? `${layer.visible ? '隐藏' : '显示'}${layer.name}`
-                          : `${layer.visible ? 'Hide' : 'Show'} ${layer.name}`
-                      }
                     >
-                      {layer.visible ? '●' : '○'}
-                    </button>
-                    <div className="psd-layer-index">{index + 1}</div>
-                    <div className="psd-layer-content">
-                      <div className="psd-layer-title-row">
-                        <input
-                          className="psd-layer-name-input"
-                          value={layer.name}
-                          onChange={(event) =>
-                            handleLayerChange(layer.id, 'name', event.target.value)
-                          }
-                          aria-label={
-                            uiLanguage === 'zh'
-                              ? `图层 ${index + 1} 名称`
-                              : `Layer ${index + 1} name`
-                          }
-                        />
-                        <span className={`psd-layer-status psd-layer-status--${layer.status}`}>
-                          {getStatusLabel(layer.status, uiLanguage)}
-                        </span>
-                      </div>
-                      <div className="psd-layer-field-row">
-                        <select
-                          value={layer.type}
+                      <button
+                        type="button"
+                        className={`psd-layer-visibility ${
+                          layer.visible ? 'psd-layer-visibility--on' : ''
+                        }`}
+                        onClick={() => handleToggleLayer(layer.id)}
+                        aria-label={
+                          uiLanguage === 'zh'
+                            ? `${layer.visible ? '隐藏' : '显示'}${layer.name}`
+                            : `${layer.visible ? 'Hide' : 'Show'} ${layer.name}`
+                        }
+                      >
+                        {layer.visible ? '●' : '○'}
+                      </button>
+                      <div className="psd-layer-index">{index + 1}</div>
+                      <div className="psd-layer-content">
+                        <div className="psd-layer-title-row">
+                          <input
+                            className="psd-layer-name-input"
+                            value={layer.name}
+                            onChange={(event) =>
+                              handleLayerChange(
+                                layer.id,
+                                'name',
+                                event.target.value
+                              )
+                            }
+                            aria-label={
+                              uiLanguage === 'zh'
+                                ? `图层 ${index + 1} 名称`
+                                : `Layer ${index + 1} name`
+                            }
+                          />
+                          <span
+                            className={`psd-layer-status psd-layer-status--${layer.status}`}
+                          >
+                            {getStatusLabel(layer.status, uiLanguage)}
+                          </span>
+                        </div>
+                        <div className="psd-layer-field-row">
+                          <select
+                            value={layer.type}
+                            onChange={(event) =>
+                              handleLayerChange(
+                                layer.id,
+                                'type',
+                                event.target.value as PsdLayerType
+                              )
+                            }
+                            aria-label={
+                              uiLanguage === 'zh'
+                                ? `${layer.name} 类型`
+                                : `${layer.name} type`
+                            }
+                          >
+                            {LAYER_TYPE_OPTIONS.map((type) => (
+                              <option key={type} value={type}>
+                                {getLayerTypeLabel(type, uiLanguage)}
+                              </option>
+                            ))}
+                          </select>
+                          <label>
+                            {uiLanguage === 'zh' ? '不透明度' : 'Opacity'}
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={layer.opacity}
+                              onChange={(event) =>
+                                handleLayerChange(
+                                  layer.id,
+                                  'opacity',
+                                  Math.max(
+                                    0,
+                                    Math.min(100, Number(event.target.value))
+                                  ) as PsdLayerDraft['opacity']
+                                )
+                              }
+                            />
+                          </label>
+                        </div>
+                        <textarea
+                          className="psd-layer-description-input"
+                          value={layer.description}
                           onChange={(event) =>
                             handleLayerChange(
                               layer.id,
-                              'type',
-                              event.target.value as PsdLayerType
+                              'description',
+                              event.target.value
                             )
                           }
                           aria-label={
                             uiLanguage === 'zh'
-                              ? `${layer.name} 类型`
-                              : `${layer.name} type`
+                              ? `${layer.name} 图层说明`
+                              : `${layer.name} layer description`
                           }
-                        >
-                          {LAYER_TYPE_OPTIONS.map((type) => (
-                            <option key={type} value={type}>
-                              {getLayerTypeLabel(type, uiLanguage)}
-                            </option>
-                          ))}
-                        </select>
-                        <label>
-                          {uiLanguage === 'zh' ? '不透明度' : 'Opacity'}
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={layer.opacity}
-                            onChange={(event) =>
-                              handleLayerChange(
-                                layer.id,
-                                'opacity',
-                                Math.max(0, Math.min(100, Number(event.target.value))) as PsdLayerDraft['opacity']
-                              )
-                            }
-                          />
-                        </label>
+                        />
+                        <textarea
+                          className="psd-layer-prompt-input"
+                          value={layer.generationPrompt}
+                          onChange={(event) =>
+                            handleLayerChange(
+                              layer.id,
+                              'generationPrompt',
+                              event.target.value
+                            )
+                          }
+                          aria-label={
+                            uiLanguage === 'zh'
+                              ? `${layer.name} 生成提示词`
+                              : `${layer.name} generation prompt`
+                          }
+                          placeholder={
+                            uiLanguage === 'zh'
+                              ? '给图片生成任务的图层素材提示词'
+                              : 'Prompt for this layer asset image task'
+                          }
+                        />
+                        <div className="psd-layer-actions">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveLayer(layer.id, -1)}
+                            disabled={index === 0}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveLayer(layer.id, 1)}
+                            disabled={index === plan.layers.length - 1}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDuplicateLayer(layer.id)}
+                          >
+                            {uiLanguage === 'zh' ? '复制' : 'Duplicate'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLayer(layer.id)}
+                            disabled={layer.locked && plan.layers.length <= 1}
+                          >
+                            {uiLanguage === 'zh' ? '删除' : 'Delete'}
+                          </button>
+                        </div>
                       </div>
-                      <textarea
-                        className="psd-layer-description-input"
-                        value={layer.description}
-                        onChange={(event) =>
-                          handleLayerChange(layer.id, 'description', event.target.value)
-                        }
-                        aria-label={
-                          uiLanguage === 'zh'
-                            ? `${layer.name} 图层说明`
-                            : `${layer.name} layer description`
-                        }
-                      />
-                      <textarea
-                        className="psd-layer-prompt-input"
-                        value={layer.generationPrompt}
-                        onChange={(event) =>
-                          handleLayerChange(
-                            layer.id,
-                            'generationPrompt',
-                            event.target.value
-                          )
-                        }
-                        aria-label={
-                          uiLanguage === 'zh'
-                            ? `${layer.name} 生成提示词`
-                            : `${layer.name} generation prompt`
-                        }
-                        placeholder={
-                          uiLanguage === 'zh'
-                            ? '给图片生成任务的图层素材提示词'
-                            : 'Prompt for this layer asset image task'
-                        }
-                      />
-                      <div className="psd-layer-actions">
-                        <button
-                          type="button"
-                          onClick={() => handleMoveLayer(layer.id, -1)}
-                          disabled={index === 0}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleMoveLayer(layer.id, 1)}
-                          disabled={index === plan.layers.length - 1}
-                        >
-                          ↓
-                        </button>
-                        <button type="button" onClick={() => handleDuplicateLayer(layer.id)}>
-                          {uiLanguage === 'zh' ? '复制' : 'Duplicate'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveLayer(layer.id)}
-                          disabled={layer.locked && plan.layers.length <= 1}
-                        >
-                          {uiLanguage === 'zh' ? '删除' : 'Delete'}
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-              <div className="psd-workflow-actions">
-                <button type="button" onClick={handleAddLayer}>
-                  {uiLanguage === 'zh' ? '+ 添加图层' : '+ Add layer'}
-                </button>
-                <button type="button" onClick={handleGenerateLayerAssets}>
-                  {uiLanguage === 'zh'
-                    ? '建立图层生成骨架'
-                    : 'Create layer-generation skeleton'}
-                </button>
-                <button type="button" onClick={handleExportSkeleton}>
-                  {uiLanguage === 'zh' ? '准备导出骨架' : 'Prepare export skeleton'}
-                </button>
-              </div>
+                    </article>
+                  ))}
+                </div>
+                <div className="psd-workflow-actions">
+                  <button type="button" onClick={handleAddLayer}>
+                    {uiLanguage === 'zh' ? '+ 添加图层' : '+ Add layer'}
+                  </button>
+                  <button type="button" onClick={handleGenerateLayerAssets}>
+                    {uiLanguage === 'zh'
+                      ? '建立图层生成骨架'
+                      : 'Create layer-generation skeleton'}
+                  </button>
+                  <button type="button" onClick={handleExportSkeleton}>
+                    {uiLanguage === 'zh'
+                      ? '准备导出骨架'
+                      : 'Prepare export skeleton'}
+                  </button>
+                </div>
               </>
             ) : (
               <div className="psd-layer-empty-state">
