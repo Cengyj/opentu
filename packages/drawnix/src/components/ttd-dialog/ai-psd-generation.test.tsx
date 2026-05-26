@@ -25,11 +25,7 @@ const mockState = vi.hoisted(() => ({
   createTask: vi.fn(() => ({
     id: `task-${mockState.createTask.mock.calls.length}`,
   })),
-  smartDownload: vi.fn(async () => ({
-    openedCount: 0,
-    downloadedCount: 1,
-    failedCount: 0,
-  })),
+  triggerBlobDownload: vi.fn(),
 }));
 
 vi.mock('tdesign-react', () => ({
@@ -127,17 +123,7 @@ vi.mock('../../services/ai-generation-preferences-service', () => ({
 }));
 
 vi.mock('../../utils/download-utils', () => ({
-  buildTaskDownloadItems: (task: Task) =>
-    task.result?.url
-      ? [
-          {
-            url: task.result.url,
-            type: 'image',
-            filename: 'psd-ready.png',
-          },
-        ]
-      : [],
-  smartDownload: mockState.smartDownload,
+  triggerBlobDownload: mockState.triggerBlobDownload,
 }));
 
 vi.mock('../ai-input-bar/ModelDropdown', () => ({
@@ -404,7 +390,7 @@ describe('buildLayerPlan', () => {
       model: 'gpt-image-2',
       modelRef: { profileId: 'default', modelId: 'gpt-image-2' },
       uploadedImages: [
-        { url: 'data:image/png;base64,poster', name: 'poster.png' },
+        { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
       ],
       size: '1024x1024',
       width: 1024,
@@ -428,7 +414,7 @@ describe('buildLayerPlan', () => {
       autoInsertToCanvas: false,
     });
     expect(taskPlan.params.referenceImages).toEqual([
-      'data:image/png;base64,poster',
+      'data:image/png;base64,cG9zdGVy',
     ]);
     expect(taskPlan.params.inputFidelity).toBeUndefined();
     expect(taskPlan.params.params).toEqual({
@@ -496,7 +482,7 @@ describe('AIImagePsdGeneration contract', () => {
     mockState.promptInputProps = [];
     mockState.tasks = [];
     mockState.createTask.mockClear();
-    mockState.smartDownload.mockClear();
+    mockState.triggerBlobDownload.mockClear();
   });
 
   it('exports the PSD mode component for lazy dialog loading', () => {
@@ -506,8 +492,10 @@ describe('AIImagePsdGeneration contract', () => {
   it('renders a GPT-style one-click PSD composer without tuning controls', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(screen.getByText(/像 GPT-Image2 工作流一样准备 PSD/)).toBeTruthy();
-    expect(screen.getByText(/只需要参考图和提示词/)).toBeTruthy();
+    expect(
+      screen.getByText(/用参考图和提示词准备 Photoshop 工作区/)
+    ).toBeTruthy();
+    expect(screen.getByText(/不把单张 PNG 伪装成 PSD/)).toBeTruthy();
     expect(screen.getByText('思考拆层')).toBeTruthy();
     expect(screen.getByText('源设置：Photoshop')).toBeTruthy();
     expect(screen.getByText('导出编辑')).toBeTruthy();
@@ -550,7 +538,7 @@ describe('AIImagePsdGeneration contract', () => {
       showOptimizeButton: false,
     });
     expect(
-      screen.getByText(/公开 GPT Image API 当前返回图片数据而不是原生 .psd/)
+      screen.getByText(/公开 GPT Image API 当前返回 png\/jpeg\/webp 图片数据/)
     ).toBeTruthy();
   });
 
@@ -559,7 +547,7 @@ describe('AIImagePsdGeneration contract', () => {
       <AIImagePsdGeneration
         initialPrompt="品牌活动海报"
         initialImages={[
-          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
         ]}
       />
     );
@@ -590,7 +578,9 @@ describe('AIImagePsdGeneration contract', () => {
       screen.getByText(/成功 0 \/ 失败 0 \/ 进行中 0 \/ 排队 1 \/ 总计 1/)
     ).toBeTruthy();
     expect(screen.getByText(/打开任务队列查看/)).toBeTruthy();
-    expect(screen.getByText(/不会把图片结果伪装成原生 \.psd/)).toBeTruthy();
+    expect(screen.getAllByText(/PSD-ready ZIP 工作区包/).length).toBeGreaterThan(
+      0
+    );
     expect(mockState.createTask).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(`查看可选${'拆分'}明细`)).toBeNull();
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
@@ -601,7 +591,7 @@ describe('AIImagePsdGeneration contract', () => {
       <AIImagePsdGeneration
         initialPrompt="品牌活动海报"
         initialImages={[
-          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
         ]}
       />
     );
@@ -625,7 +615,7 @@ describe('AIImagePsdGeneration contract', () => {
           batchTotal: 1,
         },
         result: {
-          url: 'data:image/png;base64,generated',
+          url: 'data:image/png;base64,Z2VuZXJhdGVk',
           format: 'png',
           size: 100,
           width: 1024,
@@ -637,24 +627,47 @@ describe('AIImagePsdGeneration contract', () => {
       <AIImagePsdGeneration
         initialPrompt="品牌活动海报"
         initialImages={[
-          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
         ]}
       />
     );
 
     expect(screen.getByText('PSD-ready 图片已生成完成')).toBeTruthy();
     expect(screen.getByText(/成功 1 \/ 总计 1/)).toBeTruthy();
-    expect(screen.getByText(/可在下方直接预览、打开或下载图片/)).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '下载 PSD-ready 资产包' })
+    ).toBeTruthy();
     expect(screen.getByText('PSD-ready 结果预览')).toBeTruthy();
     expect(
       screen
         .getByRole('img', { name: 'PSD-ready 生成结果' })
         .getAttribute('src')
-    ).toBe('data:image/png;base64,generated');
-    fireEvent.click(screen.getByRole('button', { name: '下载图片' }));
+    ).toBe('data:image/png;base64,Z2VuZXJhdGVk');
+    fireEvent.click(
+      screen.getByRole('button', { name: '下载 PSD-ready 资产包' })
+    );
     await waitFor(() => {
-      expect(mockState.smartDownload).toHaveBeenCalledTimes(1);
+      expect(mockState.triggerBlobDownload).toHaveBeenCalledTimes(1);
     });
+    const downloadedBlob =
+      mockState.triggerBlobDownload.mock.calls[0]?.[0] as Blob;
+    const downloadedFilename =
+      mockState.triggerBlobDownload.mock.calls[0]?.[1];
+    expect(downloadedFilename).toContain('.psd-ready-workspace.zip');
+
+    const { default: JSZip } = await import('jszip');
+    const zip = await JSZip.loadAsync(downloadedBlob);
+    expect(zip.file('generated/generated.png')).toBeTruthy();
+    expect(zip.file('source/1-poster.png')).toBeTruthy();
+    expect(zip.file('README.md')).toBeTruthy();
+
+    const manifestText = await zip.file('manifest.json')?.async('string');
+    expect(manifestText).toBeTruthy();
+    const manifest = JSON.parse(manifestText || '{}');
+    expect(manifest.officialApiBoundary.apiReturnsNativePsd).toBe(false);
+    expect(manifest.officialApiBoundary.apiReturnsImageData).toBe(true);
+    expect(manifest.assets.generated[0].path).toBe('generated/generated.png');
+    expect(manifest.assets.references[0].path).toBe('source/1-poster.png');
     expect(screen.queryByText(/原生 PSD 下载已完成/)).toBeNull();
   });
 
@@ -663,7 +676,7 @@ describe('AIImagePsdGeneration contract', () => {
       <AIImagePsdGeneration
         initialPrompt="品牌活动海报"
         initialImages={[
-          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
         ]}
       />
     );
@@ -689,7 +702,7 @@ describe('AIImagePsdGeneration contract', () => {
       <AIImagePsdGeneration
         initialPrompt="品牌活动海报"
         initialImages={[
-          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
         ]}
       />
     );

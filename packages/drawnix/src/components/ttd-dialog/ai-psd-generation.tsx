@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type JSZip from 'jszip';
 import './ttd-dialog.scss';
 import './ai-image-generation.scss';
 import './ai-psd-generation.scss';
@@ -40,10 +41,7 @@ import {
   type PsdGenerationPlan,
   type PsdTemplate,
 } from './ai-psd-plan';
-import {
-  buildTaskDownloadItems,
-  smartDownload,
-} from '../../utils/download-utils';
+import { triggerBlobDownload } from '../../utils/download-utils';
 
 interface AIImagePsdGenerationProps {
   initialPrompt?: string;
@@ -78,6 +76,12 @@ interface PsdTaskStats {
   detail: string;
 }
 
+interface PsdReadyWorkspaceExportResult {
+  filename: string;
+  packedAssetCount: number;
+  linkedAssetCount: number;
+}
+
 function getTaskBatchId(task: Task): string | null {
   const batchId = task.params?.batchId;
   return typeof batchId === 'string' ? batchId : null;
@@ -96,6 +100,231 @@ function getTaskResultUrls(task: Task | undefined): string[] {
     return task.result.urls.filter((url): url is string => Boolean(url));
   }
   return task.result.url ? [task.result.url] : [];
+}
+
+function sanitizeWorkspaceName(value: string | undefined): string {
+  const safeName = (value || 'psd-ready-workspace')
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 72);
+  return safeName || 'psd-ready-workspace';
+}
+
+function getUrlExtension(url: string | undefined, fallback = 'png'): string {
+  if (!url) return fallback;
+  const dataUrlMatch = url.match(/^data:image\/([a-z0-9.+-]+);/i);
+  if (dataUrlMatch?.[1]) {
+    return dataUrlMatch[1].replace('jpeg', 'jpg');
+  }
+
+  try {
+    const pathname = new URL(url, window.location.href).pathname;
+    const extension = pathname.match(/\.([a-z0-9]+)$/i)?.[1];
+    return extension || fallback;
+  } catch {
+    const extension = url.split('?')[0]?.match(/\.([a-z0-9]+)$/i)?.[1];
+    return extension || fallback;
+  }
+}
+
+function dataUrlToUint8Array(url: string): Uint8Array | null {
+  const match = url.match(/^data:([^;,]+)?((?:;[^,]*)*),(.*)$/i);
+  if (!match) return null;
+
+  const metadata = match[2] || '';
+  const payload = match[3] || '';
+  if (metadata.toLowerCase().includes(';base64')) {
+    const binary = atob(payload.replace(/\s/g, ''));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  }
+
+  return new TextEncoder().encode(decodeURIComponent(payload));
+}
+
+async function readUrlAsBlob(url: string): Promise<Blob> {
+  const response = await fetch(url, { referrerPolicy: 'no-referrer' });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  }
+  return response.blob();
+}
+
+async function addUrlAssetToZip(
+  zip: JSZip,
+  path: string,
+  url: string,
+  linkedUrls: string[]
+): Promise<boolean> {
+  try {
+    const inlineData = dataUrlToUint8Array(url);
+    if (inlineData) {
+      zip.file(path, inlineData);
+      return true;
+    }
+
+    const blob = await readUrlAsBlob(url);
+    zip.file(path, await blob.arrayBuffer());
+    return true;
+  } catch (err) {
+    console.warn('[AIImagePsdGeneration] Failed to pack asset, linking instead:', err);
+    linkedUrls.push(url);
+    return false;
+  }
+}
+
+async function downloadPsdReadyWorkspacePackage(options: {
+  task: Task;
+  plan: PsdGenerationPlan | null;
+  prompt: string;
+  referenceImages: ReferenceImage[];
+  uiLanguage: 'zh' | 'en';
+}): Promise<PsdReadyWorkspaceExportResult> {
+  const { task, plan, prompt, referenceImages, uiLanguage } = options;
+  const urls = getTaskResultUrls(task);
+  if (urls.length === 0) {
+    throw new Error('No PSD-ready image result URLs to export');
+  }
+
+  const { default: JSZip } = await import('jszip');
+  const zip = new JSZip();
+  const generatedAt = new Date().toISOString();
+  const workspaceBaseName = sanitizeWorkspaceName(
+    plan?.title || task.result?.title || prompt || task.params.prompt
+  );
+  const linkedUrls: string[] = [];
+  let packedAssetCount = 0;
+
+  const generatedEntries = await Promise.all(
+    urls.map(async (url, index) => {
+      const extension = getUrlExtension(url, task.result?.format || 'png');
+      const path =
+        urls.length > 1
+          ? `generated/generated-${index + 1}.${extension}`
+          : `generated/generated.${extension}`;
+      const packed = await addUrlAssetToZip(zip, path, url, linkedUrls);
+      if (packed) packedAssetCount += 1;
+      return {
+        kind: 'generated',
+        index: index + 1,
+        path: packed ? path : null,
+        url,
+        format: extension,
+      };
+    })
+  );
+
+  const referenceEntries = await Promise.all(
+    referenceImages.map(async (image, index) => {
+      const extension = getUrlExtension(image.url, 'png');
+      const baseName = (image.name || `reference-${index + 1}`).replace(
+        /\.[a-z0-9]+$/i,
+        ''
+      );
+      const safeName = sanitizeWorkspaceName(baseName);
+      const path = `source/${index + 1}-${safeName}.${extension}`;
+      const packed = await addUrlAssetToZip(zip, path, image.url, linkedUrls);
+      if (packed) packedAssetCount += 1;
+      return {
+        kind: 'reference',
+        index: index + 1,
+        name: image.name,
+        path: packed ? path : null,
+        url: image.url,
+        format: extension,
+      };
+    })
+  );
+
+  const manifest = {
+    schema: 'opentu.psd-ready-workspace.v1',
+    generatedAt,
+    source: 'opentu',
+    officialApiBoundary: {
+      apiReturnsNativePsd: false,
+      apiReturnsLayeredPsd: false,
+      apiReturnsImageData: true,
+      note:
+        uiLanguage === 'zh'
+          ? 'OpenAI GPT Image API 返回 png/jpeg/webp 等图片结果，不直接返回原生分层 PSD。本包用于 Photoshop 手动继续编辑或后续 PSD 打包器接入。'
+          : 'The OpenAI GPT Image API returns image outputs such as png/jpeg/webp, not a native layered PSD. This package is for Photoshop handoff or future PSD packer integration.',
+    },
+    task: {
+      id: task.id,
+      model: task.params.model,
+      size: task.params.size,
+      outputFormat: task.result?.format || task.params.outputFormat || 'png',
+      prompt: task.params.prompt,
+    },
+    plan: plan
+      ? {
+          id: plan.planId,
+          title: plan.title,
+          template: plan.template,
+          strategy: plan.strategy,
+          textPolicy: plan.textPolicy,
+          exportSkeleton: plan.exportSkeleton,
+          layers: plan.layers.map((layer) => ({
+            id: layer.id,
+            name: layer.name,
+            type: layer.type,
+            visible: layer.visible,
+            locked: layer.locked,
+            description: layer.description,
+          })),
+        }
+      : null,
+    assets: {
+      generated: generatedEntries,
+      references: referenceEntries,
+      linkedUrls,
+    },
+    photoshopHandoff: {
+      canvas: {
+        width: task.result?.width || task.params.width || null,
+        height: task.result?.height || task.params.height || null,
+      },
+      recommendedSteps:
+        uiLanguage === 'zh'
+          ? [
+              '在 Photoshop 中打开 generated/generated.* 作为当前 GPT Image 结果。',
+              '如需对照原图，导入 source/ 下的参考图并置于底层或参考组。',
+              '按照 manifest.json 中的 layers 建立图层组、可编辑文字层和参考说明层。',
+              '当前包不是原生 .psd；接入 PSD 打包器后可把这些资产自动写入 .psd。',
+            ]
+          : [
+              'Open generated/generated.* in Photoshop as the current GPT Image result.',
+              'Import source/ references as bottom/reference layers when needed.',
+              'Use manifest.json layers to create layer groups, editable text layers, and notes.',
+              'This package is not a native .psd; a future packer can write these assets into a .psd.',
+            ],
+    },
+  };
+
+  const readme =
+    uiLanguage === 'zh'
+      ? `# PSD-ready 工作区包\n\n这不是原生分层 .psd 文件。\n\n根据 OpenAI 官方 API 能力，GPT Image 返回的是图片结果（png/jpeg/webp），不是 Photoshop PSD 文档。本包把生成图、参考图和 PSD/Photoshop 元数据放在一起，方便你在 Photoshop 中继续编辑，或供后续 PSD 打包器使用。\n\n## 内容\n\n- generated/：GPT Image 生成结果\n- source/：上传的参考图（如果浏览器允许打包）\n- manifest.json：图层计划、提示词、画布和官方 API 边界说明\n\n## 建议\n\n1. 打开 generated/generated.*。\n2. 导入 source/ 参考图作为对照。\n3. 按 manifest.json 创建可编辑文字层和图层组。\n`
+      : `# PSD-ready workspace package\n\nThis is not a native layered .psd file.\n\nPer the OpenAI API capability boundary, GPT Image returns image outputs (png/jpeg/webp), not a Photoshop PSD document. This package keeps the generated result, references, and Photoshop/PSD metadata together for manual Photoshop editing or a future PSD packer.\n\n## Contents\n\n- generated/: GPT Image result\n- source/: uploaded references when the browser can pack them\n- manifest.json: layer plan, prompt, canvas, and official API boundary notes\n`;
+
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+  zip.file('README.md', readme);
+
+  const zipOutput = await zip.generateAsync({ type: 'arraybuffer' });
+  const zipBlob = new Blob([zipOutput], { type: 'application/zip' });
+  const timestamp = generatedAt.slice(0, 19).replace(/[T:]/g, '-');
+  const filename = `${workspaceBaseName}-${timestamp}.psd-ready-workspace.zip`;
+  triggerBlobDownload(zipBlob, filename);
+
+  return {
+    filename,
+    packedAssetCount,
+    linkedAssetCount: linkedUrls.length,
+  };
 }
 
 function buildPsdTaskStats(
@@ -160,8 +389,8 @@ function buildPsdTaskStats(
         : 'PSD-ready image is ready';
     detail =
       uiLanguage === 'zh'
-        ? '可在下方直接预览、打开或下载图片；当前不是原生 PSD 下载，后续接入 PSD 打包器后再提供 .psd 文件。'
-        : 'Preview, open, or download the image below; this is not a native PSD download until PSD packaging is wired.';
+        ? '可在下方预览生成图，并下载 PSD-ready 资产包；官方 API 当前返回图片数据，不直接返回原生分层 PSD。'
+        : 'Preview the generated image below and download a PSD-ready asset package; the official API currently returns image data, not a native layered PSD.';
   } else if (processing > 0) {
     tone = 'active';
     title =
@@ -519,40 +748,41 @@ const AIImagePsdGeneration = ({
   const handleDownloadPsdReadyResult = useCallback(async () => {
     if (!completedPsdTask) return;
 
-    const downloadItems = buildTaskDownloadItems(completedPsdTask);
-    if (downloadItems.length === 0) {
+    if (completedPsdResultUrls.length === 0) {
       setError(
         uiLanguage === 'zh'
-          ? '当前任务没有可下载的图片结果。'
-          : 'This task has no downloadable image result.'
+          ? '当前任务没有可打包的 PSD-ready 结果。'
+          : 'This task has no PSD-ready result to package.'
       );
       return;
     }
 
     try {
-      const result = await smartDownload(downloadItems);
+      const result = await downloadPsdReadyWorkspacePackage({
+        task: completedPsdTask,
+        plan,
+        prompt,
+        referenceImages: uploadedImages,
+        uiLanguage,
+      });
       void MessagePlugin.success(
         uiLanguage === 'zh'
-          ? result.openedCount > 0 && result.downloadedCount === 0
-            ? '资源不支持直接下载，已打开链接'
-            : downloadItems.length > 1
-            ? 'PSD-ready 图片已开始批量下载'
-            : 'PSD-ready 图片下载成功'
-          : result.openedCount > 0 && result.downloadedCount === 0
-          ? 'The image cannot be downloaded directly; opened the link instead'
-          : downloadItems.length > 1
-          ? 'PSD-ready images are downloading'
-          : 'PSD-ready image downloaded'
+          ? result.linkedAssetCount > 0
+            ? `PSD-ready 资产包已下载，${result.linkedAssetCount} 个跨域资源已记录为链接`
+            : 'PSD-ready 资产包已下载'
+          : result.linkedAssetCount > 0
+          ? `PSD-ready package downloaded; ${result.linkedAssetCount} cross-origin assets were linked`
+          : 'PSD-ready package downloaded'
       );
     } catch (err) {
       console.error('Failed to download PSD-ready result:', err);
       setError(
         uiLanguage === 'zh'
-          ? 'PSD-ready 图片下载失败，请在新标签页打开后手动保存。'
-          : 'Failed to download the PSD-ready image. Open it in a new tab and save it manually.'
+          ? 'PSD-ready 资产包打包失败，请先打开原图保存，或稍后重试。'
+          : 'Failed to package the PSD-ready workspace. Open the image directly or try again.'
       );
     }
-  }, [completedPsdTask, uiLanguage]);
+  }, [completedPsdResultUrls.length, completedPsdTask, plan, prompt, uiLanguage, uploadedImages]);
 
   return (
     <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--one-click">
@@ -560,18 +790,18 @@ const AIImagePsdGeneration = ({
         <section className="psd-hero" aria-label="PSD one-click generator">
           <span className="psd-hero__eyebrow">
             {uiLanguage === 'zh'
-              ? 'GPT-Image2 风格 PSD 工作流'
-              : 'GPT-Image2-style PSD workflow'}
+              ? '官方式 GPT Image 编辑工作区'
+              : 'Official-style GPT Image editing workspace'}
           </span>
           <h2>
             {uiLanguage === 'zh'
-              ? '像 GPT-Image2 工作流一样准备 PSD'
-              : 'Prepare PSD like the GPT-Image2 workflow'}
+              ? '用参考图和提示词准备 Photoshop 工作区'
+              : 'Prepare a Photoshop workspace from a reference and prompt'}
           </h2>
           <p>
             {uiLanguage === 'zh'
-              ? '只需要参考图和提示词；系统按“图像生成 → 思考拆层 → Photoshop 源设置 → 导出编辑”的流程准备 PSD 工作区。'
-              : 'Only a reference image and prompt are needed; Opentu follows image generation → thinking layer split → Photoshop source → export/edit readiness.'}
+              ? '参考官方体验：先生成可继续编辑的图像结果，再把生成图、参考图和图层计划打包成 PSD-ready 工作区；不把单张 PNG 伪装成 PSD。'
+              : 'Following the official experience: generate an editable image result, then package the result, references, and layer plan as a PSD-ready workspace instead of pretending a PNG is a PSD.'}
           </p>
         </section>
 
@@ -661,8 +891,8 @@ const AIImagePsdGeneration = ({
               </div>
               <small>
                 {uiLanguage === 'zh'
-                  ? '当前流程会生成 1 张 PSD-ready 图片和 Photoshop/PSD 元数据，不会把图片结果伪装成原生 .psd。'
-                  : 'This flow generates one PSD-ready image plus Photoshop/PSD metadata; it does not pretend the image result is a native .psd.'}
+                  ? '当前流程会生成 1 张 GPT Image 结果，并提供 PSD-ready ZIP 工作区包：生成图、参考图、manifest 和 Photoshop 接力说明。'
+                  : 'This flow generates one GPT Image result and offers a PSD-ready ZIP workspace: generated image, references, manifest, and Photoshop handoff notes.'}
               </small>
             </div>
           ) : null}
@@ -686,11 +916,11 @@ const AIImagePsdGeneration = ({
                   <span>
                     {uiLanguage === 'zh'
                       ? completedPsdResultUrls.length > 1
-                        ? `已生成 ${completedPsdResultUrls.length} 张图片，可下载全部结果。`
-                        : '已生成 1 张图片，可直接下载或打开查看。'
+                        ? `已生成 ${completedPsdResultUrls.length} 张图片；下载将生成 PSD-ready 工作区包。`
+                        : '已生成 1 张图片；下载将生成 PSD-ready 工作区包。'
                       : completedPsdResultUrls.length > 1
-                      ? `${completedPsdResultUrls.length} images generated; download all results.`
-                      : 'One image generated; download or open it directly.'}
+                      ? `${completedPsdResultUrls.length} images generated; download creates a PSD-ready workspace package.`
+                      : 'One image generated; download creates a PSD-ready workspace package.'}
                   </span>
                 </div>
                 <div className="psd-result-preview__actions">
@@ -707,7 +937,9 @@ const AIImagePsdGeneration = ({
                     className="psd-result-preview__button psd-result-preview__button--primary"
                     onClick={handleDownloadPsdReadyResult}
                   >
-                    {uiLanguage === 'zh' ? '下载图片' : 'Download'}
+                    {uiLanguage === 'zh'
+                      ? '下载 PSD-ready 资产包'
+                      : 'Download PSD-ready package'}
                   </button>
                 </div>
               </div>
@@ -728,8 +960,8 @@ const AIImagePsdGeneration = ({
               </a>
               <small>
                 {uiLanguage === 'zh'
-                  ? '这是 GPT Image 返回的图片结果；真正 .psd 文件需要后续 PSD 打包器接入后再下载。'
-                  : 'This is the image returned by GPT Image; a real .psd download requires the future PSD packer.'}
+                  ? '官方 API 当前返回的是图片数据，不是原生分层 PSD；资产包会附带 manifest.json 和 Photoshop 接力说明。'
+                  : 'The official API currently returns image data, not a native layered PSD; the package includes manifest.json and Photoshop handoff notes.'}
               </small>
             </section>
           ) : null}
@@ -738,8 +970,8 @@ const AIImagePsdGeneration = ({
             <summary>{uiLanguage === 'zh' ? '说明' : 'Note'}</summary>
             <p>
               {uiLanguage === 'zh'
-                ? '系统会自动处理生成设置；公开 GPT Image API 当前返回图片数据而不是原生 .psd，Opentu 先生成 1 张 PSD-ready 图片和拆层元数据，并把真正 Photoshop/PSD 打包作为后续本地或服务端导出能力。'
-                : 'Opentu handles generation settings automatically; the public GPT Image API currently returns image data rather than a native .psd, so Opentu generates one PSD-ready image plus layer metadata and leaves true Photoshop/PSD packaging for a later local or server export step.'}
+                ? '系统会自动处理生成设置；公开 GPT Image API 当前返回 png/jpeg/webp 图片数据而不是原生 .psd。Opentu 现在提供 PSD-ready ZIP 工作区包，真正 Photoshop PSD 写入可作为后续本地或服务端打包器接入。'
+                : 'Opentu handles generation settings automatically; the public GPT Image API currently returns png/jpeg/webp image data rather than a native .psd. Opentu now provides a PSD-ready ZIP workspace, while true Photoshop PSD writing can be added later through a local or server packer.'}
             </p>
           </details>
 

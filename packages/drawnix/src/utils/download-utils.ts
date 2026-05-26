@@ -27,6 +27,10 @@ export interface SmartDownloadResult {
   failedCount: number;
 }
 
+export function triggerBlobDownload(blob: Blob, filename: string): void {
+  downloadFromBlob(blob, filename);
+}
+
 function createDownloadResult(
   overrides: Partial<SmartDownloadResult> = {}
 ): SmartDownloadResult {
