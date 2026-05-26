@@ -1137,13 +1137,6 @@ const AIImagePsdGeneration = ({
                             type="button"
                             onClick={() => handleRemoveLayer(layer.id)}
                             disabled={layer.locked}
-                            title={
-                              layer.locked
-                                ? uiLanguage === 'zh'
-                                  ? '基础图层已锁定，避免破坏 PSD 草稿结构'
-                                  : 'Base layer is locked to preserve the PSD draft structure'
-                                : undefined
-                            }
                           >
                             {uiLanguage === 'zh' ? '删除' : 'Delete'}
                           </button>
