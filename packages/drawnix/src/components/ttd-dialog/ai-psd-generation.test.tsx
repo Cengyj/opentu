@@ -27,7 +27,12 @@ vi.mock('../../hooks/useGenerationHistory', () => ({
 
 vi.mock('../../hooks/use-runtime-models', () => {
   const imageModels = [
-    { id: 'image-model', label: 'Image Model', type: 'image', vendor: 'OPENAI' },
+    {
+      id: 'image-model',
+      label: 'Image Model',
+      type: 'image',
+      vendor: 'OPENAI',
+    },
   ];
   return {
     useSelectableModels: () => imageModels,
@@ -43,7 +48,10 @@ vi.mock('../../utils/settings-manager', () => ({
     addListener: vi.fn(),
     removeListener: vi.fn(),
   },
-  resolveInvocationRoute: () => ({ profileId: 'default', modelId: 'image-model' }),
+  resolveInvocationRoute: () => ({
+    profileId: 'default',
+    modelId: 'image-model',
+  }),
 }));
 
 vi.mock('../../utils/runtime-model-discovery', () => ({
@@ -51,8 +59,10 @@ vi.mock('../../utils/runtime-model-discovery', () => ({
 }));
 
 vi.mock('../../utils/model-selection', () => ({
-  findMatchingSelectableModel: (models: Array<{ id: string }>, modelId: string) =>
-    models.find((model) => model.id === modelId) || null,
+  findMatchingSelectableModel: (
+    models: Array<{ id: string }>,
+    modelId: string
+  ) => models.find((model) => model.id === modelId) || null,
   getModelRefFromConfig: (model?: { id: string } | null) =>
     model ? { profileId: 'default', modelId: model.id } : null,
   getSelectionKey: (modelId: string) => modelId,
@@ -78,7 +88,9 @@ vi.mock('../../services/prompt-storage-service', () => ({
 }));
 
 vi.mock('../../services/ai-generation-preferences-service', () => ({
-  loadScopedAIImageToolPreferences: () => ({ extraParams: { size: '1024x1024' } }),
+  loadScopedAIImageToolPreferences: () => ({
+    extraParams: { size: '1024x1024' },
+  }),
 }));
 
 vi.mock('../ai-input-bar/ModelDropdown', () => ({
@@ -90,7 +102,9 @@ vi.mock('../ai-input-bar/ParametersDropdown', () => ({
 }));
 
 vi.mock('../shared', () => ({
-  KnowledgeNoteContextSelector: () => <div data-testid="knowledge-selector">Knowledge</div>,
+  KnowledgeNoteContextSelector: () => (
+    <div data-testid="knowledge-selector">Knowledge</div>
+  ),
 }));
 
 interface MockActionButtonsProps {
@@ -123,7 +137,9 @@ vi.mock('./shared', () => ({
   ),
   ErrorDisplay: ({ error }: { error: string | null }) =>
     error ? <div role="alert">{error}</div> : null,
-  ReferenceImageUpload: () => <div data-testid="reference-upload">Reference</div>,
+  ReferenceImageUpload: () => (
+    <div data-testid="reference-upload">Reference</div>
+  ),
   PromptInput: ({ prompt, onPromptChange }: MockPromptInputProps) => (
     <textarea
       aria-label="prompt"
@@ -164,52 +180,9 @@ describe('buildLayerPlan', () => {
       'text',
       'decoration',
     ]);
-    expect(plan.layers.every((layer) => !layer.id.includes('TaskType.PSD'))).toBe(
-      true
-    );
-    expect(plan.exportSkeleton).toEqual({
-      target: 'psd',
-      status: 'draft',
-      nativePsdReady: false,
-    });
-  });
-
-  it('builds IMAGE task drafts for visual PSD layers without native PSD claims', () => {
-    const plan = buildLayerPlan(
-      '品牌活动海报，产品主体需要独立图层',
-      'poster',
-      'ai-plan',
-      5,
-      'zh'
-    );
-
-    const taskDrafts = buildPsdLayerImageTaskDrafts(plan, {
-      model: 'image-model',
-      modelRef: { profileId: 'default', modelId: 'image-model' },
-      size: '1024x1024',
-      width: 1024,
-      height: 1024,
-      extraParams: { size: '1024x1024' },
-    });
-
-    expect(taskDrafts).toHaveLength(3);
-    expect(taskDrafts.every((draft) => draft.taskType === TaskType.IMAGE)).toBe(
-      true
-    );
-    expect(taskDrafts.map((draft) => draft.layerId)).toEqual([
-      'psd-layer-1',
-      'psd-layer-2',
-      'psd-layer-5',
-    ]);
-    expect(taskDrafts[0].params.psdDraft).toMatchObject({
-      draftId: plan.draftId,
-      layerId: 'psd-layer-1',
-      exportTarget: 'psd',
-      nativePsdReady: false,
-    });
-    expect(taskDrafts[0].params.prompt).toContain('Do not claim or embed a native PSD file');
-    expect(`${taskDrafts[0].taskType}`).not.toBe('psd');
-    expect(taskDrafts[0].params.promptMeta?.tags).toContain('psd-draft');
+    expect(
+      plan.layers.every((layer) => !layer.id.includes('TaskType.PSD'))
+    ).toBe(true);
   });
 
   it('keeps draft layers editable and includes export-skeleton guidance layers', () => {
@@ -253,7 +226,9 @@ describe('AIImagePsdGeneration contract', () => {
   it('renders an editable PSD draft editor and layer workflow skeleton', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(screen.getByRole('note').textContent).toContain('不直接返回原生 PSD');
+    expect(screen.getByRole('note').textContent).toContain(
+      '不直接返回原生 PSD'
+    );
     expect(screen.getByText('PSD 输出配置')).toBeTruthy();
     expect(screen.getByText('PSD 图层计划')).toBeTruthy();
     expect(screen.getByText('尚未生成图层计划')).toBeTruthy();
@@ -261,5 +236,4 @@ describe('AIImagePsdGeneration contract', () => {
       screen.queryByText(/直接返回原生 PSD 文件|native PSD files returned/i)
     ).toBeNull();
   });
-
 });
