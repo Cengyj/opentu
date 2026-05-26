@@ -52,6 +52,36 @@ const EMPTY_KNOWLEDGE_CONTEXT_REFS: KnowledgeContextRef[] = [];
 
 export { buildLayerPlan };
 
+const PSD_WORKFLOW_STEPS = {
+  zh: [
+    { title: '图像生成', description: '上传原图/参考图并描述目标海报' },
+    { title: '思考拆层', description: '识别背景、主体、文字、装饰和层级' },
+    { title: '源设置', description: '按 Photoshop/PSD 兼容结构准备导出源' },
+    { title: '导出编辑', description: 'PSD 打包接入后下载并在 Photoshop 打开' },
+  ],
+  en: [
+    {
+      title: 'Image generation',
+      description:
+        'Upload a source/reference image and describe the target poster',
+    },
+    {
+      title: 'Thinking split',
+      description:
+        'Identify background, subject, text, decoration, and layer order',
+    },
+    {
+      title: 'Source setting',
+      description: 'Prepare export sources for Photoshop/PSD compatibility',
+    },
+    {
+      title: 'Export/edit',
+      description:
+        'Download and open the PSD in Photoshop when packaging is supported',
+    },
+  ],
+} as const;
+
 const AIImagePsdGeneration = ({
   initialPrompt = '',
   initialImages = EMPTY_REFERENCE_IMAGES,
@@ -117,8 +147,8 @@ const AIImagePsdGeneration = ({
       if (!prompt.trim()) {
         setError(
           uiLanguage === 'zh'
-            ? '请输入 PSD 文件生成需求'
-            : 'Please enter what the PSD file should look like'
+            ? '请输入 PSD 分层与导出需求'
+            : 'Please enter the PSD layer/export requirements'
         );
         return null;
       }
@@ -144,8 +174,8 @@ const AIImagePsdGeneration = ({
       if (showSuccess) {
         void MessagePlugin.success(
           uiLanguage === 'zh'
-            ? '已开始准备 PSD 文件'
-            : 'Started preparing the PSD file'
+            ? '已开始准备 PSD 分层与 Photoshop 导出'
+            : 'Started preparing PSD layers and Photoshop export'
         );
       }
       return titledPlan;
@@ -196,8 +226,8 @@ const AIImagePsdGeneration = ({
       if (uploadedImages.length === 0) {
         setError(
           uiLanguage === 'zh'
-            ? '请先上传原始海报或参考图，再生成 PSD 文件。'
-            : 'Upload the source poster or reference image before generating the PSD file.'
+            ? '请先上传原始海报或参考图，再准备 PSD 分层。'
+            : 'Upload the source poster or reference image before preparing PSD layers.'
         );
         return;
       }
@@ -241,8 +271,8 @@ const AIImagePsdGeneration = ({
         if (createdLayerIds.size > 0) {
           void MessagePlugin.success(
             uiLanguage === 'zh'
-              ? `已进入 PSD 思考拆层流程（${createdLayerIds.size} 个 Photoshop-ready 图层素材）`
-              : `Started the PSD thinking layer-split flow (${createdLayerIds.size} Photoshop-ready layer assets)`
+              ? `已开始 PSD 分层准备（排队 ${createdLayerIds.size} 个 Photoshop 图层源）`
+              : `Started PSD layer preparation (${createdLayerIds.size} Photoshop layer sources queued)`
           );
         } else {
           setError(
@@ -280,8 +310,8 @@ const AIImagePsdGeneration = ({
     if (uploadedImages.length === 0) {
       setError(
         uiLanguage === 'zh'
-          ? '请先上传原始海报/参考图，然后生成 PSD 文件。'
-          : 'Upload a source poster/reference image before generating the PSD file.'
+          ? '请先上传原始海报/参考图，然后准备 PSD 分层。'
+          : 'Upload a source poster/reference image before preparing PSD layers.'
       );
       return;
     }
@@ -306,18 +336,18 @@ const AIImagePsdGeneration = ({
         <section className="psd-hero" aria-label="PSD one-click generator">
           <span className="psd-hero__eyebrow">
             {uiLanguage === 'zh'
-              ? 'GPT-Image2 风格 PSD 流程'
-              : 'GPT-Image2-style PSD flow'}
+              ? 'GPT-Image2 风格 PSD 工作流'
+              : 'GPT-Image2-style PSD workflow'}
           </span>
           <h2>
             {uiLanguage === 'zh'
-              ? '参考图 + 提示词，准备 Photoshop PSD'
-              : 'Reference image + prompt, ready for Photoshop PSD'}
+              ? '按 Photoshop 流程准备可编辑 PSD'
+              : 'Prepare editable PSD output for Photoshop'}
           </h2>
           <p>
             {uiLanguage === 'zh'
-              ? '按“图像生成 → 思考拆层 → Photoshop 源设置 → 导出编辑”的方式自动准备，保持单一操作入口。'
-              : 'Automatically follows image generation, thinking layer split, Photoshop source setup, and export/edit readiness behind one clear action.'}
+              ? '只保留参考图和提示词；系统按“生成图像 → 思考拆层 → 设置 Photoshop 源 → 导出编辑”的流程准备分层素材。'
+              : 'Keep only a reference image and prompt; Opentu prepares layer sources through image generation, thinking/layer split, Photoshop source setting, and export/edit stages.'}
           </p>
         </section>
 
@@ -347,60 +377,22 @@ const AIImagePsdGeneration = ({
             showOptimizeButton={false}
           />
 
-          <div
+          <ol
             className="psd-workflow-steps"
             aria-label={
               uiLanguage === 'zh' ? 'PSD 工作流阶段' : 'PSD workflow stages'
             }
           >
-            {(
-              plan?.workflowSteps || [
-                {
-                  title:
-                    uiLanguage === 'zh'
-                      ? '图像生成/还原'
-                      : 'Image generation/reconstruction',
-                  description:
-                    uiLanguage === 'zh'
-                      ? '参考图和提示词作为唯一输入。'
-                      : 'Reference image and prompt are the only inputs.',
-                },
-                {
-                  title:
-                    uiLanguage === 'zh' ? '思考拆层' : 'Thinking layer split',
-                  description:
-                    uiLanguage === 'zh'
-                      ? '识别元素并拆成独立图层。'
-                      : 'Identify elements and split into independent layers.',
-                },
-                {
-                  title:
-                    uiLanguage === 'zh'
-                      ? '源设置：Photoshop/PSD'
-                      : 'Source: Photoshop/PSD',
-                  description:
-                    uiLanguage === 'zh'
-                      ? '保持同画布坐标，面向 Photoshop 叠放。'
-                      : 'Keep same-canvas coordinates for Photoshop stacking.',
-                },
-                {
-                  title: uiLanguage === 'zh' ? '导出与编辑' : 'Export and edit',
-                  description:
-                    uiLanguage === 'zh'
-                      ? 'PSD 打包接入后提供下载/打开。'
-                      : 'Download/open PSD when packaging is wired.',
-                },
-              ]
-            ).map((step, index) => (
-              <div className="psd-workflow-step" key={step.title}>
-                <span className="psd-workflow-step__index">{index + 1}</span>
-                <div>
+            {PSD_WORKFLOW_STEPS[uiLanguage].map((step, index) => (
+              <li key={step.title}>
+                <span className="psd-workflow-steps__index">{index + 1}</span>
+                <span>
                   <strong>{step.title}</strong>
-                  <p>{step.description}</p>
-                </div>
-              </div>
+                  <small>{step.description}</small>
+                </span>
+              </li>
             ))}
-          </div>
+          </ol>
 
           <ActionButtons
             language={uiLanguage}
@@ -413,8 +405,8 @@ const AIImagePsdGeneration = ({
             showQuantity={false}
             generateLabel={
               uiLanguage === 'zh'
-                ? '开始拆层并准备 PSD'
-                : 'Split layers and prepare PSD'
+                ? '准备 PSD 分层/导出'
+                : 'Prepare PSD layers/export'
             }
             showReset={false}
           />
@@ -423,17 +415,17 @@ const AIImagePsdGeneration = ({
             <div className="psd-generation-status" role="status">
               <strong>
                 {uiLanguage === 'zh'
-                  ? 'PSD 导出准备中'
-                  : 'PSD export is being prepared'}
+                  ? 'PSD 分层与导出准备中'
+                  : 'PSD layers/export are being prepared'}
               </strong>
               <span>
                 {uiLanguage === 'zh'
-                  ? `已进入思考拆层流程，正在准备 ${
+                  ? `已排队 ${
                       generatedLayerCount || plan.layers.length
-                    } 个 Photoshop-ready 分层素材；原生 PSD 下载将在打包能力接入后开放。`
-                  : `Started the thinking layer-split flow and is preparing ${
+                    } 个 Photoshop 图层源，保留原画布、原坐标和层级信息；原生 PSD 下载将在打包能力接入后启用。`
+                  : `Queued ${
                       generatedLayerCount || plan.layers.length
-                    } Photoshop-ready layer assets; native PSD download opens once packaging is wired.`}
+                    } Photoshop layer sources with original canvas, coordinates, and layer order; native PSD download will be enabled once packaging is wired.`}
               </span>
             </div>
           ) : null}
@@ -442,8 +434,8 @@ const AIImagePsdGeneration = ({
             <summary>{uiLanguage === 'zh' ? '说明' : 'Note'}</summary>
             <p>
               {uiLanguage === 'zh'
-                ? '系统会自动处理生成设置。当前 OpenAI 兼容公共图片 API 暂不直接返回原生 PSD，也不暴露透明背景等模型调参；本功能先生成/编辑同画布分层素材和 PSD 导出骨架，真实 PSD 打包接入后再提供下载或打开文件。'
-                : 'Opentu handles generation settings automatically. The current OpenAI-compatible public image API does not directly return native PSD and this UI does not expose model tuning such as transparent-background controls; it prepares same-canvas layer assets plus a PSD export skeleton now, then enables download/open once real PSD packaging is wired.'}
+                ? '系统会自动处理模型和参数设置。当前 OpenAI 公共图像 API 未提供直接返回原生 PSD/Photoshop 源文件的参数，且 gpt-image-2 不支持透明背景；因此这里先按文章流程准备可打包的图层源与导出骨架，不伪装成已下载 PSD。'
+                : 'Opentu handles model and parameter settings automatically. The current public OpenAI image API does not expose a native PSD/Photoshop-source output parameter, and gpt-image-2 does not support transparent backgrounds; this workflow prepares layer sources and an export skeleton without pretending a PSD has already been downloaded.'}
             </p>
           </details>
 

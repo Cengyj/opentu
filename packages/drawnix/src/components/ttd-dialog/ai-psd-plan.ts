@@ -48,8 +48,8 @@ export interface PsdGenerationPlan {
     source: 'photoshop';
     status: 'planned';
     nativePsdReady: false;
-    apiNativePsdSupported: false;
-    downloadAction: 'pending-native-packager';
+    apiNativePsdOutput: false;
+    downloadWhenSupported: true;
   };
   workflowSteps: Array<{
     id:
@@ -77,15 +77,18 @@ export const PSD_LAYER_IMAGE_TASK_CONTRACT = {
   outputFormat: 'png',
   inputFidelity: 'high',
   exportTarget: 'psd',
+  exportSource: 'photoshop',
   nativePsdReady: false,
-  promptMetaTags: ['psd-layer', 'photoshop-source', 'layer-split'],
+  apiNativePsdOutput: false,
+  downloadWhenSupported: true,
+  promptMetaTags: ['psd-layer-source', 'photoshop-export-source'],
 } as const;
 
 export const PSD_LAYER_EXTRACTION_PROMPT_ZH =
-  '参考这张图生成/还原设计稿，并进入 PSD 思考拆层流程：先识别独立视觉元素，再按背景、主体、文字、装饰和调整说明拆成可编辑图层。请用 JSON 写清画布尺寸、元素坐标、背景类型和图层堆叠顺序；源设置为 Photoshop/PSD。当前公共图片 API 不直接返回原生 PSD，先输出可用于后续 PSD 打包的分层素材与说明。';
+  '请参考 GPT-Image2 文章中的 PSD 流程：先生成/理解整张海报，再开启思考模式识别背景、主体、文字、装饰等元素，按 Photoshop 图层逻辑规划拆分，并用 JSON 写清画布尺寸、坐标、层级和导出要求。当前公共 API 不直接返回原生 PSD，请先准备可用于后续 PSD 打包的同画布图层源素材。';
 
 export const PSD_LAYER_EXTRACTION_PROMPT_EN =
-  'Use this reference image to generate or reconstruct a design, then follow a PSD thinking/layer-splitting flow: identify independent visual elements first, split them into editable background, subject, text, decoration, and adjustment-note layers, and describe canvas size, element coordinates, background type, and layer stacking order as JSON. Set the source/export target to Photoshop/PSD. The current public image API does not return native PSD directly, so prepare layer assets and metadata for later PSD packaging.';
+  'Follow the GPT-Image2 PSD workflow: generate or understand the full poster first, use thinking mode to identify background, subject, text, and decorative elements, plan the split as Photoshop layers, and specify canvas size, coordinates, stacking order, and export requirements in JSON. The public API does not directly return a native PSD today, so prepare same-canvas layer source assets for later PSD packaging.';
 
 export function getDefaultPsdLayerExtractionPrompt(
   language: 'zh' | 'en'
@@ -371,8 +374,8 @@ export function buildLayerPlan(
       source: 'photoshop',
       status: 'planned',
       nativePsdReady: false,
-      apiNativePsdSupported: false,
-      downloadAction: 'pending-native-packager',
+      apiNativePsdOutput: false,
+      downloadWhenSupported: true,
     },
     workflowSteps: buildPsdWorkflowSteps(language),
   };
@@ -410,11 +413,10 @@ export function buildPsdLayerImageTaskPlans(
         `[PSD layer: ${layer.name}]`,
         plan.title,
         layer.description,
-        'Workflow: think step by step, identify this independent visual element, then prepare it as one Photoshop-ready layer.',
-        'Task: export ONLY this layer/visual element from the reference poster as an independent same-canvas PNG layer asset.',
-        'Keep the exact same canvas size and resolution as the original poster. Preserve the element at its original coordinates, original size, proportion, opacity, and relative position. If alpha output is supported, make every other pixel transparent; otherwise keep non-target regions clean and separable for later masking/PSD packaging.',
-        'Photoshop source setting: treat the export target as Photoshop/PSD so all layer assets can be stacked in place without moving, scaling, or adjustment.',
-        'Do not claim or embed a native PSD file; the public image API does not directly return PSD here, so generate one packable layer asset for later PSD packaging and download/open support.',
+        'Thinking/layer-split stage: identify ONLY this layer or visual element from the reference poster as a Photoshop layer source.',
+        'Keep the exact same canvas size and resolution as the original poster. Preserve coordinates, original size, proportion, opacity, and relative position so the source can be aligned in Photoshop without moving or scaling.',
+        'Photoshop export readiness: treat Photoshop/PSD as the target source setting and keep the output PNG compatible with later PSD packaging.',
+        'Public API limitation: do not claim or embed a native PSD file, and do not require transparent background output because the current public gpt-image-2 API does not support transparent backgrounds. Produce a mask-ready layer source for app-side PSD packaging when supported.',
       ].join('\n'),
       width: options.width,
       height: options.height,
@@ -449,10 +451,11 @@ export function buildPsdLayerImageTaskPlans(
         layerType: layer.type,
         textPolicy: plan.textPolicy,
         exportTarget: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
+        exportSource: PSD_LAYER_IMAGE_TASK_CONTRACT.exportSource,
         nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
-        apiNativePsdSupported: false,
-        source: 'photoshop',
-        downloadAction: 'pending-native-packager',
+        apiNativePsdOutput: PSD_LAYER_IMAGE_TASK_CONTRACT.apiNativePsdOutput,
+        downloadWhenSupported:
+          PSD_LAYER_IMAGE_TASK_CONTRACT.downloadWhenSupported,
       },
       ...(options.extraParams && Object.keys(options.extraParams).length > 0
         ? { params: options.extraParams }

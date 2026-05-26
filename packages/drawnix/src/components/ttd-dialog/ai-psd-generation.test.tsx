@@ -18,6 +18,8 @@ import {
 
 const mockState = vi.hoisted(() => ({
   actionButtonProps: [] as Array<Record<string, unknown>>,
+  referenceUploadProps: [] as Array<Record<string, unknown>>,
+  promptInputProps: [] as Array<Record<string, unknown>>,
   createTask: vi.fn(() => ({ id: 'task-1' })),
 }));
 
@@ -235,8 +237,8 @@ describe('buildLayerPlan', () => {
       source: 'photoshop',
       status: 'planned',
       nativePsdReady: false,
-      apiNativePsdSupported: false,
-      downloadAction: 'pending-native-packager',
+      apiNativePsdOutput: false,
+      downloadWhenSupported: true,
     });
     expect(plan.workflowSteps.map((step) => step.id)).toEqual([
       'image-generation',
@@ -336,7 +338,11 @@ describe('buildLayerPlan', () => {
       layerId: 'psd-layer-1',
       textPolicy: plan.textPolicy,
       exportTarget: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
+      exportSource: PSD_LAYER_IMAGE_TASK_CONTRACT.exportSource,
       nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
+      apiNativePsdOutput: PSD_LAYER_IMAGE_TASK_CONTRACT.apiNativePsdOutput,
+      downloadWhenSupported:
+        PSD_LAYER_IMAGE_TASK_CONTRACT.downloadWhenSupported,
     });
     expect(taskPlans[0].params).toMatchObject({
       generationMode: PSD_LAYER_IMAGE_TASK_CONTRACT.generationMode,
@@ -345,12 +351,10 @@ describe('buildLayerPlan', () => {
       inputFidelity: PSD_LAYER_IMAGE_TASK_CONTRACT.inputFidelity,
       autoInsertToCanvas: false,
     });
+    expect(taskPlans[0].params.prompt).toContain('Thinking/layer-split stage');
+    expect(taskPlans[0].params.prompt).toContain('Photoshop export readiness');
     expect(taskPlans[0].params.prompt).toContain(
-      'Do not claim or embed a native PSD file'
-    );
-    expect(taskPlans[0].params.prompt).toContain('Photoshop source setting');
-    expect(taskPlans[0].params.prompt).toContain(
-      'public image API does not directly return PSD'
+      'current public gpt-image-2 API does not support transparent backgrounds'
     );
     expect(`${taskPlans[0].taskType}`).not.toBe('psd');
     expect(taskPlans[0].params.promptMeta?.tags).toEqual([
@@ -375,17 +379,20 @@ describe('buildLayerPlan', () => {
 
     expect(plan.exportSkeleton).toEqual({
       target: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
-      source: 'photoshop',
+      source: PSD_LAYER_IMAGE_TASK_CONTRACT.exportSource,
       status: 'planned',
       nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
-      apiNativePsdSupported: false,
-      downloadAction: 'pending-native-packager',
+      apiNativePsdOutput: PSD_LAYER_IMAGE_TASK_CONTRACT.apiNativePsdOutput,
+      downloadWhenSupported:
+        PSD_LAYER_IMAGE_TASK_CONTRACT.downloadWhenSupported,
     });
     expect(taskPlans).not.toHaveLength(0);
     for (const taskPlan of taskPlans) {
       expect(taskPlan.taskType).toBe(TaskType.IMAGE);
       expect(taskPlan.params.psdPlan?.nativePsdReady).toBe(false);
       expect(taskPlan.params.psdPlan?.exportTarget).toBe('psd');
+      expect(taskPlan.params.psdPlan?.exportSource).toBe('photoshop');
+      expect(taskPlan.params.psdPlan?.apiNativePsdOutput).toBe(false);
       expect(taskPlan.params.outputFormat).toBe('png');
       expect(taskPlan.params.background).toBe('auto');
       expect(taskPlan.params.prompt).toMatch(/later PSD packaging/i);
@@ -409,12 +416,12 @@ describe('AIImagePsdGeneration contract', () => {
   it('renders a GPT-style one-click PSD composer without tuning controls', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(
-      screen.getByText(/参考图 \+ 提示词，准备 Photoshop PSD/)
-    ).toBeTruthy();
-    expect(
-      screen.getByText(/图像生成 → 思考拆层 → Photoshop 源设置 → 导出编辑/)
-    ).toBeTruthy();
+    expect(screen.getByText(/按 Photoshop 流程准备可编辑 PSD/)).toBeTruthy();
+    expect(screen.getByText(/只保留参考图和提示词/)).toBeTruthy();
+    expect(screen.getByText('图像生成')).toBeTruthy();
+    expect(screen.getByText('思考拆层')).toBeTruthy();
+    expect(screen.getByText('源设置')).toBeTruthy();
+    expect(screen.getByText('导出编辑')).toBeTruthy();
     expect(screen.getByText('说明')).toBeTruthy();
     expect((screen.getByLabelText('prompt') as HTMLTextAreaElement).value).toBe(
       ''
@@ -436,7 +443,7 @@ describe('AIImagePsdGeneration contract', () => {
       mockState.actionButtonProps[mockState.actionButtonProps.length - 1]
     ).toMatchObject({
       canGenerate: false,
-      generateLabel: '开始拆层并准备 PSD',
+      generateLabel: '准备 PSD 分层/导出',
       showReset: false,
     });
     expect(
@@ -471,10 +478,10 @@ describe('AIImagePsdGeneration contract', () => {
     expect(latestActionProps).toMatchObject({
       canGenerate: true,
       hasGenerated: false,
-      generateLabel: '开始拆层并准备 PSD',
+      generateLabel: '准备 PSD 分层/导出',
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '开始拆层并准备 PSD' }));
+    fireEvent.click(screen.getByRole('button', { name: '准备 PSD 分层/导出' }));
 
     await waitFor(() => {
       latestActionProps =
@@ -482,13 +489,11 @@ describe('AIImagePsdGeneration contract', () => {
       expect(latestActionProps).toMatchObject({
         canGenerate: true,
         hasGenerated: false,
-        generateLabel: '开始拆层并准备 PSD',
+        generateLabel: '准备 PSD 分层/导出',
       });
     });
-    expect(screen.getByText('PSD 导出准备中')).toBeTruthy();
-    expect(
-      screen.getByText(/正在准备 4 个 Photoshop-ready 分层素材/)
-    ).toBeTruthy();
+    expect(screen.getByText('PSD 分层与导出准备中')).toBeTruthy();
+    expect(screen.getByText(/已排队 4 个 Photoshop 图层源/)).toBeTruthy();
     expect(mockState.createTask).toHaveBeenCalledTimes(4);
     expect(screen.queryByText(`查看可选${'拆分'}明细`)).toBeNull();
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
