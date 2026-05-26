@@ -329,6 +329,40 @@ const AIImagePsdGeneration = ({
   const generatedLayerCount = plan?.layers.filter(
     (layer) => layer.status === 'queued'
   ).length;
+  const workflowStages = [
+    {
+      key: 'image',
+      title: uiLanguage === 'zh' ? '图像生成' : 'Image generation',
+      description:
+        uiLanguage === 'zh'
+          ? '使用参考图和提示词建立海报/设计基础。'
+          : 'Use the reference image and prompt to establish the poster/design base.',
+    },
+    {
+      key: 'thinking',
+      title: uiLanguage === 'zh' ? '思考拆层' : 'Thinking layer split',
+      description:
+        uiLanguage === 'zh'
+          ? '识别画布、元素坐标、层级顺序和可编辑文字。'
+          : 'Identify canvas, element coordinates, stacking order, and editable text.',
+    },
+    {
+      key: 'photoshop',
+      title: uiLanguage === 'zh' ? '源设置：Photoshop' : 'Source: Photoshop',
+      description:
+        uiLanguage === 'zh'
+          ? '为后续 Photoshop/PSD 打包保留导出元数据。'
+          : 'Keep export metadata ready for later Photoshop/PSD packaging.',
+    },
+    {
+      key: 'export',
+      title: uiLanguage === 'zh' ? '导出与编辑' : 'Export and edit',
+      description:
+        uiLanguage === 'zh'
+          ? '当前先准备可叠放图层素材，不伪装原生 PSD 下载。'
+          : 'Prepare stackable layer assets first; do not fake a native PSD download.',
+    },
+  ];
 
   return (
     <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--one-click">
@@ -341,13 +375,13 @@ const AIImagePsdGeneration = ({
           </span>
           <h2>
             {uiLanguage === 'zh'
-              ? '按 Photoshop 流程准备可编辑 PSD'
-              : 'Prepare editable PSD output for Photoshop'}
+              ? '像 GPT-Image2 工作流一样准备 PSD'
+              : 'Prepare PSD like the GPT-Image2 workflow'}
           </h2>
           <p>
             {uiLanguage === 'zh'
-              ? '只保留参考图和提示词；系统按“生成图像 → 思考拆层 → 设置 Photoshop 源 → 导出编辑”的流程准备分层素材。'
-              : 'Keep only a reference image and prompt; Opentu prepares layer sources through image generation, thinking/layer split, Photoshop source setting, and export/edit stages.'}
+              ? '只需要参考图和提示词；系统按“图像生成 → 思考拆层 → Photoshop 源设置 → 导出编辑”的流程准备 PSD 工作区。'
+              : 'Only a reference image and prompt are needed; Opentu follows image generation → thinking layer split → Photoshop source → export/edit readiness.'}
           </p>
         </section>
 
@@ -411,21 +445,43 @@ const AIImagePsdGeneration = ({
             showReset={false}
           />
 
+          <ol className="psd-workflow-stages" aria-label="PSD workflow stages">
+            {workflowStages.map((stage, index) => {
+              const isActive = Boolean(plan) || isQueuingLayerTasks;
+              return (
+                <li
+                  key={stage.key}
+                  className={
+                    isActive
+                      ? 'psd-workflow-stage psd-workflow-stage--active'
+                      : 'psd-workflow-stage'
+                  }
+                >
+                  <span className="psd-workflow-stage__index">{index + 1}</span>
+                  <span>
+                    <strong>{stage.title}</strong>
+                    <small>{stage.description}</small>
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
+
           {plan ? (
             <div className="psd-generation-status" role="status">
               <strong>
                 {uiLanguage === 'zh'
-                  ? 'PSD 分层与导出准备中'
-                  : 'PSD layers/export are being prepared'}
+                  ? 'PSD 工作流已启动'
+                  : 'PSD workflow started'}
               </strong>
               <span>
                 {uiLanguage === 'zh'
                   ? `已排队 ${
                       generatedLayerCount || plan.layers.length
-                    } 个 Photoshop 图层源，保留原画布、原坐标和层级信息；原生 PSD 下载将在打包能力接入后启用。`
-                  : `Queued ${
+                    } 个同画布分层素材，保留原坐标和 Photoshop/PSD 导出元数据；当前不会伪装成原生 PSD 下载。`
+                  : `Started preparing ${
                       generatedLayerCount || plan.layers.length
-                    } Photoshop layer sources with original canvas, coordinates, and layer order; native PSD download will be enabled once packaging is wired.`}
+                    } same-canvas layer assets while preserving coordinates and Photoshop/PSD export metadata; no fake native PSD download is shown.`}
               </span>
             </div>
           ) : null}
@@ -434,8 +490,8 @@ const AIImagePsdGeneration = ({
             <summary>{uiLanguage === 'zh' ? '说明' : 'Note'}</summary>
             <p>
               {uiLanguage === 'zh'
-                ? '系统会自动处理模型和参数设置。当前 OpenAI 公共图像 API 未提供直接返回原生 PSD/Photoshop 源文件的参数，且 gpt-image-2 不支持透明背景；因此这里先按文章流程准备可打包的图层源与导出骨架，不伪装成已下载 PSD。'
-                : 'Opentu handles model and parameter settings automatically. The current public OpenAI image API does not expose a native PSD/Photoshop-source output parameter, and gpt-image-2 does not support transparent backgrounds; this workflow prepares layer sources and an export skeleton without pretending a PSD has already been downloaded.'}
+                ? '系统会自动处理生成设置；公开图片 API 当前返回图片数据而不是原生 .psd，Opentu 先生成/编辑同画布分层素材，并把 Photoshop/PSD 打包作为后续本地或服务端导出能力。'
+                : 'Opentu handles generation settings automatically; the public Image API currently returns image data rather than a native .psd, so Opentu first generates/edits same-canvas layer assets and keeps Photoshop/PSD packaging for a later local or server export step.'}
             </p>
           </details>
 

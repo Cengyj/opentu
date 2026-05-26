@@ -236,6 +236,8 @@ describe('buildLayerPlan', () => {
       target: 'psd',
       source: 'photoshop',
       status: 'planned',
+      sourceSetting: 'photoshop',
+      packaging: 'app-side-required',
       nativePsdReady: false,
       apiNativePsdOutput: false,
       downloadWhenSupported: true,
@@ -338,7 +340,8 @@ describe('buildLayerPlan', () => {
       layerId: 'psd-layer-1',
       textPolicy: plan.textPolicy,
       exportTarget: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
-      exportSource: PSD_LAYER_IMAGE_TASK_CONTRACT.exportSource,
+      sourceSetting: PSD_LAYER_IMAGE_TASK_CONTRACT.sourceSetting,
+      packaging: PSD_LAYER_IMAGE_TASK_CONTRACT.packaging,
       nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
       apiNativePsdOutput: PSD_LAYER_IMAGE_TASK_CONTRACT.apiNativePsdOutput,
       downloadWhenSupported:
@@ -351,10 +354,12 @@ describe('buildLayerPlan', () => {
       inputFidelity: PSD_LAYER_IMAGE_TASK_CONTRACT.inputFidelity,
       autoInsertToCanvas: false,
     });
-    expect(taskPlans[0].params.prompt).toContain('Thinking/layer-split stage');
-    expect(taskPlans[0].params.prompt).toContain('Photoshop export readiness');
+    expect(taskPlans[0].params.prompt).toContain('Public Image API limitation');
     expect(taskPlans[0].params.prompt).toContain(
-      'current public gpt-image-2 API does not support transparent backgrounds'
+      'Photoshop/PSD export metadata'
+    );
+    expect(taskPlans[0].params.prompt).toContain(
+      'independent transparent PNG layer'
     );
     expect(`${taskPlans[0].taskType}`).not.toBe('psd');
     expect(taskPlans[0].params.promptMeta?.tags).toEqual([
@@ -381,6 +386,8 @@ describe('buildLayerPlan', () => {
       target: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
       source: PSD_LAYER_IMAGE_TASK_CONTRACT.exportSource,
       status: 'planned',
+      sourceSetting: PSD_LAYER_IMAGE_TASK_CONTRACT.sourceSetting,
+      packaging: PSD_LAYER_IMAGE_TASK_CONTRACT.packaging,
       nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
       apiNativePsdOutput: PSD_LAYER_IMAGE_TASK_CONTRACT.apiNativePsdOutput,
       downloadWhenSupported:
@@ -394,8 +401,8 @@ describe('buildLayerPlan', () => {
       expect(taskPlan.params.psdPlan?.exportSource).toBe('photoshop');
       expect(taskPlan.params.psdPlan?.apiNativePsdOutput).toBe(false);
       expect(taskPlan.params.outputFormat).toBe('png');
-      expect(taskPlan.params.background).toBe('auto');
-      expect(taskPlan.params.prompt).toMatch(/later PSD packaging/i);
+      expect(taskPlan.params.background).toBe('transparent');
+      expect(taskPlan.params.prompt).toMatch(/later app-side PSD packaging/i);
     }
   });
 });
@@ -416,12 +423,11 @@ describe('AIImagePsdGeneration contract', () => {
   it('renders a GPT-style one-click PSD composer without tuning controls', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(screen.getByText(/按 Photoshop 流程准备可编辑 PSD/)).toBeTruthy();
-    expect(screen.getByText(/只保留参考图和提示词/)).toBeTruthy();
-    expect(screen.getByText('图像生成')).toBeTruthy();
+    expect(screen.getByText(/像 GPT-Image2 工作流一样准备 PSD/)).toBeTruthy();
+    expect(screen.getByText(/只需要参考图和提示词/)).toBeTruthy();
     expect(screen.getByText('思考拆层')).toBeTruthy();
-    expect(screen.getByText('源设置')).toBeTruthy();
-    expect(screen.getByText('导出编辑')).toBeTruthy();
+    expect(screen.getByText('源设置：Photoshop')).toBeTruthy();
+    expect(screen.getByText('导出与编辑')).toBeTruthy();
     expect(screen.getByText('说明')).toBeTruthy();
     expect((screen.getByLabelText('prompt') as HTMLTextAreaElement).value).toBe(
       ''
@@ -492,8 +498,9 @@ describe('AIImagePsdGeneration contract', () => {
         generateLabel: '准备 PSD 分层/导出',
       });
     });
-    expect(screen.getByText('PSD 分层与导出准备中')).toBeTruthy();
-    expect(screen.getByText(/已排队 4 个 Photoshop 图层源/)).toBeTruthy();
+    expect(screen.getByText('PSD 工作流已启动')).toBeTruthy();
+    expect(screen.getByText(/已开始准备 4 个同画布分层素材/)).toBeTruthy();
+    expect(screen.getByText(/当前不会伪装成原生 PSD 下载/)).toBeTruthy();
     expect(mockState.createTask).toHaveBeenCalledTimes(4);
     expect(screen.queryByText(`查看可选${'拆分'}明细`)).toBeNull();
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull();

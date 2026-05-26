@@ -47,6 +47,8 @@ export interface PsdGenerationPlan {
     target: 'psd';
     source: 'photoshop';
     status: 'planned';
+    sourceSetting: 'photoshop';
+    packaging: 'app-side-required';
     nativePsdReady: false;
     apiNativePsdOutput: false;
     downloadWhenSupported: true;
@@ -77,7 +79,8 @@ export const PSD_LAYER_IMAGE_TASK_CONTRACT = {
   outputFormat: 'png',
   inputFidelity: 'high',
   exportTarget: 'psd',
-  exportSource: 'photoshop',
+  sourceSetting: 'photoshop',
+  packaging: 'app-side-required',
   nativePsdReady: false,
   apiNativePsdOutput: false,
   downloadWhenSupported: true,
@@ -85,10 +88,10 @@ export const PSD_LAYER_IMAGE_TASK_CONTRACT = {
 } as const;
 
 export const PSD_LAYER_EXTRACTION_PROMPT_ZH =
-  '请参考 GPT-Image2 文章中的 PSD 流程：先生成/理解整张海报，再开启思考模式识别背景、主体、文字、装饰等元素，按 Photoshop 图层逻辑规划拆分，并用 JSON 写清画布尺寸、坐标、层级和导出要求。当前公共 API 不直接返回原生 PSD，请先准备可用于后续 PSD 打包的同画布图层源素材。';
+  '请按 GPT-Image2 的 PSD 工作流思考：先理解整张图的画布尺寸、元素坐标、图层顺序和背景类型，再将海报按视觉元素拆分成若干张独立图像。每个导出的图层都使用与原图完全相同的画布尺寸和分辨率，元素保留在原始坐标位置，其余区域透明。请同时在提示词中明确 Photoshop/PSD 导出意图，但不要宣称公开图片 API 会直接返回原生 PSD。';
 
 export const PSD_LAYER_EXTRACTION_PROMPT_EN =
-  'Follow the GPT-Image2 PSD workflow: generate or understand the full poster first, use thinking mode to identify background, subject, text, and decorative elements, plan the split as Photoshop layers, and specify canvas size, coordinates, stacking order, and export requirements in JSON. The public API does not directly return a native PSD today, so prepare same-canvas layer source assets for later PSD packaging.';
+  'Think through the GPT-Image2 PSD workflow first: understand the canvas size, element coordinates, layer order, and background type, then split this poster into separate images by visual element. Every exported layer must use the exact same canvas size and resolution as the source image, preserve the element at its original coordinates, and make all other areas transparent. State the Photoshop/PSD export intent in the prompt, but do not claim that the public image API directly returns a native PSD.';
 
 export function getDefaultPsdLayerExtractionPrompt(
   language: 'zh' | 'en'
@@ -373,6 +376,8 @@ export function buildLayerPlan(
       target: 'psd',
       source: 'photoshop',
       status: 'planned',
+      sourceSetting: 'photoshop',
+      packaging: 'app-side-required',
       nativePsdReady: false,
       apiNativePsdOutput: false,
       downloadWhenSupported: true,
@@ -413,10 +418,12 @@ export function buildPsdLayerImageTaskPlans(
         `[PSD layer: ${layer.name}]`,
         plan.title,
         layer.description,
-        'Thinking/layer-split stage: identify ONLY this layer or visual element from the reference poster as a Photoshop layer source.',
-        'Keep the exact same canvas size and resolution as the original poster. Preserve coordinates, original size, proportion, opacity, and relative position so the source can be aligned in Photoshop without moving or scaling.',
-        'Photoshop export readiness: treat Photoshop/PSD as the target source setting and keep the output PNG compatible with later PSD packaging.',
-        'Public API limitation: do not claim or embed a native PSD file, and do not require transparent background output because the current public gpt-image-2 API does not support transparent backgrounds. Produce a mask-ready layer source for app-side PSD packaging when supported.',
+        'Workflow: generate/edit the source image, think through independent visual elements, split this one layer, then keep Photoshop/PSD export metadata ready for app-side packaging.',
+        'Layer contract: preserve canvas size, element coordinates, stacking order, background relationship, and layer name so the exported assets can be assembled as an editable Photoshop project.',
+        'Task: export ONLY this layer/visual element from the reference poster as an independent transparent PNG layer.',
+        'Keep the exact same canvas size and resolution as the original poster. Preserve the element at its original coordinates, original size, proportion, opacity, and relative position. Make every other pixel transparent.',
+        'Photoshop stacking requirement: when all exported layer images are imported into Photoshop, they must restore the complete poster by stacking in place without moving, scaling, or adjustment.',
+        'Public Image API limitation: do not claim or embed a native PSD file; generate a single layer image for later app-side PSD packaging.',
       ].join('\n'),
       width: options.width,
       height: options.height,
@@ -451,7 +458,8 @@ export function buildPsdLayerImageTaskPlans(
         layerType: layer.type,
         textPolicy: plan.textPolicy,
         exportTarget: PSD_LAYER_IMAGE_TASK_CONTRACT.exportTarget,
-        exportSource: PSD_LAYER_IMAGE_TASK_CONTRACT.exportSource,
+        sourceSetting: PSD_LAYER_IMAGE_TASK_CONTRACT.sourceSetting,
+        packaging: PSD_LAYER_IMAGE_TASK_CONTRACT.packaging,
         nativePsdReady: PSD_LAYER_IMAGE_TASK_CONTRACT.nativePsdReady,
         apiNativePsdOutput: PSD_LAYER_IMAGE_TASK_CONTRACT.apiNativePsdOutput,
         downloadWhenSupported:
