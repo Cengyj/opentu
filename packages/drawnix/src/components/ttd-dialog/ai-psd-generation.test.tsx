@@ -183,6 +183,11 @@ describe('buildLayerPlan', () => {
     expect(
       plan.layers.every((layer) => !layer.id.includes('TaskType.PSD'))
     ).toBe(true);
+    expect(plan.exportSkeleton).toEqual({
+      target: 'psd',
+      status: 'draft',
+      nativePsdReady: false,
+    });
   });
 
   it('keeps draft layers editable and includes export-skeleton guidance layers', () => {
@@ -213,6 +218,46 @@ describe('buildLayerPlan', () => {
       '安全边距参考',
     ]);
     expect(plan.layers.every((layer) => layer.visible)).toBe(true);
+  });
+
+  it('builds IMAGE task drafts for visual layers without native PSD claims', () => {
+    const plan = buildLayerPlan(
+      '品牌活动海报，产品主体需要独立图层',
+      'poster',
+      'ai-plan',
+      5,
+      'zh'
+    );
+
+    const taskDrafts = buildPsdLayerImageTaskDrafts(plan, {
+      model: 'image-model',
+      modelRef: { profileId: 'default', modelId: 'image-model' },
+      size: '1024x1024',
+      width: 1024,
+      height: 1024,
+      extraParams: { size: '1024x1024' },
+    });
+
+    expect(taskDrafts).toHaveLength(3);
+    expect(taskDrafts.every((draft) => draft.taskType === TaskType.IMAGE)).toBe(
+      true
+    );
+    expect(taskDrafts.map((draft) => draft.layerId)).toEqual([
+      'psd-layer-1',
+      'psd-layer-2',
+      'psd-layer-5',
+    ]);
+    expect(taskDrafts[0].params.psdDraft).toMatchObject({
+      draftId: plan.draftId,
+      layerId: 'psd-layer-1',
+      exportTarget: 'psd',
+      nativePsdReady: false,
+    });
+    expect(taskDrafts[0].params.prompt).toContain(
+      'Do not claim or embed a native PSD file'
+    );
+    expect(`${taskDrafts[0].taskType}`).not.toBe('psd');
+    expect(taskDrafts[0].params.promptMeta?.tags).toContain('psd-draft');
   });
 });
 
