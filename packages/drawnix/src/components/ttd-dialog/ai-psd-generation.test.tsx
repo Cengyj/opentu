@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AssetType } from '../../types/asset.types';
 import { TaskType } from '../../types/task.types';
@@ -9,6 +15,7 @@ import { buildPsdLayerImageTaskDrafts } from './ai-psd-draft';
 
 const mockState = vi.hoisted(() => ({
   actionButtonProps: [] as Array<Record<string, unknown>>,
+  createTask: vi.fn(() => ({ id: 'task-1' })),
 }));
 
 vi.mock('tdesign-react', () => ({
@@ -27,6 +34,12 @@ vi.mock('../../hooks/useDeviceType', () => ({
 
 vi.mock('../../hooks/useGenerationHistory', () => ({
   useGenerationHistory: () => ({ imageHistory: [] }),
+}));
+
+vi.mock('../../hooks/useTaskQueue', () => ({
+  useTaskQueue: () => ({
+    createTask: mockState.createTask,
+  }),
 }));
 
 vi.mock('../../hooks/use-runtime-models', () => {
@@ -131,7 +144,7 @@ vi.mock('./shared', () => ({
     canGenerate,
     hasGenerated,
     generateLabel,
-  }: MockActionButtonsProps) => (
+  }: MockActionButtonsProps) =>
     (() => {
       mockState.actionButtonProps.push({
         canGenerate,
@@ -148,8 +161,7 @@ vi.mock('./shared', () => ({
           </button>
         </div>
       );
-    })()
-  ),
+    })(),
   ErrorDisplay: ({ error }: { error: string | null }) =>
     error ? <div role="alert">{error}</div> : null,
   ReferenceImageUpload: () => (
@@ -300,13 +312,13 @@ describe('buildLayerPlan', () => {
     expect(`${taskDrafts[0].taskType}`).not.toBe('psd');
     expect(taskDrafts[0].params.promptMeta?.tags).toContain('psd-draft');
   });
-
 });
 
 describe('AIImagePsdGeneration contract', () => {
   afterEach(() => {
     cleanup();
     mockState.actionButtonProps = [];
+    mockState.createTask.mockClear();
   });
 
   it('exports the PSD mode component for lazy dialog loading', () => {
@@ -316,9 +328,10 @@ describe('AIImagePsdGeneration contract', () => {
   it('renders an editable PSD draft editor and layer workflow skeleton', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(screen.getByRole('note').textContent).toContain(
+    expect(screen.getAllByRole('note')[0].textContent).toContain(
       '不直接返回原生 PSD'
     );
+    expect(screen.getByText(/无需先选择模板、策略或图层数量/)).toBeTruthy();
     expect(screen.getByText('PSD 输出配置')).toBeTruthy();
     expect(screen.getByText('可编辑 PSD 草稿')).toBeTruthy();
     expect(screen.getByText('尚未生成图层计划')).toBeTruthy();
@@ -327,27 +340,37 @@ describe('AIImagePsdGeneration contract', () => {
     ).toBeNull();
   });
 
-  it('updates PSD button state and prevents deleting locked base layers', () => {
-    render(<AIImagePsdGeneration initialPrompt="品牌活动海报" />);
+  it('updates PSD button state, queues layer tasks, and prevents deleting locked base layers', async () => {
+    render(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,poster', name: 'poster.png' },
+        ]}
+      />
+    );
 
     let latestActionProps =
       mockState.actionButtonProps[mockState.actionButtonProps.length - 1];
     expect(latestActionProps).toMatchObject({
       canGenerate: true,
       hasGenerated: false,
-      generateLabel: '生成 PSD 结构',
+      generateLabel: '开始拆层',
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 结构' }));
+    fireEvent.click(screen.getByRole('button', { name: '开始拆层' }));
 
-    latestActionProps =
-      mockState.actionButtonProps[mockState.actionButtonProps.length - 1];
-    expect(latestActionProps).toMatchObject({
-      canGenerate: true,
-      hasGenerated: true,
-      generateLabel: '重新规划 PSD',
+    await waitFor(() => {
+      latestActionProps =
+        mockState.actionButtonProps[mockState.actionButtonProps.length - 1];
+      expect(latestActionProps).toMatchObject({
+        canGenerate: true,
+        hasGenerated: true,
+        generateLabel: '重新发送图层任务',
+      });
     });
     expect(screen.getByText(/图层素材仍沿用 IMAGE 任务草稿/)).toBeTruthy();
+    expect(mockState.createTask).toHaveBeenCalledTimes(4);
 
     const deleteButtons = screen.getAllByRole('button', { name: '删除' });
     expect((deleteButtons[0] as HTMLButtonElement).disabled).toBe(true);

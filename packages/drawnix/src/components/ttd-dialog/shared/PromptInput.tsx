@@ -33,6 +33,10 @@ interface PromptInputProps {
   enableMention?: boolean;
   /** Video model provider (sora, veo, etc.) - used to determine if @ mention should be enabled */
   videoProvider?: 'sora' | 'veo' | string;
+  /** Optional label override for specialized tools */
+  label?: string;
+  /** Optional placeholder override for specialized tools */
+  placeholder?: string;
 }
 
 export const PromptInput: React.FC<PromptInputProps> = ({
@@ -45,6 +49,8 @@ export const PromptInput: React.FC<PromptInputProps> = ({
   onError,
   enableMention = true,
   videoProvider,
+  label,
+  placeholder,
 }) => {
   const [isPresetOpen, setIsPresetOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -273,9 +279,10 @@ export const PromptInput: React.FC<PromptInputProps> = ({
     <div className="form-field form-field--prompt">
       <div className="form-label-with-icon">
         <label className="form-label">
-          {language === 'zh'
-            ? `${type === 'image' ? '图片' : '视频'}描述`
-            : `${type === 'image' ? 'Image' : 'Video'} Description`}
+          {label ||
+            (language === 'zh'
+              ? `${type === 'image' ? '图片' : '视频'}描述`
+              : `${type === 'image' ? 'Image' : 'Video'} Description`)}
         </label>
         <div className="textarea-with-preset">
           <div className="preset-tooltip-container" ref={containerRef}>
@@ -299,7 +306,7 @@ export const PromptInput: React.FC<PromptInputProps> = ({
           value={prompt}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          placeholder={getPromptExample(language, type, videoProvider)}
+          placeholder={placeholder || getPromptExample(language, type, videoProvider)}
           rows={4}
           disabled={disabled}
         />

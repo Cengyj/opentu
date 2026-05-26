@@ -6,7 +6,12 @@ import {
 import type { ModelRef } from '../../utils/settings-manager';
 import type { ReferenceImage } from './shared';
 
-export type PsdTemplate = 'poster' | 'ecommerce' | 'character' | 'social' | 'custom';
+export type PsdTemplate =
+  | 'poster'
+  | 'ecommerce'
+  | 'character'
+  | 'social'
+  | 'custom';
 export type PsdLayerStrategy = 'ai-plan' | 'quick' | 'canvas-selection';
 export type PsdLayerType =
   | 'background'
@@ -52,7 +57,25 @@ export interface PsdLayerImageTaskDraft {
   params: GenerationParams;
 }
 
-export const TEMPLATE_OPTIONS: Array<{ value: PsdTemplate; zh: string; en: string }> = [
+export const PSD_LAYER_EXTRACTION_PROMPT_ZH =
+  '请将这张海报按视觉元素拆分成若干张独立图像，保持每个元素在原海报中的尺寸、比例、透明度和相对位置完全不变。每个导出的图层都使用与原图完全相同的画布尺寸和分辨率，元素保留在原始坐标位置，其余区域透明。确保所有图像导入 Photoshop 后无需移动、缩放或调整，即可按原位叠加还原完整海报。';
+
+export const PSD_LAYER_EXTRACTION_PROMPT_EN =
+  'Split this poster into separate images by visual element. Keep each element exactly the same size, proportion, opacity, and relative position as in the original poster. Every exported layer must use the exact same canvas size and resolution as the source image, preserve the element at its original coordinates, and make all other areas transparent. Ensure the images can be imported into Photoshop and stacked in place to reconstruct the full poster without moving, scaling, or adjustment.';
+
+export function getDefaultPsdLayerExtractionPrompt(
+  language: 'zh' | 'en'
+): string {
+  return language === 'zh'
+    ? PSD_LAYER_EXTRACTION_PROMPT_ZH
+    : PSD_LAYER_EXTRACTION_PROMPT_EN;
+}
+
+export const TEMPLATE_OPTIONS: Array<{
+  value: PsdTemplate;
+  zh: string;
+  en: string;
+}> = [
   { value: 'poster', zh: '海报', en: 'Poster' },
   { value: 'ecommerce', zh: '电商主图', en: 'E-commerce' },
   { value: 'character', zh: '角色设定', en: 'Character' },
@@ -72,14 +95,16 @@ export const STRATEGY_OPTIONS: Array<{
     zh: 'AI 规划图层',
     en: 'AI layer plan',
     zhDesc: '先生成可编辑的图层结构，适合作为第一版工作流。',
-    enDesc: 'Create an editable layer plan first; best for the initial workflow.',
+    enDesc:
+      'Create an editable layer plan first; best for the initial workflow.',
   },
   {
     value: 'quick',
     zh: '快速 PSD',
     en: 'Quick PSD',
     zhDesc: '生成预览图和基础图层占位，后续再细化。',
-    enDesc: 'Generate a preview and basic layer placeholders for later refinement.',
+    enDesc:
+      'Generate a preview and basic layer placeholders for later refinement.',
   },
   {
     value: 'canvas-selection',
@@ -107,7 +132,10 @@ export function getTemplateLabel(
   return option ? option[language] : template;
 }
 
-export function getLayerTypeLabel(type: PsdLayerType, language: 'zh' | 'en'): string {
+export function getLayerTypeLabel(
+  type: PsdLayerType,
+  language: 'zh' | 'en'
+): string {
   const labels: Record<PsdLayerType, { zh: string; en: string }> = {
     background: { zh: '背景', en: 'Background' },
     image: { zh: '图片', en: 'Image' },
@@ -181,14 +209,19 @@ export function buildLayerPlan(
   const templateLabel = getTemplateLabel(template, language);
   const isZh = language === 'zh';
   const layerSeeds: Array<
-    Omit<PsdLayerDraft, 'id' | 'visible' | 'generationPrompt' | 'opacity' | 'status'>
+    Omit<
+      PsdLayerDraft,
+      'id' | 'visible' | 'generationPrompt' | 'opacity' | 'status'
+    >
   > = [
     {
       name: isZh ? '背景层' : 'Background',
       type: 'background',
       description: isZh
         ? `为“${basePrompt || templateLabel}”建立整体氛围、色调和留白。`
-        : `Set the overall atmosphere, palette, and negative space for “${basePrompt || templateLabel}”.`,
+        : `Set the overall atmosphere, palette, and negative space for “${
+            basePrompt || templateLabel
+          }”.`,
       locked: true,
     },
     {
@@ -252,7 +285,9 @@ export function buildLayerPlan(
   const count = Math.min(Math.max(layerCount, 3), layerSeeds.length);
   return {
     draftId: createStableDraftId(basePrompt, template, strategy, count),
-    title: basePrompt || (isZh ? `${templateLabel} PSD 计划` : `${templateLabel} PSD plan`),
+    title:
+      basePrompt ||
+      (isZh ? `${templateLabel} PSD 计划` : `${templateLabel} PSD plan`),
     template,
     strategy,
     textPolicy,
@@ -307,14 +342,22 @@ export function buildPsdLayerImageTaskDrafts(
         `[PSD draft layer: ${layer.name}]`,
         plan.title,
         layer.description,
-        'Generate only this visual layer as an image asset for a later PSD export skeleton. Do not claim or embed a native PSD file.',
+        'Task: export ONLY this layer/visual element from the reference poster as an independent transparent PNG layer.',
+        'Keep the exact same canvas size and resolution as the original poster. Preserve the element at its original coordinates, original size, proportion, opacity, and relative position. Make every other pixel transparent.',
+        'Photoshop stacking requirement: when all exported layer images are imported into Photoshop, they must restore the complete poster by stacking in place without moving, scaling, or adjustment.',
+        'Do not claim or embed a native PSD file; generate a single transparent layer image for later PSD packaging.',
       ].join('\n'),
       width: options.width,
       height: options.height,
       size: options.size,
       model: options.model,
       modelRef: options.modelRef || null,
+      generationMode: 'image_edit',
+      background: 'transparent',
+      outputFormat: 'png',
+      inputFidelity: 'high',
       uploadedImages: options.uploadedImages || [],
+      referenceImages: (options.uploadedImages || []).map((image) => image.url),
       knowledgeContextRefs: options.knowledgeContextRefs || [],
       autoInsertToCanvas: false,
       batchId: `${plan.draftId}-layers`,
