@@ -259,6 +259,36 @@ describe('buildLayerPlan', () => {
     expect(`${taskDrafts[0].taskType}`).not.toBe('psd');
     expect(taskDrafts[0].params.promptMeta?.tags).toContain('psd-draft');
   });
+
+  it('keeps draft layers editable and includes export-skeleton guidance layers', () => {
+    const plan = buildLayerPlan(
+      '社媒封面，保留安全区参考',
+      'social',
+      'quick',
+      8,
+      'zh'
+    );
+
+    expect(plan.title).toBe('社媒封面，保留安全区参考');
+    expect(plan.layers).toHaveLength(8);
+    expect(plan.layers[0]).toMatchObject({
+      name: '背景层',
+      type: 'background',
+      visible: true,
+      locked: true,
+    });
+    expect(plan.layers.map((layer) => layer.name)).toEqual([
+      '背景层',
+      '视觉主体',
+      '标题文字',
+      '辅助信息',
+      '装饰元素',
+      '前景强调',
+      '调色/说明层',
+      '安全边距参考',
+    ]);
+    expect(plan.layers.every((layer) => layer.visible)).toBe(true);
+  });
 });
 
 describe('AIImagePsdGeneration contract', () => {
