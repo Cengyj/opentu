@@ -160,7 +160,6 @@ const AIImagePsdGeneration = ({
       {
         draft: 0,
         queued: 0,
-        ready: 0,
         'export-pending': 0,
       } as Record<PsdLayerDraft['status'], number>
     );
@@ -171,7 +170,6 @@ const AIImagePsdGeneration = ({
       hiddenLayers: layers.length - visibleLayers.length,
       draftLayers: statusCounts.draft,
       queuedLayers: statusCounts.queued,
-      readyLayers: statusCounts.ready,
       exportPendingLayers: statusCounts['export-pending'],
     };
   }, [plan]);
