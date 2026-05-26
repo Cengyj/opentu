@@ -241,8 +241,8 @@ const AIImagePsdGeneration = ({
         if (createdLayerIds.size > 0) {
           void MessagePlugin.success(
             uiLanguage === 'zh'
-              ? `已开始生成 PSD 文件（自动拆分 ${createdLayerIds.size} 个可叠放透明图层）`
-              : `Started generating the PSD file (${createdLayerIds.size} stackable transparent layers)`
+              ? `已进入 PSD 思考拆层流程（${createdLayerIds.size} 个 Photoshop-ready 图层素材）`
+              : `Started the PSD thinking layer-split flow (${createdLayerIds.size} Photoshop-ready layer assets)`
           );
         } else {
           setError(
@@ -303,22 +303,21 @@ const AIImagePsdGeneration = ({
   return (
     <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--one-click">
       <div className="psd-one-click-shell">
-        <section
-          className="psd-hero"
-          aria-label="PSD one-click generator"
-        >
+        <section className="psd-hero" aria-label="PSD one-click generator">
           <span className="psd-hero__eyebrow">
-            {uiLanguage === 'zh' ? 'PSD 文件生成' : 'PSD File Generator'}
+            {uiLanguage === 'zh'
+              ? 'GPT-Image2 风格 PSD 流程'
+              : 'GPT-Image2-style PSD flow'}
           </span>
           <h2>
             {uiLanguage === 'zh'
-              ? '像 GPT 一样生成 PSD 文件'
-              : 'Generate a PSD file like GPT'}
+              ? '参考图 + 提示词，准备 Photoshop PSD'
+              : 'Reference image + prompt, ready for Photoshop PSD'}
           </h2>
           <p>
             {uiLanguage === 'zh'
-              ? '只需要参考图和提示词；系统自动识别视觉元素、拆分透明图层并准备 PSD 文件。'
-              : 'Only a reference image and prompt are needed; Opentu detects visual elements, separates transparent layers, and prepares a PSD file.'}
+              ? '按“图像生成 → 思考拆层 → Photoshop 源设置 → 导出编辑”的方式自动准备，保持单一操作入口。'
+              : 'Automatically follows image generation, thinking layer split, Photoshop source setup, and export/edit readiness behind one clear action.'}
           </p>
         </section>
 
@@ -348,6 +347,61 @@ const AIImagePsdGeneration = ({
             showOptimizeButton={false}
           />
 
+          <div
+            className="psd-workflow-steps"
+            aria-label={
+              uiLanguage === 'zh' ? 'PSD 工作流阶段' : 'PSD workflow stages'
+            }
+          >
+            {(
+              plan?.workflowSteps || [
+                {
+                  title:
+                    uiLanguage === 'zh'
+                      ? '图像生成/还原'
+                      : 'Image generation/reconstruction',
+                  description:
+                    uiLanguage === 'zh'
+                      ? '参考图和提示词作为唯一输入。'
+                      : 'Reference image and prompt are the only inputs.',
+                },
+                {
+                  title:
+                    uiLanguage === 'zh' ? '思考拆层' : 'Thinking layer split',
+                  description:
+                    uiLanguage === 'zh'
+                      ? '识别元素并拆成独立图层。'
+                      : 'Identify elements and split into independent layers.',
+                },
+                {
+                  title:
+                    uiLanguage === 'zh'
+                      ? '源设置：Photoshop/PSD'
+                      : 'Source: Photoshop/PSD',
+                  description:
+                    uiLanguage === 'zh'
+                      ? '保持同画布坐标，面向 Photoshop 叠放。'
+                      : 'Keep same-canvas coordinates for Photoshop stacking.',
+                },
+                {
+                  title: uiLanguage === 'zh' ? '导出与编辑' : 'Export and edit',
+                  description:
+                    uiLanguage === 'zh'
+                      ? 'PSD 打包接入后提供下载/打开。'
+                      : 'Download/open PSD when packaging is wired.',
+                },
+              ]
+            ).map((step, index) => (
+              <div className="psd-workflow-step" key={step.title}>
+                <span className="psd-workflow-step__index">{index + 1}</span>
+                <div>
+                  <strong>{step.title}</strong>
+                  <p>{step.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
           <ActionButtons
             language={uiLanguage}
             type="image"
@@ -358,7 +412,9 @@ const AIImagePsdGeneration = ({
             onReset={handleReset}
             showQuantity={false}
             generateLabel={
-              uiLanguage === 'zh' ? '生成 PSD 文件' : 'Generate PSD file'
+              uiLanguage === 'zh'
+                ? '开始拆层并准备 PSD'
+                : 'Split layers and prepare PSD'
             }
             showReset={false}
           />
@@ -367,17 +423,17 @@ const AIImagePsdGeneration = ({
             <div className="psd-generation-status" role="status">
               <strong>
                 {uiLanguage === 'zh'
-                  ? 'PSD 文件正在生成'
-                  : 'PSD file is being generated'}
+                  ? 'PSD 导出准备中'
+                  : 'PSD export is being prepared'}
               </strong>
               <span>
                 {uiLanguage === 'zh'
-                  ? `已开始准备 ${
+                  ? `已进入思考拆层流程，正在准备 ${
                       generatedLayerCount || plan.layers.length
-                    } 个透明分层素材，保持原画布、原坐标和透明背景。`
-                  : `Started preparing ${
+                    } 个 Photoshop-ready 分层素材；原生 PSD 下载将在打包能力接入后开放。`
+                  : `Started the thinking layer-split flow and is preparing ${
                       generatedLayerCount || plan.layers.length
-                    } transparent layer assets while keeping the original canvas, coordinates, and transparent background.`}
+                    } Photoshop-ready layer assets; native PSD download opens once packaging is wired.`}
               </span>
             </div>
           ) : null}
@@ -386,8 +442,8 @@ const AIImagePsdGeneration = ({
             <summary>{uiLanguage === 'zh' ? '说明' : 'Note'}</summary>
             <p>
               {uiLanguage === 'zh'
-                ? '系统会自动处理生成设置；当前会先生成同画布透明分层素材，原生 PSD 打包接入后直接输出文件。'
-                : 'Opentu handles generation settings automatically; it first generates same-canvas transparent layer assets and will output a native PSD once packaging is wired.'}
+                ? '系统会自动处理生成设置。当前 OpenAI 兼容公共图片 API 暂不直接返回原生 PSD，也不暴露透明背景等模型调参；本功能先生成/编辑同画布分层素材和 PSD 导出骨架，真实 PSD 打包接入后再提供下载或打开文件。'
+                : 'Opentu handles generation settings automatically. The current OpenAI-compatible public image API does not directly return native PSD and this UI does not expose model tuning such as transparent-background controls; it prepares same-canvas layer assets plus a PSD export skeleton now, then enables download/open once real PSD packaging is wired.'}
             </p>
           </details>
 

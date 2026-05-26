@@ -87,6 +87,49 @@
     font-weight: 800;
   }
 
+  .psd-workflow-steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .psd-workflow-step {
+    display: flex;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid rgba(243, 156, 18, 0.2);
+    border-radius: 12px;
+    background: #fffaf2;
+    color: #704300;
+  }
+
+  .psd-workflow-step__index {
+    display: inline-grid;
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border-radius: 999px;
+    background: #f59e0b;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .psd-workflow-step strong {
+    display: block;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .psd-workflow-step p {
+    margin: 3px 0 0;
+    color: #8a5a10;
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
   .psd-capability-disclosure {
     border-top: 1px solid rgba(15, 23, 42, 0.06);
     color: var(--color-text-secondary, #666);
@@ -170,6 +213,10 @@
     .psd-hero,
     .psd-gpt-composer {
       border-radius: 14px;
+    }
+
+    .psd-workflow-steps {
+      grid-template-columns: 1fr;
     }
   }
 }
