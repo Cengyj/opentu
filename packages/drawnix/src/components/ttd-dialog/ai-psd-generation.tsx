@@ -562,9 +562,13 @@ const AIImagePsdGeneration = ({
                 ? 'ai-generation-mobile-switcher__tab--active'
                 : ''
             }`}
+            aria-pressed={mobilePanel === 'config'}
             onClick={() => setMobilePanel('config')}
           >
             {uiLanguage === 'zh' ? '生成配置' : 'Setup'}
+            <span className="ai-generation-mobile-switcher__count">
+              {uiLanguage === 'zh' ? '配置' : 'Config'}
+            </span>
           </button>
           <button
             type="button"
@@ -573,9 +577,13 @@ const AIImagePsdGeneration = ({
                 ? 'ai-generation-mobile-switcher__tab--active'
                 : ''
             }`}
+            aria-pressed={mobilePanel === 'preview'}
             onClick={() => setMobilePanel('preview')}
           >
             {uiLanguage === 'zh' ? 'PSD 预览' : 'PSD Preview'}
+            <span className="ai-generation-mobile-switcher__count">
+              {draftMetrics.totalLayers || '—'}
+            </span>
           </button>
         </div>
       ) : null}
