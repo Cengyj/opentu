@@ -991,6 +991,14 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       }
       return undefined;
     };
+    const toKnownString = (
+      value: unknown,
+      allowed: readonly string[]
+    ): string | undefined => {
+      if (typeof value !== 'string') return undefined;
+      const normalized = value.trim();
+      return allowed.includes(normalized) ? normalized : undefined;
+    };
 
     try {
       if (taskId) {
@@ -1037,6 +1045,18 @@ export class FallbackMediaExecutor implements IMediaExecutor {
                     : {}),
                   ...(toNumber(extraParams?.max_tokens) !== undefined
                     ? { max_tokens: toNumber(extraParams?.max_tokens) }
+                    : {}),
+                  ...(toKnownString(extraParams?.reasoning_effort, [
+                    'low',
+                    'medium',
+                    'high',
+                  ])
+                    ? {
+                        reasoning_effort: toKnownString(
+                          extraParams?.reasoning_effort,
+                          ['low', 'medium', 'high']
+                        ),
+                      }
                     : {}),
                 }),
                 signal: options?.signal,

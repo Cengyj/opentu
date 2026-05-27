@@ -12,8 +12,12 @@ import { AssetType } from '../../types/asset.types';
 import { TaskStatus, TaskType, type Task } from '../../types/task.types';
 import AIImagePsdGeneration, { buildLayerPlan } from './ai-psd-generation';
 import {
+  buildLayerPlanFromAnalysis,
+  buildPsdLayerAnalysisTaskPlan,
   buildPsdLayerImageTaskPlans,
   buildPsdReadyImageTaskPlan,
+  parsePsdLayerAnalysisResponse,
+  PSD_LAYER_ANALYSIS_MODEL_ID,
   PSD_LAYER_IMAGE_TASK_CONTRACT,
 } from './ai-psd-plan';
 
@@ -62,8 +66,17 @@ vi.mock('../../hooks/use-runtime-models', () => {
       vendor: 'OPENAI',
     },
   ];
+  const textModels = [
+    {
+      id: 'gpt-5.5',
+      label: 'GPT-5.5',
+      type: 'text',
+      vendor: 'OPENAI',
+    },
+  ];
   return {
-    useSelectableModels: () => imageModels,
+    useSelectableModels: (type: string) =>
+      type === 'text' ? textModels : imageModels,
   };
 });
 
@@ -76,9 +89,9 @@ vi.mock('../../utils/settings-manager', () => ({
     addListener: vi.fn(),
     removeListener: vi.fn(),
   },
-  resolveInvocationRoute: () => ({
+  resolveInvocationRoute: (routeType: string) => ({
     profileId: 'default',
-    modelId: 'image-model',
+    modelId: routeType === 'text' ? 'gpt-5.5' : 'image-model',
   }),
 }));
 
@@ -98,6 +111,7 @@ vi.mock('../../utils/model-selection', () => ({
 
 vi.mock('../../constants/model-config', () => ({
   DEFAULT_IMAGE_MODEL_ID: 'gpt-image-2',
+  DEFAULT_TEXT_MODEL_ID: 'gpt-5.5',
   getCompatibleParams: () => [
     {
       id: 'size',
@@ -220,74 +234,139 @@ describe('buildLayerPlan', () => {
     expect(Object.keys(AssetType)).not.toContain('PSD');
   });
 
-  it('builds a local editable PSD plan without creating PSD task types', () => {
-    const plan = buildLayerPlan(
-      '品牌活动海报，产品主体需要独立图层',
-      'poster',
-      'ai-plan',
-      5,
-      'zh'
-    );
-
-    expect(plan.template).toBe('poster');
-    expect(plan.strategy).toBe('ai-plan');
-    expect(plan.layers).toHaveLength(5);
-    expect(plan.layers.map((layer) => layer.type)).toEqual([
-      'background',
-      'image',
-      'text',
-      'text',
-      'decoration',
-    ]);
-    expect(
-      plan.layers.every((layer) => !layer.id.includes('TaskType.PSD'))
-    ).toBe(true);
-    expect(plan.exportSkeleton).toEqual({
-      target: 'psd',
-      source: 'photoshop',
-      status: 'planned',
-      sourceSetting: 'photoshop',
-      packaging: 'app-side-required',
-      nativePsdReady: false,
-      apiNativePsdOutput: false,
-      downloadWhenSupported: true,
+  it('builds a GPT-5.5 high-reasoning visual analysis task before image layers', () => {
+    const taskPlan = buildPsdLayerAnalysisTaskPlan({
+      prompt: '请拆分这张深圳海报',
+      template: 'poster',
+      strategy: 'ai-plan',
+      language: 'zh',
+      model: PSD_LAYER_ANALYSIS_MODEL_ID,
+      modelRef: { profileId: 'default', modelId: PSD_LAYER_ANALYSIS_MODEL_ID },
+      uploadedImages: [
+        { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+      ],
+      knowledgeContextRefs: [],
     });
-    expect(plan.workflowSteps.map((step) => step.id)).toEqual([
-      'image-generation',
-      'thinking-layer-split',
-      'photoshop-source',
-      'export-edit',
+
+    expect(taskPlan.taskType).toBe(TaskType.CHAT);
+    expect(taskPlan.params.model).toBe('gpt-5.5');
+    expect(taskPlan.params.modelRef).toEqual({
+      profileId: 'default',
+      modelId: 'gpt-5.5',
+    });
+    expect(taskPlan.params.referenceImages).toEqual([
+      'data:image/png;base64,cG9zdGVy',
     ]);
+    expect(taskPlan.params.params).toMatchObject({
+      reasoning_effort: 'high',
+      psdLayerAnalysis: true,
+    });
+    expect(taskPlan.params.prompt).toContain('先完整分析原图');
+    expect(taskPlan.params.prompt).toContain('不要使用固定 8 层模板');
+    expect(taskPlan.params.prompt).toContain('expectedRegion');
+    expect(taskPlan.params.promptMeta?.tags).toContain('psd-layer-analysis');
   });
 
-  it('keeps planned layers editable and includes export-skeleton guidance layers', () => {
-    const plan = buildLayerPlan(
-      '社媒封面，保留安全区参考',
-      'social',
-      'quick',
-      8,
-      'zh'
-    );
+  it('parses dynamic layer analysis JSON after model thinking text', () => {
+    const analysis = parsePsdLayerAnalysisResponse(`<think>{"layers":[]}</think>
+最终：
+{
+  "title": "深圳城市海报",
+  "summary": "按真实视觉元素拆分，不重复主标题。",
+  "layers": [
+    {
+      "name": "背景底图",
+      "type": "background",
+      "include": "底色、纹理、照片氛围",
+      "exclude": "全部文字、线条、地图和定位标识",
+      "stackingOrder": 1,
+      "expectedRegion": { "left": 0, "top": 0, "width": 100, "height": 100 }
+    },
+    {
+      "name": "主标题与副标题",
+      "type": "text",
+      "include": "深圳标题、英文副标题和紧邻短说明",
+      "exclude": "列表正文、坐标、地图和背景",
+      "stackingOrder": 4,
+      "expectedRegion": { "x": 21, "y": 17, "w": 58, "h": 18 }
+    }
+  ],
+  "warnings": ["标题只允许出现在主标题与副标题层"]
+}`);
 
-    expect(plan.title).toBe('社媒封面，保留安全区参考');
-    expect(plan.layers).toHaveLength(8);
-    expect(plan.layers[0]).toMatchObject({
-      name: '背景层',
-      type: 'background',
-      visible: true,
-      locked: true,
+    expect(analysis.title).toBe('深圳城市海报');
+    expect(analysis.layers).toHaveLength(2);
+    expect(analysis.layers[1]).toMatchObject({
+      name: '主标题与副标题',
+      type: 'text',
+      include: '深圳标题、英文副标题和紧邻短说明',
+      exclude: '列表正文、坐标、地图和背景',
+      stackingOrder: 4,
+      bounds: { left: 21, top: 17, width: 58, height: 18 },
     });
+  });
+
+  it('builds the layer plan from model analysis instead of a fixed poster template', () => {
+    const analysis = parsePsdLayerAnalysisResponse({
+      title: '深圳城市海报',
+      summary: '动态视觉拆层',
+      layers: [
+        {
+          name: '背景底图',
+          type: 'background',
+          include: '底色、纹理、照片氛围',
+          exclude: '全部前景文字和地图',
+          stackingOrder: 1,
+          expectedRegion: { left: 0, top: 0, width: 100, height: 100 },
+        },
+        {
+          name: '主标题与副标题',
+          type: 'text',
+          include: '深圳主标题、英文标题和紧邻副标题',
+          exclude: '不得包含地图、列表或另一份标题副本',
+          stackingOrder: 2,
+          expectedRegion: { left: 18, top: 14, width: 64, height: 20 },
+        },
+        {
+          name: '地图定位与坐标',
+          type: 'decoration',
+          include: '地图轮廓、定位点、经纬度和引线',
+          exclude: '不得包含主标题和列表模块',
+          stackingOrder: 3,
+          expectedRegion: { left: 60, top: 38, width: 28, height: 18 },
+        },
+      ],
+    });
+
+    const plan = buildLayerPlanFromAnalysis(analysis, {
+      prompt: '请拆分这张深圳海报',
+      template: 'poster',
+      strategy: 'ai-plan',
+      language: 'zh',
+      textPolicy: {
+        preferEditableText: true,
+        avoidBakedText: true,
+      },
+      analysisModel: 'gpt-5.5',
+    });
+
+    expect(plan.title).toBe('深圳城市海报');
+    expect(plan.analysis?.model).toBe('gpt-5.5');
     expect(plan.layers.map((layer) => layer.name)).toEqual([
-      '背景层',
-      '视觉主体',
-      '标题文字',
-      '辅助信息',
-      '装饰元素',
-      '前景强调',
-      '调色/说明层',
-      '安全边距参考',
+      '背景底图',
+      '主标题与副标题',
+      '地图定位与坐标',
     ]);
-    expect(plan.layers.every((layer) => layer.visible)).toBe(true);
+    expect(plan.layers.map((layer) => layer.name)).not.toContain('视觉主体');
+    expect(plan.layers[1].generationPrompt).toContain(
+      '不得包含地图、列表或另一份标题副本'
+    );
+    expect(plan.layers[1].bounds).toEqual({
+      left: 18,
+      top: 14,
+      width: 64,
+      height: 20,
+    });
   });
 
   it('writes editable-text policy into local text-layer prompts', () => {
@@ -307,21 +386,49 @@ describe('buildLayerPlan', () => {
       preferEditableText: true,
       avoidBakedText: true,
     });
-    expect(plan.layers[2].generationPrompt).toContain(
-      '图片任务只生成版式占位和氛围'
+    expect(plan.layers[1].generationPrompt).toContain(
+      '同画布透明栅格层完整保留'
     );
-    expect(plan.layers[2].generationPrompt).toContain(
-      '不要让图片模型直接生成清晰文字'
+    expect(plan.layers[1].generationPrompt).toContain(
+      '不要把文字合并进背景或主体层'
     );
+    expect(plan.layers[1].generationPrompt).toContain('只能出现在它所属的一个图层');
   });
 
-  it('builds IMAGE task plans for visual layers without native PSD claims', () => {
-    const plan = buildLayerPlan(
-      '品牌活动海报，产品主体需要独立图层',
-      'poster',
-      'ai-plan',
-      5,
-      'zh'
+  it('builds IMAGE task plans from dynamic visual analysis without native PSD claims', () => {
+    const plan = buildLayerPlanFromAnalysis(
+      parsePsdLayerAnalysisResponse({
+        title: '深圳城市海报',
+        layers: [
+          {
+            name: '背景底图',
+            type: 'background',
+            include: '背景照片和底色',
+            exclude: '标题、坐标、地图和列表',
+            stackingOrder: 1,
+          },
+          {
+            name: '主标题与副标题',
+            type: 'text',
+            include: '主标题和紧邻副标题',
+            exclude: '地图、列表、背景',
+            stackingOrder: 2,
+          },
+          {
+            name: '地图定位与坐标',
+            type: 'decoration',
+            include: '地图、定位点和坐标文字',
+            exclude: '主标题和列表',
+            stackingOrder: 3,
+          },
+        ],
+      }),
+      {
+        prompt: '品牌活动海报，产品主体需要独立图层',
+        template: 'poster',
+        strategy: 'ai-plan',
+        language: 'zh',
+      }
     );
 
     const taskPlans = buildPsdLayerImageTaskPlans(plan, {
@@ -331,6 +438,7 @@ describe('buildLayerPlan', () => {
       width: 1024,
       height: 1024,
       extraParams: { size: '1024x1024' },
+      language: 'zh',
     });
 
     expect(taskPlans).toHaveLength(3);
@@ -343,7 +451,7 @@ describe('buildLayerPlan', () => {
     expect(taskPlans.map((taskPlan) => taskPlan.layerId)).toEqual([
       'psd-layer-1',
       'psd-layer-2',
-      'psd-layer-5',
+      'psd-layer-3',
     ]);
     expect(taskPlans[0].params.psdPlan).toMatchObject({
       planId: plan.planId,
@@ -363,13 +471,20 @@ describe('buildLayerPlan', () => {
       outputFormat: PSD_LAYER_IMAGE_TASK_CONTRACT.outputFormat,
       autoInsertToCanvas: false,
     });
-    expect(taskPlans[0].params.prompt).toContain('Public Image API limitation');
     expect(taskPlans[0].params.prompt).toContain(
-      'Photoshop/PSD export metadata'
+      '同画布硬性要求'
     );
     expect(taskPlans[0].params.prompt).toContain(
-      'independent transparent PNG layer'
+      '原始坐标位置'
     );
+    expect(taskPlans[0].params.prompt).toContain(
+      '真实透明背景的 PNG'
+    );
+    expect(taskPlans[1].params.prompt).toContain(
+      '文字图层要求'
+    );
+    expect(taskPlans[1].params.prompt).toContain('互斥要求');
+    expect(taskPlans[1].params.prompt).toContain('棋盘格');
     expect(`${taskPlans[0].taskType}`).not.toBe('psd');
     expect(taskPlans[0].params.promptMeta?.tags).toEqual([
       ...PSD_LAYER_IMAGE_TASK_CONTRACT.promptMetaTags,
@@ -421,9 +536,7 @@ describe('buildLayerPlan', () => {
       size: '1024x1024',
       background: 'auto',
     });
-    expect(taskPlan.params.prompt).toContain(
-      '公开 GPT Image API 当前返回图片数据'
-    );
+    expect(taskPlan.params.prompt).toContain('当前图片接口返回图片数据');
     expect(taskPlan.params.psdPlan).toMatchObject({
       layerId: 'psd-ready-composite',
       exportTarget: 'psd',
@@ -489,17 +602,17 @@ describe('AIImagePsdGeneration contract', () => {
     expect(AIImagePsdGeneration).toBeTypeOf('function');
   });
 
-  it('renders a GPT-style one-click PSD composer without tuning controls', () => {
+  it('renders an Opentu PSD workbench composer without tuning controls', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(
-      screen.getByText(/用参考图和提示词准备 Photoshop 工作区/)
-    ).toBeTruthy();
-    expect(screen.getByText(/不把单张 PNG 伪装成 PSD/)).toBeTruthy();
-    expect(screen.getByText('思考拆层')).toBeTruthy();
-    expect(screen.getByText('源设置：Photoshop')).toBeTruthy();
-    expect(screen.getByText('导出编辑')).toBeTruthy();
-    expect(screen.getByText('说明')).toBeTruthy();
+    expect(screen.getByText('Opentu PSD 工作台')).toBeTruthy();
+    expect(screen.getByText(/拆成同画布透明图层/)).toBeTruthy();
+    expect(screen.getByText('等待源图')).toBeTruthy();
+    expect(screen.getByText('未规划')).toBeTruthy();
+    expect(screen.getByText('gpt-5.5 高思考分析')).toBeTruthy();
+    expect(screen.getByText('动态图层生成')).toBeTruthy();
+    expect(screen.getByText('叠放检查与下载')).toBeTruthy();
+    expect(screen.getByText('能力边界')).toBeTruthy();
     expect((screen.getByLabelText('prompt') as HTMLTextAreaElement).value).toBe(
       ''
     );
@@ -508,7 +621,6 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.queryByText('重置')).toBeNull();
     const hiddenTuningCopyPattern = new RegExp(
       [
-        '\\u6a21\\u677f',
         '\\u7b56\\u7565',
         '\\u56fe\\u5c42\\u6570\\u91cf',
         '\\u6a21\\u578b\\u53c2\\u6570',
@@ -520,7 +632,7 @@ describe('AIImagePsdGeneration contract', () => {
       mockState.actionButtonProps[mockState.actionButtonProps.length - 1]
     ).toMatchObject({
       canGenerate: false,
-      generateLabel: '生成 PSD-ready 结果',
+      generateLabel: '生成 PSD 工作区',
       showReset: false,
     });
     expect(
@@ -537,13 +649,12 @@ describe('AIImagePsdGeneration contract', () => {
       showPresetButton: false,
       showOptimizeButton: false,
     });
-    expect(
-      screen.getByText(/公开 GPT Image API 当前返回 png\/jpeg\/webp 图片数据/)
-    ).toBeTruthy();
+    expect(screen.getByText(/当前图片接口返回 png\/jpeg\/webp 图片数据/))
+      .toBeTruthy();
   });
 
-  it('updates PSD button state and queues layer asset generation from one click', async () => {
-    render(
+  it('updates PSD button state, analyzes with GPT-5.5, then queues dynamic layer assets', async () => {
+    const { rerender } = render(
       <AIImagePsdGeneration
         initialPrompt="品牌活动海报"
         initialImages={[
@@ -557,69 +668,36 @@ describe('AIImagePsdGeneration contract', () => {
     expect(latestActionProps).toMatchObject({
       canGenerate: true,
       hasGenerated: false,
-      generateLabel: '生成 PSD-ready 结果',
+      generateLabel: '生成 PSD 工作区',
     });
 
-    fireEvent.click(
-      screen.getByRole('button', { name: '生成 PSD-ready 结果' })
-    );
-
-    await waitFor(() => {
-      latestActionProps =
-        mockState.actionButtonProps[mockState.actionButtonProps.length - 1];
-      expect(latestActionProps).toMatchObject({
-        canGenerate: true,
-        hasGenerated: false,
-        generateLabel: '生成 PSD-ready 结果',
-      });
-    });
-    expect(screen.getByText('PSD-ready 任务已排队')).toBeTruthy();
-    expect(
-      screen.getByText(/成功 0 \/ 失败 0 \/ 进行中 0 \/ 排队 1 \/ 总计 1/)
-    ).toBeTruthy();
-    expect(screen.getByText(/打开任务队列查看/)).toBeTruthy();
-    expect(screen.getAllByText(/PSD-ready ZIP 工作区包/).length).toBeGreaterThan(
-      0
-    );
-    expect(mockState.createTask).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(`查看可选${'拆分'}明细`)).toBeNull();
-    expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
-  });
-
-  it('summarizes completed PSD layer tasks instead of staying on a static started state', async () => {
-    const { rerender } = render(
-      <AIImagePsdGeneration
-        initialPrompt="品牌活动海报"
-        initialImages={[
-          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
-        ]}
-      />
-    );
-
-    fireEvent.click(
-      screen.getByRole('button', { name: '生成 PSD-ready 结果' })
-    );
+    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 工作区' }));
 
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(1);
     });
+    expect(mockState.createTask.mock.calls[0]?.[1]).toBe(TaskType.CHAT);
+    expect(mockState.createTask.mock.calls[0]?.[0]).toMatchObject({
+      model: 'gpt-5.5',
+      referenceImages: ['data:image/png;base64,cG9zdGVy'],
+      params: {
+        reasoning_effort: 'high',
+        psdLayerAnalysis: true,
+      },
+    });
+    expect(screen.getByText('gpt-5.5 正在分析图层')).toBeTruthy();
 
-    const createdBatchId = mockState.createTask.mock.calls[0]?.[0]?.batchId;
     mockState.tasks = [
       createMockPsdTask({
         id: 'task-1',
+        type: TaskType.CHAT,
         status: TaskStatus.COMPLETED,
-        params: {
-          batchId: createdBatchId,
-          batchIndex: 1,
-          batchTotal: 1,
-        },
+        params: mockState.createTask.mock.calls[0]?.[0],
         result: {
-          url: 'data:image/png;base64,Z2VuZXJhdGVk',
-          format: 'png',
+          url: '',
+          format: 'md',
           size: 100,
-          width: 1024,
-          height: 1024,
+          chatResponse: createMockAnalysisResponse(),
         },
       }),
     ];
@@ -632,20 +710,134 @@ describe('AIImagePsdGeneration contract', () => {
       />
     );
 
-    expect(screen.getByText('PSD-ready 图片已生成完成')).toBeTruthy();
-    expect(screen.getByText(/成功 1 \/ 总计 1/)).toBeTruthy();
+    await waitFor(() => {
+      expect(mockState.createTask).toHaveBeenCalledTimes(5);
+    });
+    expect(screen.getByText('同画布图层任务已排队')).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: '下载 PSD-ready 资产包' })
+      screen.getByText(/成功 0 \/ 失败 0 \/ 进行中 0 \/ 排队 4 \/ 总计 4/)
     ).toBeTruthy();
-    expect(screen.getByText('PSD-ready 结果预览')).toBeTruthy();
+    expect(screen.getByText(/打开任务队列查看/)).toBeTruthy();
+    expect(screen.getAllByText(/PSD.*工作区包/).length).toBeGreaterThan(0);
+    expect(
+      mockState.createTask.mock.calls.slice(1).every((call) => call[1] === TaskType.IMAGE)
+    ).toBe(true);
+    fireEvent.click(
+      screen.getByRole('button', { name: '查看图层：主标题与副标题' })
+    );
+    expect(screen.getByText('查看图层：主标题与副标题')).toBeTruthy();
+    expect(screen.getByText('同画布 / 原坐标 / 透明背景')).toBeTruthy();
+    expect(screen.queryByText(`查看可选${'拆分'}明细`)).toBeNull();
+    expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
+  });
+
+  it('summarizes completed PSD layer tasks instead of staying on a static started state', async () => {
+    const { rerender, container } = render(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 工作区' }));
+
+    await waitFor(() => {
+      expect(mockState.createTask).toHaveBeenCalledTimes(1);
+    });
+
+    mockState.tasks = [
+      createMockPsdTask({
+        id: 'task-1',
+        type: TaskType.CHAT,
+        status: TaskStatus.COMPLETED,
+        params: mockState.createTask.mock.calls[0]?.[0],
+        result: {
+          url: '',
+          format: 'md',
+          size: 100,
+          chatResponse: createMockAnalysisResponse(),
+        },
+      }),
+    ];
+    rerender(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+        ]}
+      />
+    );
+    await waitFor(() => {
+      expect(mockState.createTask).toHaveBeenCalledTimes(5);
+    });
+
+    const layerTaskCalls = mockState.createTask.mock.calls.slice(1);
+    const createdBatchId = layerTaskCalls[0]?.[0]?.batchId;
+    mockState.tasks = layerTaskCalls.map((call, index) =>
+      createMockPsdTask({
+        id: `layer-task-${index + 1}`,
+        status: TaskStatus.COMPLETED,
+        params: {
+          ...call[0],
+          batchId: createdBatchId,
+          batchIndex: index + 1,
+          batchTotal: layerTaskCalls.length,
+        },
+        result: {
+          url: `data:image/png;base64,${[
+            'YmFja2dyb3VuZA==',
+            'aGVhZGxpbmU=',
+            'bWFw',
+            'Zm9vdGVy',
+          ][index]}`,
+          format: 'png',
+          size: 100,
+          width: 1024,
+          height: 1024,
+        },
+      })
+    );
+    rerender(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('同画布图层已生成完成')).toBeTruthy();
+    expect(screen.getByText(/成功 4 \/ 总计 4/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '下载工作区包' })).toBeTruthy();
+    expect(screen.getByText('分层结果叠放预览')).toBeTruthy();
+    expect(screen.getByText('叠放顺序')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /原图对照/ })).toBeTruthy();
+    expect(container.querySelectorAll('.psd-stage__layer-outline')).toHaveLength(
+      0
+    );
+    fireEvent.click(screen.getByRole('button', { name: '显示边界' }));
+    expect(container.querySelectorAll('.psd-stage__layer-outline')).toHaveLength(
+      4
+    );
     expect(
       screen
-        .getByRole('img', { name: 'PSD-ready 生成结果' })
+        .getByRole('img', { name: '叠放图层：主标题与副标题' })
         .getAttribute('src')
-    ).toBe('data:image/png;base64,Z2VuZXJhdGVk');
+    ).toBe('data:image/png;base64,aGVhZGxpbmU=');
+    fireEvent.click(screen.getByRole('button', { name: '原图' }));
+    expect(screen.getByText('源图预览')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '叠放' }));
+    expect(screen.getByText('分层结果叠放预览')).toBeTruthy();
     fireEvent.click(
-      screen.getByRole('button', { name: '下载 PSD-ready 资产包' })
+      screen.getByRole('button', { name: '查看图层：背景底图' })
     );
+    expect(screen.getByText('查看图层：背景底图')).toBeTruthy();
+    expect(
+      screen.getByRole('img', { name: 'PSD 图层结果：背景底图' }).getAttribute('src')
+    ).toBe('data:image/png;base64,YmFja2dyb3VuZA==');
+    fireEvent.click(screen.getByRole('button', { name: '下载工作区包' }));
     await waitFor(() => {
       expect(mockState.triggerBlobDownload).toHaveBeenCalledTimes(1);
     });
@@ -657,7 +849,9 @@ describe('AIImagePsdGeneration contract', () => {
 
     const { default: JSZip } = await import('jszip');
     const zip = await JSZip.loadAsync(downloadedBlob);
-    expect(zip.file('generated/generated.png')).toBeTruthy();
+    expect(
+      Object.keys(zip.files).some((path) => path.startsWith('layers/'))
+    ).toBe(true);
     expect(zip.file('source/1-poster.png')).toBeTruthy();
     expect(zip.file('README.md')).toBeTruthy();
 
@@ -666,8 +860,13 @@ describe('AIImagePsdGeneration contract', () => {
     const manifest = JSON.parse(manifestText || '{}');
     expect(manifest.officialApiBoundary.apiReturnsNativePsd).toBe(false);
     expect(manifest.officialApiBoundary.apiReturnsImageData).toBe(true);
-    expect(manifest.assets.generated[0].path).toBe('generated/generated.png');
+    expect(manifest.layerContract.sameCanvasAsOriginal).toBe(true);
+    expect(manifest.layerContract.photoshopStackingInPlace).toBe(true);
+    expect(manifest.assets.generated[0].kind).toBe('same-canvas-layer');
+    expect(manifest.assets.generated[0].path).toContain('layers/');
+    expect(manifest.assets.generated[0].url).toBeUndefined();
     expect(manifest.assets.references[0].path).toBe('source/1-poster.png');
+    expect(manifest.assets.references[0].url).toBeUndefined();
     expect(screen.queryByText(/原生 PSD 下载已完成/)).toBeNull();
   });
 
@@ -681,21 +880,24 @@ describe('AIImagePsdGeneration contract', () => {
       />
     );
 
-    fireEvent.click(
-      screen.getByRole('button', { name: '生成 PSD-ready 结果' })
-    );
+    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 工作区' }));
 
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(1);
     });
 
-    const createdBatchId = mockState.createTask.mock.calls[0]?.[0]?.batchId;
     mockState.tasks = [
       createMockPsdTask({
         id: 'task-1',
-        status: TaskStatus.FAILED,
-        params: { batchId: createdBatchId, batchIndex: 1, batchTotal: 1 },
-        error: { code: 'API_ERROR', message: 'quota exceeded' },
+        type: TaskType.CHAT,
+        status: TaskStatus.COMPLETED,
+        params: mockState.createTask.mock.calls[0]?.[0],
+        result: {
+          url: '',
+          format: 'md',
+          size: 100,
+          chatResponse: createMockAnalysisResponse(),
+        },
       }),
     ];
     rerender(
@@ -706,14 +908,83 @@ describe('AIImagePsdGeneration contract', () => {
         ]}
       />
     );
+    await waitFor(() => {
+      expect(mockState.createTask).toHaveBeenCalledTimes(5);
+    });
 
-    expect(screen.getByText('PSD-ready 生成失败')).toBeTruthy();
+    const layerTaskCalls = mockState.createTask.mock.calls.slice(1);
+    const createdBatchId = layerTaskCalls[0]?.[0]?.batchId;
+    mockState.tasks = layerTaskCalls.map((call, index) =>
+      createMockPsdTask({
+        id: `layer-task-${index + 1}`,
+        status: TaskStatus.FAILED,
+        params: {
+          ...call[0],
+          batchId: createdBatchId,
+          batchIndex: index + 1,
+          batchTotal: layerTaskCalls.length,
+        },
+        error: { code: 'API_ERROR', message: 'quota exceeded' },
+      })
+    );
+    rerender(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('同画布图层生成失败')).toBeTruthy();
     expect(
-      screen.getByText(/成功 0 \/ 失败 1 \/ 进行中 0 \/ 排队 0 \/ 总计 1/)
+      screen.getByText(/成功 0 \/ 失败 4 \/ 进行中 0 \/ 排队 0 \/ 总计 4/)
     ).toBeTruthy();
     expect(screen.getByText(/任务失败。请在任务队列查看错误详情/)).toBeTruthy();
   });
 });
+
+function createMockAnalysisResponse(): string {
+  return JSON.stringify({
+    title: '深圳城市海报',
+    summary: '按真实海报视觉元素动态拆分。',
+    layers: [
+      {
+        name: '背景底图',
+        type: 'background',
+        include: '底色、纹理、照片氛围',
+        exclude: '全部文字、地图、线条和定位标识',
+        stackingOrder: 1,
+        expectedRegion: { left: 0, top: 0, width: 100, height: 100 },
+      },
+      {
+        name: '主标题与副标题',
+        type: 'text',
+        include: '深圳主标题、英文副标题和紧邻说明',
+        exclude: '地图、列表、背景和另一份标题副本',
+        stackingOrder: 2,
+        expectedRegion: { left: 18, top: 14, width: 64, height: 20 },
+      },
+      {
+        name: '地图定位与坐标',
+        type: 'decoration',
+        include: '地图轮廓、定位点、经纬度和引线',
+        exclude: '主标题、信息列表和背景',
+        stackingOrder: 3,
+        expectedRegion: { left: 60, top: 38, width: 28, height: 18 },
+      },
+      {
+        name: '底部信息与装饰',
+        type: 'text',
+        include: '底部说明文字、分隔线和装饰点',
+        exclude: '主标题、地图和背景',
+        stackingOrder: 4,
+        expectedRegion: { left: 10, top: 72, width: 80, height: 18 },
+      },
+    ],
+    warnings: ['主标题只允许出现在主标题与副标题层。'],
+  });
+}
 
 function createMockPsdTask(overrides: Partial<Task> = {}): Task {
   return {

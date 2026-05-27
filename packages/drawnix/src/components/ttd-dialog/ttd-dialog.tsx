@@ -772,17 +772,19 @@ const TTDDialogComponent = ({
           ) : undefined
         }
         onClose={handleImageDialogClose}
-        width="80%"
-        height="60%"
-        minWidth={800}
-        minHeight={500}
+        width={imageGenerationMode === 'psd' ? '92%' : '80%'}
+        height={imageGenerationMode === 'psd' ? '82%' : '60%'}
+        minWidth={isMobile ? 320 : imageGenerationMode === 'psd' ? 1100 : 800}
+        minHeight={isMobile ? 460 : imageGenerationMode === 'psd' ? 680 : 500}
         x="center"
         y="center"
         modal={false}
         minimizable={false}
         className="winbox-ai-generation winbox-ai-image-generation"
         container={container}
-        autoMaximize={imageDialogAutoMaximize || isMobile}
+        autoMaximize={
+          imageDialogAutoMaximize || isMobile || imageGenerationMode === 'psd'
+        }
       >
         {appState.openDialogTypes.has(DialogType.aiImageGeneration) &&
           (imageGenerationMode === 'batch' ? (

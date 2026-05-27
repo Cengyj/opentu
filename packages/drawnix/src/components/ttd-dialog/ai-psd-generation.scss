@@ -327,16 +327,15 @@
     overflow: hidden;
     border: 1px solid rgba(15, 23, 42, 0.08);
     border-radius: 12px;
-    background:
-      linear-gradient(45deg, rgba(148, 163, 184, 0.14) 25%, transparent 25%),
+    background: linear-gradient(
+        45deg,
+        rgba(148, 163, 184, 0.14) 25%,
+        transparent 25%
+      ),
       linear-gradient(-45deg, rgba(148, 163, 184, 0.14) 25%, transparent 25%),
       linear-gradient(45deg, transparent 75%, rgba(148, 163, 184, 0.14) 75%),
       linear-gradient(-45deg, transparent 75%, rgba(148, 163, 184, 0.14) 75%);
-    background-position:
-      0 0,
-      0 8px,
-      8px -8px,
-      -8px 0;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
     background-size: 16px 16px;
   }
 
