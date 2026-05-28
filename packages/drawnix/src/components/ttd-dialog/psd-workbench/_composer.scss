@@ -1,40 +1,14 @@
 .ai-psd-generation-container--workbench {
   .psd-workbench__composer-panel {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-rows: auto auto minmax(96px, 0.78fr) minmax(112px, 0.9fr) auto;
     gap: var(--psd-space-2);
-    padding: var(--psd-space-3);
-    border-radius: var(--psd-radius-xl);
-    overflow-y: auto;
-    border-left: 3px solid var(--psd-accent);
-    background: linear-gradient(
-        180deg,
-        rgba(255, 122, 26, 0.055),
-        transparent 148px
-      ),
-      var(--psd-surface-raised);
+    min-height: 0;
+    overflow: hidden;
   }
 
   .psd-composer-identity {
-    display: grid;
-    gap: var(--psd-space-1);
-    padding-bottom: var(--psd-space-2);
-    border-bottom: 1px solid var(--psd-border);
-
-    h2 {
-      margin: 0;
-      color: var(--psd-text);
-      font-size: 17px;
-      font-weight: 850;
-      letter-spacing: -0.03em;
-    }
-
-    p {
-      margin: 0;
-      color: var(--psd-muted);
-      font-size: 12px;
-      line-height: 1.55;
-    }
+    display: none;
   }
 
   .psd-setup-badge,
@@ -56,6 +30,7 @@
 
   .psd-readiness-board {
     display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: var(--psd-space-2);
   }
 
@@ -63,16 +38,25 @@
   .psd-composer-card,
   .psd-composer-action {
     border: 1px solid var(--psd-border);
-    border-radius: var(--psd-radius-md);
+    border-radius: var(--psd-radius-lg);
     background: var(--psd-surface-raised);
+    box-shadow: var(--psd-shadow-soft);
   }
 
   .psd-readiness-board__item {
     display: grid;
-    grid-template-columns: auto minmax(0, 0.75fr) minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      'dot title'
+      'dot meta';
     align-items: center;
-    gap: var(--psd-space-2);
-    padding: var(--psd-space-2) var(--psd-space-3);
+    gap: 0 var(--psd-space-2);
+    min-width: 0;
+    padding: var(--psd-space-2);
+
+    .psd-badge-dot {
+      grid-area: dot;
+    }
 
     strong,
     small {
@@ -82,21 +66,23 @@
     }
 
     strong {
+      grid-area: title;
       color: var(--psd-text);
       font-size: 12px;
       font-weight: 850;
     }
 
     small {
+      grid-area: meta;
       color: var(--psd-muted);
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 650;
     }
   }
 
   .psd-badge-dot {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     border-radius: 999px;
     background: var(--psd-muted);
   }
@@ -113,13 +99,13 @@
   }
 
   .psd-analysis-result-card {
-    padding: var(--psd-space-3);
+    padding: var(--psd-space-2) var(--psd-space-3);
     border: 1px solid var(--psd-success-soft);
     border-radius: var(--psd-radius-md);
     background: var(--psd-success-soft);
     color: var(--psd-success);
-    font-size: 12px;
-    line-height: 1.5;
+    font-size: 11.5px;
+    line-height: 1.42;
 
     strong {
       display: block;
@@ -142,15 +128,21 @@
   .psd-composer-action {
     display: grid;
     gap: var(--psd-space-2);
+    min-height: 0;
     padding: var(--psd-space-3);
+    overflow: hidden;
   }
 
   .psd-composer-card__head {
-    display: grid;
-    gap: var(--psd-space-1);
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--psd-space-2);
 
     span {
       display: inline-flex;
+      flex-shrink: 0;
       align-items: center;
       gap: var(--psd-space-1);
       color: var(--psd-accent);
@@ -161,25 +153,25 @@
     }
 
     strong {
-      color: var(--psd-text);
-      font-size: 13px;
-      font-weight: 850;
+      min-width: 0;
+      overflow: hidden;
+      color: var(--psd-text-secondary);
+      font-size: 11px;
+      font-weight: 800;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   }
 
   .psd-source-field {
     position: relative;
     display: grid;
-    min-height: 112px;
+    min-height: 0;
     overflow: hidden;
     border: 1px solid var(--psd-border-strong);
     border-radius: var(--psd-radius-lg);
-    background: linear-gradient(
-        135deg,
-        rgba(255, 122, 26, 0.08),
-        transparent 44%
-      ),
-      var(--psd-surface-soft);
+    background: var(--psd-surface-soft);
     transition: border-color var(--psd-transition),
       box-shadow var(--psd-transition), background var(--psd-transition);
 
@@ -191,26 +183,15 @@
 
     &--disabled {
       border-color: var(--psd-control-disabled-border);
-      background: linear-gradient(
-          135deg,
-          rgba(255, 255, 255, 0.72),
-          transparent 44%
-        ),
-        var(--psd-control-disabled-bg);
+      background: var(--psd-control-disabled-bg);
       color: var(--psd-control-disabled-text);
       cursor: not-allowed;
       box-shadow: var(--psd-control-disabled-shadow);
     }
 
     &--loading {
-      border-style: solid;
       border-color: var(--psd-control-loading-border);
-      background: linear-gradient(
-          135deg,
-          rgba(243, 156, 18, 0.12),
-          transparent 42%
-        ),
-        var(--psd-control-loading-bg);
+      background: var(--psd-control-loading-bg);
       box-shadow: 0 0 0 3px rgba(217, 130, 43, 0.1);
       cursor: progress;
     }
@@ -261,16 +242,18 @@
 
   .psd-source-field__empty-group {
     display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
     gap: var(--psd-space-2);
-    padding: var(--psd-space-3);
+    min-height: 0;
+    padding: var(--psd-space-2);
   }
 
   .psd-source-field__empty,
   .psd-source-field__library {
     display: grid;
     place-items: center;
-    gap: var(--psd-space-2);
-    padding: var(--psd-space-3);
+    gap: var(--psd-space-1);
+    padding: var(--psd-space-2);
     border: 1px solid transparent;
     border-radius: var(--psd-radius-md);
     background: transparent;
@@ -296,11 +279,7 @@
 
     &:disabled {
       border-color: var(--psd-control-disabled-border);
-      background: linear-gradient(
-        180deg,
-        var(--psd-control-disabled-bg),
-        var(--psd-surface-soft)
-      );
+      background: var(--psd-control-disabled-bg);
       color: var(--psd-control-disabled-text);
       box-shadow: var(--psd-control-disabled-shadow);
       cursor: not-allowed;
@@ -309,31 +288,31 @@
   }
 
   .psd-source-field__empty {
-    min-height: 110px;
+    min-height: 0;
 
     strong {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 850;
     }
 
     small {
-      max-width: 260px;
+      max-width: 220px;
       color: var(--psd-muted);
-      font-size: 11.5px;
+      font-size: 10.5px;
       font-weight: 650;
-      line-height: 1.45;
+      line-height: 1.35;
     }
 
     em {
       display: inline-flex;
-      min-height: 26px;
+      min-height: 24px;
       align-items: center;
       padding: 0 var(--psd-space-3);
       border: 1px solid var(--psd-accent-soft);
       border-radius: 999px;
       background: var(--psd-surface-raised);
       color: var(--psd-accent-strong);
-      font-size: 11px;
+      font-size: 10.5px;
       font-style: normal;
       font-weight: 850;
     }
@@ -353,76 +332,30 @@
 
   .psd-source-field__library {
     display: inline-flex;
-    min-height: 34px;
+    min-height: 30px;
     align-items: center;
     justify-content: center;
     border-color: var(--psd-border);
     background: var(--psd-surface-raised);
     color: var(--psd-accent-strong);
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 850;
-  }
-
-  .psd-source-field__empty-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--psd-space-2);
-
-    button {
-      display: inline-flex;
-      min-height: 30px;
-      align-items: center;
-      justify-content: center;
-      gap: var(--psd-space-1);
-      padding: 6px 10px;
-      border: 1px solid var(--psd-accent);
-      border-radius: 999px;
-      background: var(--psd-accent);
-      color: var(--psd-surface-raised);
-      cursor: pointer;
-      font-size: 11px;
-      font-weight: 850;
-
-      &:nth-child(2) {
-        border-color: var(--psd-border);
-        background: var(--psd-surface-raised);
-        color: var(--psd-accent-strong);
-      }
-
-      &:hover:not(:disabled) {
-        border-color: var(--psd-accent-strong);
-        box-shadow: 0 6px 16px var(--psd-accent-soft);
-      }
-
-      &:disabled {
-        border-color: var(--psd-control-disabled-border);
-        background: linear-gradient(
-          180deg,
-          var(--psd-control-disabled-bg),
-          var(--psd-surface-soft)
-        );
-        color: var(--psd-control-disabled-text);
-        box-shadow: var(--psd-control-disabled-shadow);
-        cursor: not-allowed;
-      }
-    }
   }
 
   .psd-source-field__icon {
     display: inline-grid;
-    width: 42px;
-    height: 42px;
+    width: 36px;
+    height: 36px;
     place-items: center;
     border: 1px solid var(--psd-border);
-    border-radius: 14px;
+    border-radius: 12px;
     background: var(--psd-surface-raised);
     color: var(--psd-accent);
     box-shadow: var(--psd-shadow-soft);
   }
 
   .psd-source-field__preview-wrap {
-    min-height: 132px;
+    min-height: 0;
     background: linear-gradient(
         45deg,
         rgba(148, 163, 184, 0.12) 25%,
@@ -436,25 +369,26 @@
   .psd-source-field__preview {
     display: block;
     width: 100%;
-    max-height: 190px;
+    height: 100%;
+    max-height: 132px;
     object-fit: contain;
   }
 
   .psd-source-field__meta,
   .psd-source-field__actions {
-    padding: var(--psd-space-3);
+    padding: var(--psd-space-2);
     border-top: 1px solid var(--psd-border);
     background: rgba(255, 255, 255, 0.72);
   }
 
   .psd-source-field__meta {
     display: grid;
-    gap: var(--psd-space-1);
+    gap: 2px;
 
     strong {
       overflow: hidden;
       color: var(--psd-text);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 850;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -462,7 +396,7 @@
 
     small {
       color: var(--psd-muted);
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 700;
     }
   }
@@ -472,7 +406,7 @@
     align-items: center;
     gap: var(--psd-space-1);
     color: var(--psd-success);
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 850;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -480,12 +414,12 @@
 
   .psd-source-field__actions {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
-    gap: var(--psd-space-2);
+    grid-template-columns: 1fr;
+    gap: 6px;
 
     button {
       display: inline-flex;
-      min-height: 32px;
+      min-height: 28px;
       align-items: center;
       justify-content: center;
       gap: var(--psd-space-1);
@@ -494,7 +428,7 @@
       background: var(--psd-surface-raised);
       color: var(--psd-text-secondary);
       cursor: pointer;
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 800;
 
       &:hover:not(:disabled) {
@@ -519,15 +453,16 @@
   .psd-composer-brief {
     box-sizing: border-box;
     width: 100%;
-    min-height: 164px;
-    resize: vertical;
+    height: 100%;
+    min-height: 0;
+    resize: none;
     padding: var(--psd-space-3);
     border: 1px solid var(--psd-border);
     border-radius: var(--psd-radius-md);
     background: var(--psd-surface-raised);
     color: var(--psd-text);
-    font-size: 12.5px;
-    line-height: 1.55;
+    font-size: 12px;
+    line-height: 1.5;
 
     &:focus {
       outline: none;
@@ -538,11 +473,7 @@
     &:disabled {
       cursor: not-allowed;
       border-color: var(--psd-control-disabled-border);
-      background: linear-gradient(
-        180deg,
-        var(--psd-control-disabled-bg),
-        var(--psd-surface-soft)
-      );
+      background: var(--psd-control-disabled-bg);
       color: var(--psd-control-disabled-text);
       box-shadow: var(--psd-control-disabled-shadow);
     }
@@ -564,14 +495,14 @@
     p {
       margin: 0;
       color: var(--psd-muted);
-      font-size: 11.5px;
-      line-height: 1.5;
+      font-size: 10.5px;
+      line-height: 1.42;
     }
   }
 
   .psd-composer-primary {
     display: inline-flex;
-    min-height: 42px;
+    min-height: 38px;
     align-items: center;
     justify-content: center;
     gap: var(--psd-space-2);
@@ -584,7 +515,7 @@
     );
     color: var(--psd-surface-raised);
     cursor: pointer;
-    font-size: 13px;
+    font-size: 12.5px;
     font-weight: 850;
     box-shadow: 0 8px 18px var(--psd-accent-soft),
       inset 0 1px 0 rgba(255, 255, 255, 0.24);
@@ -605,12 +536,12 @@
 
     &:disabled {
       border-color: var(--psd-control-disabled-border);
-      background: linear-gradient(180deg, #fafbfc, var(--psd-surface-soft));
+      background: var(--psd-control-disabled-bg);
       color: var(--psd-control-disabled-text);
       cursor: not-allowed;
       box-shadow: var(--psd-control-disabled-shadow);
       transform: none;
-      opacity: 0.92;
+      opacity: 1;
     }
 
     &--busy {

@@ -958,7 +958,7 @@ describe('AIImagePsdGeneration contract', () => {
       workbench?.querySelectorAll('.psd-workbench__side-column')
     ).toHaveLength(0);
     expect(
-      workbench?.querySelectorAll('.psd-workbench__region--header')
+      workbench?.querySelectorAll('.psd-workbench__left-header')
     ).toHaveLength(1);
     expect(
       workbench?.querySelectorAll('.psd-workbench__region--brief')
@@ -974,10 +974,12 @@ describe('AIImagePsdGeneration contract', () => {
     ).toHaveLength(1);
     expect(
       workbench?.querySelectorAll('.psd-workbench__rail-marker')
-    ).toHaveLength(3);
-    expect(screen.getByText('01 简报 / 源图')).toBeTruthy();
-    expect(screen.getByText('02 主画布工作台')).toBeTruthy();
-    expect(screen.getByText('03 图层 / 状态 / 导出')).toBeTruthy();
+    ).toHaveLength(0);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__stage-chrome')
+    ).toHaveLength(1);
+    expect(screen.getByText('主画布中台')).toBeTruthy();
+    expect(screen.getByText('源图 / 叠放 / 单图层预览')).toBeTruthy();
 
     expect(screen.getByText('PSD 分层任务简报')).toBeTruthy();
     expect(
@@ -1093,31 +1095,28 @@ describe('AIImagePsdGeneration contract', () => {
       /\.ai-psd-generation-container--workbench\s*\{[\s\S]*?height:\s*100%;[\s\S]*?overflow:\s*hidden;/
     );
     expect(layoutScss).toMatch(
-      /\.psd-workbench\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\);[\s\S]*?height:\s*100%;/
+      /\.psd-workbench\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1fr\);[\s\S]*?height:\s*100%;/
     );
     expect(layoutScss).toMatch(
-      /\.psd-workbench__workspace-grid\s*\{[\s\S]*?grid-template-columns:[\s\S]*?minmax\(232px,\s*0\.54fr\)[\s\S]*?minmax\(420px,\s*2\.24fr\)[\s\S]*?minmax\(292px,\s*0\.72fr\);[\s\S]*?grid-template-areas:\s*'brief canvas plan';[\s\S]*?min-height:\s*0;/
+      /\.psd-workbench__workspace-grid\s*\{[\s\S]*?grid-template-columns:[\s\S]*?minmax\(268px,\s*0\.68fr\)[\s\S]*?minmax\(560px,\s*2\.2fr\)[\s\S]*?minmax\(318px,\s*0\.82fr\);[\s\S]*?grid-template-areas:\s*'brief canvas plan';[\s\S]*?min-height:\s*0;/
     );
     expect(layoutScss).toMatch(
       /\.psd-workbench__center-stage\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\);[\s\S]*?var\(--psd-stage-bg\)/
     );
     expect(layoutScss).toMatch(
-      /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1\.1fr\) minmax\(254px,\s*0\.7fr\);[\s\S]*?overflow:\s*hidden;/
+      /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1\.04fr\) minmax\(246px,\s*0\.7fr\);[\s\S]*?overflow:\s*hidden;/
     );
-    expect(layoutScss).toMatch(
-      /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1\.1fr\) minmax\(254px,\s*0\.7fr\);[\s\S]*?overflow:\s*hidden;/
-    );
-    expect(layoutScss).toContain('psd-workbench__rail-marker--canvas');
+    expect(layoutScss).toContain('psd-workbench__stage-chrome');
     expect(layoutScss).toMatch(
       /\.psd-workbench__operations\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;/
     );
-    expect(layoutScss).toContain('.psd-workbench__rail-marker--canvas');
+    expect(layoutScss).not.toContain('.psd-workbench__rail-marker--canvas');
     expect(layoutScss).not.toContain('psd-workbench__main-column');
     expect(layoutScss).not.toContain('psd-workbench__side-column');
     expect(layoutScss).not.toMatch(/<<<<<<<|=======|>>>>>>>/);
 
     const desktopColumns = layoutScss.match(
-      /grid-template-columns:\s*minmax\(232px,\s*([\d.]+)fr\)\s*minmax\(420px,\s*([\d.]+)fr\)\s*minmax\(292px,\s*([\d.]+)fr\);/
+      /grid-template-columns:\s*minmax\(268px,\s*([\d.]+)fr\)\s*minmax\(560px,\s*([\d.]+)fr\)\s*minmax\(318px,\s*([\d.]+)fr\);/
     );
     expect(desktopColumns).toBeTruthy();
     if (desktopColumns) {
@@ -1127,9 +1126,11 @@ describe('AIImagePsdGeneration contract', () => {
   });
 
   it('gives PSD mode its own WinBox shell instead of inheriting the generic image frame', () => {
-    const dialogPath = 'packages/drawnix/src/components/ttd-dialog/ttd-dialog.tsx';
+    const dialogPath =
+      'packages/drawnix/src/components/ttd-dialog/ttd-dialog.tsx';
     const packageCwdDialogPath = 'src/components/ttd-dialog/ttd-dialog.tsx';
-    const winboxScssPath = 'packages/drawnix/src/components/winbox/winbox-custom.scss';
+    const winboxScssPath =
+      'packages/drawnix/src/components/winbox/winbox-custom.scss';
     const packageCwdWinboxScssPath = 'src/components/winbox/winbox-custom.scss';
     const dialogSource = readFileSync(
       existsSync(dialogPath) ? dialogPath : packageCwdDialogPath,
