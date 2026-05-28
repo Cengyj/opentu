@@ -176,6 +176,7 @@ export function PsdComposerPanel({
           type="button"
           className={`psd-composer-primary${isPrimaryActionBusy ? ' psd-composer-primary--busy' : ''}`}
           disabled={!canRunPrimaryAction || isPrimaryActionBusy}
+          aria-busy={isPrimaryActionBusy}
           onClick={onPrimaryAction}
           aria-busy={isPrimaryActionBusy}
           aria-disabled={!canRunPrimaryAction || isPrimaryActionBusy}

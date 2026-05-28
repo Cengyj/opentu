@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, PackageCheck } from 'lucide-react';
+import { Download, PackageCheck, RefreshCw } from 'lucide-react';
 import { getExportMessage } from '../ai-psd-workflow-view-utils';
 
 interface PsdExportPanelProps {
@@ -45,22 +45,13 @@ export function PsdExportPanel({
       </div>
       <button
         type="button"
-        className={`psd-export-card__button${isDownloading ? ' psd-export-card__button--busy' : ''}`}
+        className="psd-export-card__button"
         disabled={!canDownload || isDownloading}
-        onClick={onDownload}
         aria-busy={isDownloading}
-        aria-disabled={!canDownload || isDownloading}
+        onClick={onDownload}
       >
-        <Download size={16} />
-        <span>
-          {isDownloading
-            ? uiLanguage === 'zh'
-              ? '正在打包 PSD-ready 工作区'
-              : 'Packaging PSD-ready workspace'
-            : uiLanguage === 'zh'
-            ? '下载 PSD-ready 工作区包'
-            : 'Download PSD-ready package'}
-        </span>
+        {isDownloading ? <RefreshCw size={16} /> : <Download size={16} />}
+        <span>{isDownloading ? (uiLanguage === 'zh' ? '正在下载 PSD-ready 工作区包' : 'Downloading PSD-ready package') : (uiLanguage === 'zh' ? '下载 PSD-ready 工作区包' : 'Download PSD-ready package')}</span>
       </button>
       <dl>
         <div>

@@ -34,6 +34,9 @@ import { downloadPsdReadyWorkspacePackage } from './psd-workbench/psd-workspace-
 const mockState = vi.hoisted(() => ({
   referenceUploadProps: [] as Array<Record<string, unknown>>,
   tasks: [] as Task[],
+  addAsset: vi.fn(async () => ({
+    id: 'asset-local',
+  })),
   createTask: vi.fn(() => ({
     id: `task-${mockState.createTask.mock.calls.length}`,
   })),
@@ -49,38 +52,15 @@ vi.mock('tdesign-react', () => ({
   },
 }));
 
-vi.mock('../media-library/MediaLibraryModal', () => ({
-  MediaLibraryModal: ({
-    isOpen,
-    onSelect,
-    selectButtonText,
-  }: {
-    isOpen: boolean;
-    onSelect: (asset: {
-      id: string;
-      type: AssetType;
-      url: string;
-      name: string;
-    }) => void;
-    selectButtonText?: string;
-  }) =>
-    isOpen ? (
-      <div data-testid="media-library-modal">
-        <button
-          type="button"
-          onClick={() =>
-            onSelect({
-              id: 'asset-1',
-              type: AssetType.IMAGE,
-              url: '/asset-library/asset-1.png',
-              name: 'library-poster.png',
-            })
-          }
-        >
-          {selectButtonText || '使用'}
-        </button>
-      </div>
-    ) : null,
+vi.mock('../../utils/message-plugin', () => ({
+  MessagePlugin: {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+    loading: vi.fn(),
+    close: vi.fn(),
+  },
 }));
 
 vi.mock('../../i18n', () => ({
@@ -99,6 +79,12 @@ vi.mock('../../hooks/useTaskQueue', () => ({
   useTaskQueue: () => ({
     createTask: mockState.createTask,
     tasks: mockState.tasks,
+  }),
+}));
+
+vi.mock('../../contexts/AssetContext', () => ({
+  useAssets: () => ({
+    addAsset: mockState.addAsset,
   }),
 }));
 
@@ -889,6 +875,7 @@ describe('AIImagePsdGeneration contract', () => {
     cleanup();
     mockState.referenceUploadProps = [];
     mockState.tasks = [];
+    mockState.addAsset.mockClear();
     mockState.createTask.mockClear();
     mockState.triggerBlobDownload.mockClear();
     mockState.addAsset.mockClear();
@@ -949,6 +936,7 @@ describe('AIImagePsdGeneration contract', () => {
         0
       );
     });
+    expect(mockState.addAsset).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: '分析图层结构' })).toHaveProperty(
       'disabled',
       false
@@ -966,6 +954,17 @@ describe('AIImagePsdGeneration contract', () => {
         0
       );
     });
+    await waitFor(() => {
+      expect(mockState.addAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'uploaded-poster.png',
+          type: 'image/png',
+        }),
+        AssetType.IMAGE,
+        expect.any(String),
+        'uploaded-poster.png'
+      );
+    });
 
     fireEvent.drop(sourceDropZone, {
       dataTransfer: {
@@ -978,6 +977,9 @@ describe('AIImagePsdGeneration contract', () => {
       expect(screen.getAllByText('dropped-poster.png').length).toBeGreaterThan(
         0
       );
+    });
+    await waitFor(() => {
+      expect(mockState.addAsset).toHaveBeenCalledTimes(2);
     });
 
     fireEvent.paste(sourceDropZone, {
@@ -992,10 +994,9 @@ describe('AIImagePsdGeneration contract', () => {
         0
       );
     });
-    expect(mockState.createTask.mock.calls[0]?.[1]).toBe(TaskType.CHAT);
-    expect(mockState.createTask.mock.calls[0]?.[0]?.referenceImages).toEqual([
-      '/asset-library/asset-1.png',
-    ]);
+    await waitFor(() => {
+      expect(mockState.addAsset).toHaveBeenCalledTimes(3);
+    });
   });
 
   it('reviews GPT-5.5 layer analysis before queuing editable layer assets', async () => {
@@ -1181,8 +1182,10 @@ describe('AIImagePsdGeneration contract', () => {
     });
 
     expect(
-      screen.getByRole('progressbar', { name: 'PSD-ready 任务进度' })
-    ).toHaveAttribute('aria-valuenow', '0');
+      screen
+        .getByRole('progressbar', { name: 'PSD-ready 任务进度' })
+        .getAttribute('aria-valuenow')
+    ).toBe('0');
     expect(
       screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
     ).toHaveProperty('disabled', true);
@@ -1224,8 +1227,10 @@ describe('AIImagePsdGeneration contract', () => {
       screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
     ).toBeTruthy();
     expect(
-      screen.getByRole('progressbar', { name: 'PSD-ready 任务进度' })
-    ).toHaveAttribute('aria-valuenow', '100');
+      screen
+        .getByRole('progressbar', { name: 'PSD-ready 任务进度' })
+        .getAttribute('aria-valuenow')
+    ).toBe('100');
     expect(
       screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
     ).toHaveProperty('disabled', false);

@@ -7,6 +7,8 @@ import {
   UploadCloud,
   X,
 } from 'lucide-react';
+import { useAssets } from '../../../contexts/AssetContext';
+import type { ReferenceImage } from '../shared';
 import { MediaLibraryModal } from '../../media-library/MediaLibraryModal';
 import {
   AssetSource,
@@ -73,12 +75,13 @@ export function PsdSourceImageField({
   onError,
 }: PsdSourceImageFieldProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [showMediaLibrary, setShowMediaLibrary] = useState(false);
-  const [isImportingLocalImage, setIsImportingLocalImage] = useState(false);
   const { addAsset } = useAssets();
+  const [isDragging, setIsDragging] = useState(false);
+  const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false);
+  const [isImportingLocalImage, setIsImportingLocalImage] = useState(false);
+  const [isImportingLibraryImage, setIsImportingLibraryImage] = useState(false);
   const sourceImage = images[0] ?? null;
-  const isBusy = disabled || isImportingLocalImage;
+  const isBusy = isImportingLocalImage || isImportingLibraryImage;
 
   const labels =
     uiLanguage === 'zh'
@@ -86,6 +89,7 @@ export function PsdSourceImageField({
           invalidFile: '请上传图片文件',
           fileTooLarge: '源图不能超过 25MB',
           loadFailed: '源图读取失败',
+          loadingSource: '正在载入源图',
           pick: '载入源图',
           library: '从素材库选择',
           libraryShort: '素材库',
@@ -102,6 +106,7 @@ export function PsdSourceImageField({
           invalidFile: 'Please upload an image file',
           fileTooLarge: 'Source image must be under 25MB',
           loadFailed: 'Failed to read source image',
+          loadingSource: 'Loading source',
           pick: 'Load source',
           library: 'Select from library',
           libraryShort: 'Library',
@@ -117,16 +122,20 @@ export function PsdSourceImageField({
         };
 
   const openFilePicker = useCallback(() => {
-    if (!isBusy) fileInputRef.current?.click();
-  }, [isBusy]);
+    if (!disabled && !isBusy) {
+      fileInputRef.current?.click();
+    }
+  }, [disabled, isBusy]);
 
   const openMediaLibrary = useCallback(() => {
-    if (!isBusy) setShowMediaLibrary(true);
-  }, [isBusy]);
+    if (!disabled && !isBusy) {
+      setIsMediaLibraryOpen(true);
+    }
+  }, [disabled, isBusy]);
 
   const handleFile = useCallback(
     async (file: File | undefined) => {
-      if (!file || isBusy) return;
+      if (!file || disabled || isBusy) return;
       if (!file.type.startsWith('image/')) {
         onError?.(labels.invalidFile);
         return;
@@ -151,6 +160,17 @@ export function PsdSourceImageField({
         });
         onImagesChange([image]);
         onError?.(null);
+        void addAsset(
+          file,
+          AssetType.IMAGE,
+          AssetSource.LOCAL,
+          file.name
+        ).catch((error) => {
+          console.warn(
+            '[PsdSourceImageField] Failed to add local source to asset library:',
+            error
+          );
+        });
       } catch (error) {
         console.error(
           '[PsdSourceImageField] Failed to read source image:',
@@ -162,7 +182,9 @@ export function PsdSourceImageField({
       }
     },
     [
+      addAsset,
       disabled,
+      isBusy,
       labels.fileTooLarge,
       labels.invalidFile,
       labels.loadFailed,
@@ -240,10 +262,13 @@ export function PsdSourceImageField({
       <div
         className={`psd-source-field${
           isDragging ? ' psd-source-field--dragging' : ''
-        }${disabled ? ' psd-source-field--disabled' : ''}`}
+        }${disabled ? ' psd-source-field--disabled' : ''}${
+          isBusy ? ' psd-source-field--loading' : ''
+        }`}
+        aria-busy={isBusy}
         onDragEnter={(event) => {
           event.preventDefault();
-          if (!isBusy) setIsDragging(true);
+          if (!disabled && !isBusy) setIsDragging(true);
         }}
         onDragOver={(event) => event.preventDefault()}
         onDragLeave={() => setIsDragging(false)}
@@ -259,7 +284,7 @@ export function PsdSourceImageField({
           className="psd-source-field__input"
           type="file"
           accept="image/*"
-          disabled={isBusy}
+          disabled={disabled || isBusy}
           onChange={handleInputChange}
         />
 
@@ -293,24 +318,26 @@ export function PsdSourceImageField({
               <button
                 type="button"
                 onClick={openFilePicker}
-                disabled={disabled || isImportingLibraryImage}
+                disabled={disabled || isBusy}
               >
                 <Replace size={13} /> {labels.replace}
               </button>
               <button
                 type="button"
                 onClick={openMediaLibrary}
-                disabled={disabled || isImportingLibraryImage}
+                disabled={disabled || isBusy}
               >
                 <Images size={13} />{' '}
                 {isImportingLibraryImage
                   ? labels.importingLibrary
+                  : isImportingLocalImage
+                  ? labels.loadingSource
                   : labels.libraryShort}
               </button>
               <button
                 type="button"
                 onClick={() => onImagesChange([])}
-                disabled={disabled || isImportingLibraryImage}
+                disabled={disabled || isBusy}
               >
                 <X size={13} /> {labels.remove}
               </button>
@@ -322,7 +349,7 @@ export function PsdSourceImageField({
               type="button"
               className="psd-source-field__empty"
               onClick={openFilePicker}
-              disabled={disabled || isImportingLibraryImage}
+              disabled={disabled || isBusy}
             >
               <span className="psd-source-field__icon">
                 {isDragging ? (
@@ -339,11 +366,13 @@ export function PsdSourceImageField({
               type="button"
               className="psd-source-field__library"
               onClick={openMediaLibrary}
-              disabled={disabled || isImportingLibraryImage}
+              disabled={disabled || isBusy}
             >
               <Images size={14} />
               {isImportingLibraryImage
                 ? labels.importingLibrary
+                : isImportingLocalImage
+                ? labels.loadingSource
                 : labels.library}
             </button>
           </div>

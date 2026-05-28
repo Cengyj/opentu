@@ -194,15 +194,14 @@
     }
 
     &--loading {
-      pointer-events: none;
-
-      &::after {
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        background: rgba(255, 255, 255, 0.68);
-        content: '';
-      }
+      border-style: solid;
+      background: linear-gradient(
+          135deg,
+          rgba(243, 156, 18, 0.12),
+          transparent 42%
+        ),
+        var(--psd-surface-soft);
+      cursor: progress;
     }
   }
 
@@ -419,6 +418,10 @@
         opacity: 0.55;
       }
     }
+  }
+
+  .psd-source-field--loading .psd-source-field__status {
+    color: var(--psd-warning);
   }
 
   .psd-composer-brief {
