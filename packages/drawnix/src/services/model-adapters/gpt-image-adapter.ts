@@ -350,13 +350,21 @@ async function imageInputToBlob(
   };
 }
 
-async function normalizeFormDataBlob(blob: Blob): Promise<Blob> {
+async function normalizeFormDataBlob(blob: unknown): Promise<Blob> {
   if (blob instanceof Blob) {
     return blob;
   }
 
-  return new Blob([await blob.arrayBuffer()], {
-    type: blob.type || 'application/octet-stream',
+  const blobLike = blob as {
+    arrayBuffer?: () => Promise<ArrayBuffer>;
+    type?: string;
+  };
+  if (typeof blobLike.arrayBuffer !== 'function') {
+    throw new Error('GPT Image 编辑图片读取结果不是有效 Blob');
+  }
+
+  return new Blob([await blobLike.arrayBuffer()], {
+    type: blobLike.type || 'application/octet-stream',
   });
 }
 
