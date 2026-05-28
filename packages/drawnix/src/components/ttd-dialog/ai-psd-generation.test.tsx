@@ -34,14 +34,11 @@ import { downloadPsdReadyWorkspacePackage } from './psd-workbench/psd-workspace-
 const mockState = vi.hoisted(() => ({
   referenceUploadProps: [] as Array<Record<string, unknown>>,
   tasks: [] as Task[],
-  addAsset: vi.fn(async () => ({
-    id: 'asset-local',
-  })),
+  addAsset: vi.fn(() => Promise.resolve({ id: 'stored-source-asset' })),
   createTask: vi.fn(() => ({
     id: `task-${mockState.createTask.mock.calls.length}`,
   })),
   triggerBlobDownload: vi.fn(),
-  addAsset: vi.fn(() => Promise.resolve({ id: 'stored-source-asset' })),
 }));
 
 type CreateTaskCall = [Record<string, unknown>, TaskType];
@@ -79,12 +76,6 @@ vi.mock('../../hooks/useTaskQueue', () => ({
   useTaskQueue: () => ({
     createTask: mockState.createTask,
     tasks: mockState.tasks,
-  }),
-}));
-
-vi.mock('../../contexts/AssetContext', () => ({
-  useAssets: () => ({
-    addAsset: mockState.addAsset,
   }),
 }));
 
@@ -874,7 +865,6 @@ describe('AIImagePsdGeneration contract', () => {
     mockState.addAsset.mockClear();
     mockState.createTask.mockClear();
     mockState.triggerBlobDownload.mockClear();
-    mockState.addAsset.mockClear();
   });
 
   const markLayerPlanReviewed = () => {

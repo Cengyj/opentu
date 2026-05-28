@@ -178,7 +178,6 @@ export function PsdComposerPanel({
           disabled={!canRunPrimaryAction || isPrimaryActionBusy}
           aria-busy={isPrimaryActionBusy}
           onClick={onPrimaryAction}
-          aria-busy={isPrimaryActionBusy}
           aria-disabled={!canRunPrimaryAction || isPrimaryActionBusy}
         >
           {isPrimaryActionBusy ? <RefreshCw size={15} /> : <Play size={15} />}
