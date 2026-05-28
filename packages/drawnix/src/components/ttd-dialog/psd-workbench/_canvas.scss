@@ -5,12 +5,12 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--psd-space-3) var(--psd-space-4);
-    border-color: rgba(255, 255, 255, 0.12);
+    border-color: var(--psd-stage-border);
     border-radius: var(--psd-radius-lg);
     background: linear-gradient(
       135deg,
-      rgba(255, 255, 255, 0.96),
-      rgba(255, 247, 237, 0.92)
+      var(--psd-surface),
+      var(--psd-stage-bg-soft)
     );
   }
 
@@ -95,15 +95,12 @@
 
   .psd-stage-shell {
     position: relative;
-    background:
-      radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.96), rgba(255, 255, 255, 0.72) 42%, rgba(247, 249, 252, 0.94) 72%),
-      var(--psd-surface);
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    border-color: rgba(255, 255, 255, 0.12);
+    border-color: var(--psd-stage-border);
     border-radius: var(--psd-radius-xl);
     background: linear-gradient(
         90deg,
@@ -111,15 +108,10 @@
         transparent 1px
       ),
       linear-gradient(0deg, var(--psd-stage-grid) 1px, transparent 1px),
-      radial-gradient(
-        circle at 50% 38%,
-        rgba(255, 122, 26, 0.16),
-        transparent 28%
-      ),
-      linear-gradient(180deg, var(--psd-stage-bg-soft), var(--psd-stage-bg));
+      radial-gradient(circle at 50% 36%, var(--psd-stage-wash), transparent 30%),
+      linear-gradient(180deg, var(--psd-stage-bg), var(--psd-stage-bg-soft));
     background-size: 28px 28px, 28px 28px, auto, auto;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08),
-      inset 0 -38px 90px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--psd-stage-inset-shadow);
   }
 
   .psd-stage__source-probe {
@@ -162,11 +154,11 @@
     max-height: 100%;
     place-items: center;
     overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.32);
+    border: 1px solid var(--psd-stage-border);
     border-radius: var(--psd-radius-md);
     background: var(--psd-surface);
-    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.32),
-      0 0 0 8px rgba(255, 255, 255, 0.045);
+    box-shadow: 0 22px 54px rgba(31, 35, 41, 0.12),
+      0 0 0 8px rgba(78, 89, 105, 0.045);
   }
 
   .psd-stage__artboard--transparent {
@@ -217,7 +209,7 @@
     padding: var(--psd-space-6);
     border: 1px solid var(--psd-border);
     border-radius: var(--psd-radius-lg);
-    background: rgba(255, 255, 255, 0.94);
+    background: var(--psd-surface-wash);
     color: var(--psd-muted);
     text-align: center;
     box-shadow: var(--psd-shadow-soft);
@@ -334,7 +326,7 @@
     padding: var(--psd-space-2) var(--psd-space-3);
     border: 1px solid var(--psd-border);
     border-radius: var(--psd-radius-sm);
-    background: rgba(255, 250, 242, 0.94);
+    background: var(--psd-surface-wash);
     color: var(--psd-text-secondary);
     box-shadow: var(--psd-shadow-soft);
     pointer-events: none;
@@ -364,8 +356,8 @@
   .psd-stage-footer {
     display: grid;
     min-width: 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.11);
-    background: rgba(18, 23, 34, 0.72);
+    border-top: 1px solid var(--psd-stage-border);
+    background: var(--psd-stage-dock-bg);
     backdrop-filter: blur(10px);
   }
 
@@ -374,8 +366,8 @@
     gap: var(--psd-space-2);
     align-items: center;
     padding: var(--psd-space-2) var(--psd-space-3);
-    border-bottom: 1px solid var(--psd-border);
-    color: rgba(255, 255, 255, 0.66);
+    border-bottom: 1px solid var(--psd-stage-border);
+    color: var(--psd-stage-chrome-muted);
     font-size: 11px;
   }
 
@@ -396,7 +388,7 @@
     justify-content: space-between;
 
     > span {
-      color: rgba(255, 255, 255, 0.86);
+      color: var(--psd-stage-chrome);
       font-size: 11px;
       font-weight: 850;
     }
@@ -459,14 +451,14 @@
     align-items: center;
     min-width: 0;
     padding: var(--psd-space-1);
-    border: 1px solid rgba(255, 255, 255, 0.11);
+    border: 1px solid var(--psd-stage-border);
     border-radius: var(--psd-radius-sm);
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.82);
+    background: var(--psd-surface);
+    color: var(--psd-stage-chrome-muted);
   }
 
   .psd-stage__stack-empty {
-    color: rgba(255, 255, 255, 0.58);
+    color: var(--psd-stage-chrome-muted);
     font-size: 11.5px;
     font-weight: 650;
   }
@@ -486,14 +478,14 @@
 
     strong {
       overflow: hidden;
-      color: rgba(255, 255, 255, 0.9);
+      color: var(--psd-stage-chrome);
       font-size: 11px;
       font-weight: 850;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     small {
-      color: rgba(255, 255, 255, 0.56);
+      color: var(--psd-muted);
       font-size: 9.5px;
       font-weight: 750;
     }
@@ -504,10 +496,10 @@
     width: 22px;
     height: 22px;
     place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid var(--psd-stage-border);
     border-radius: var(--psd-radius-sm);
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.62);
+    background: var(--psd-surface);
+    color: var(--psd-stage-chrome-muted);
     cursor: pointer;
 
     &:disabled {
@@ -633,8 +625,8 @@
     place-items: center;
     border: 1px solid var(--psd-border-strong);
     border-radius: var(--psd-radius-sm);
-    background: rgba(251, 245, 234, 0.78);
-    box-shadow: inset 0 0 0 1px rgba(255, 250, 242, 0.7);
+    background: var(--psd-accent-faint);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.72);
   }
 
   .psd-layer-silhouette--image {
