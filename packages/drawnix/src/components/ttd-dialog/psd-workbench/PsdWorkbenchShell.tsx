@@ -25,6 +25,19 @@ export function PsdWorkbenchShell({
   operations,
   uiLanguage,
 }: PsdWorkbenchShellProps) {
+  const labels =
+    uiLanguage === 'zh'
+      ? {
+          brief: '01 简报 / 源图',
+          canvas: '02 主画布工作台',
+          plan: '03 图层 / 状态 / 导出',
+        }
+      : {
+          brief: '01 Brief / source',
+          canvas: '02 Dominant canvas',
+          plan: '03 Layers / status / export',
+        };
+
   return (
     <div className="psd-workbench">
       <div className="psd-workbench__region psd-workbench__region--header">
@@ -38,6 +51,9 @@ export function PsdWorkbenchShell({
             uiLanguage === 'zh' ? 'PSD 分层任务简报' : 'PSD layer task brief'
           }
         >
+          <div className="psd-workbench__rail-marker" aria-hidden="true">
+            {labels.brief}
+          </div>
           {brief}
         </section>
 
@@ -47,6 +63,9 @@ export function PsdWorkbenchShell({
             uiLanguage === 'zh' ? 'PSD 连续画布' : 'PSD continuous canvas'
           }
         >
+          <div className="psd-workbench__rail-marker psd-workbench__rail-marker--canvas" aria-hidden="true">
+            {labels.canvas}
+          </div>
           {canvas}
         </section>
 
@@ -58,6 +77,9 @@ export function PsdWorkbenchShell({
               : 'PSD layer plan, status, and export'
           }
         >
+          <div className="psd-workbench__rail-marker" aria-hidden="true">
+            {labels.plan}
+          </div>
           <section
             className="psd-workbench__plan-column"
             aria-label={
