@@ -942,17 +942,55 @@ describe('AIImagePsdGeneration contract', () => {
   it('imports the PSD source image from the media library before CHAT analysis', async () => {
     render(<AIImagePsdGeneration initialPrompt="品牌活动海报" />);
 
-    fireEvent.click(screen.getByRole('button', { name: /从素材库选择/ }));
-    expect(screen.getByTestId('media-library-modal')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '作为 PSD 源图' }));
-
-    expect(screen.getAllByText('library-poster.png').length).toBeGreaterThan(0);
-    expect(screen.getByText('素材库源图')).toBeTruthy();
-
-    fireEvent.click(screen.getByRole('button', { name: '分析图层结构' }));
-
+    fireEvent.click(screen.getByRole('button', { name: '从素材库选择' }));
+    fireEvent.click(screen.getByTestId('mock-media-library-select'));
     await waitFor(() => {
-      expect(mockState.createTask).toHaveBeenCalledTimes(1);
+      expect(screen.getAllByText('library-poster.png').length).toBeGreaterThan(
+        0
+      );
+    });
+    expect(screen.getByRole('button', { name: '分析图层结构' })).toHaveProperty(
+      'disabled',
+      false
+    );
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [
+          new File(['upload'], 'uploaded-poster.png', { type: 'image/png' }),
+        ],
+      },
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText('uploaded-poster.png').length).toBeGreaterThan(
+        0
+      );
+    });
+
+    fireEvent.drop(sourceDropZone, {
+      dataTransfer: {
+        files: [
+          new File(['drop'], 'dropped-poster.png', { type: 'image/png' }),
+        ],
+      },
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText('dropped-poster.png').length).toBeGreaterThan(
+        0
+      );
+    });
+
+    fireEvent.paste(sourceDropZone, {
+      clipboardData: {
+        files: [
+          new File(['paste'], 'pasted-poster.png', { type: 'image/png' }),
+        ],
+      },
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText('pasted-poster.png').length).toBeGreaterThan(
+        0
+      );
     });
     expect(mockState.createTask.mock.calls[0]?.[1]).toBe(TaskType.CHAT);
     expect(mockState.createTask.mock.calls[0]?.[0]?.referenceImages).toEqual([
@@ -1142,6 +1180,12 @@ describe('AIImagePsdGeneration contract', () => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);
     });
 
+    expect(
+      screen.getByRole('progressbar', { name: 'PSD-ready task progress' })
+    ).toHaveAttribute('aria-valuenow', '0');
+    expect(
+      screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
+    ).toHaveProperty('disabled', true);
     const layerTaskCalls = mockState.createTask.mock.calls.slice(1);
     const createdBatchId = layerTaskCalls[0]?.[0]?.batchId;
     mockState.tasks = layerTaskCalls.map((call: CreateTaskCall, index) =>
@@ -1179,6 +1223,12 @@ describe('AIImagePsdGeneration contract', () => {
     expect(
       screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
     ).toBeTruthy();
+    expect(
+      screen.getByRole('progressbar', { name: 'PSD-ready task progress' })
+    ).toHaveAttribute('aria-valuenow', '100');
+    expect(
+      screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
+    ).toHaveProperty('disabled', false);
     expect(screen.getByText('分层结果叠放预览')).toBeTruthy();
     expect(screen.getByText('源图 / 叠放 / 图层目标')).toBeTruthy();
     expect(screen.getByRole('button', { name: /原图对照/ })).toBeTruthy();
