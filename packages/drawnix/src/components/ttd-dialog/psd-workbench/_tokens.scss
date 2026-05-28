@@ -2,21 +2,20 @@
   --psd-accent: var(--td-brand-color, #f39c12);
   --psd-accent-strong: var(--td-brand-color-7, #d35400);
   --psd-accent-soft: var(--td-brand-color-light, rgba(243, 156, 18, 0.12));
-  --psd-accent-faint: rgba(243, 156, 18, 0.06);
+  --psd-accent-faint: var(--td-brand-color-1, #fff7ed);
   --psd-bg: var(--td-bg-color-container, #f8f9ff);
-  --psd-bg-grid: rgba(45, 52, 54, 0.06);
-  --psd-border: var(--td-border-level-1-color, #e2e8f0);
-  --psd-border-strong: var(--td-border-level-2-color, #cbd5e1);
+  --psd-border: var(--td-border-level-1-color, #f1f5f9);
+  --psd-border-strong: var(--td-border-level-2-color, #e2e8f0);
   --psd-canvas-check: rgba(45, 52, 54, 0.07);
   --psd-danger: var(--td-error-color, #e91e63);
   --psd-danger-soft: rgba(233, 30, 99, 0.1);
-  --psd-info: var(--aitu-brand-secondary, #5a4fcf);
-  --psd-info-soft: rgba(90, 79, 207, 0.1);
+  --psd-info: var(--td-brand-color-6, #e67e22);
+  --psd-info-soft: var(--td-brand-color-light, rgba(243, 156, 18, 0.12));
   --psd-muted: var(--td-text-color-secondary, #636e72);
   --psd-success: var(--td-success-color, #00b894);
   --psd-success-soft: rgba(0, 184, 148, 0.1);
   --psd-surface: var(--td-bg-color-page, #ffffff);
-  --psd-surface-raised: #ffffff;
+  --psd-surface-raised: var(--td-bg-color-page, #ffffff);
   --psd-surface-soft: var(--td-bg-color-container, #f8f9ff);
   --psd-text: var(--td-text-color-primary, #2d3436);
   --psd-text-secondary: var(--td-text-color-secondary, #636e72);
@@ -32,8 +31,8 @@
   --psd-space-4: 16px;
   --psd-space-5: 20px;
   --psd-space-6: 24px;
-  --psd-shadow-panel: var(--td-shadow-2, 0 18px 42px rgba(0, 0, 0, 0.08));
-  --psd-shadow-soft: var(--td-shadow-1, 0 10px 26px rgba(0, 0, 0, 0.06));
+  --psd-shadow-panel: var(--td-shadow-2, 0 8px 22px rgba(0, 0, 0, 0.08));
+  --psd-shadow-soft: var(--td-shadow-1, 0 4px 16px rgba(0, 0, 0, 0.06));
   --psd-font: var(
     --td-font-family,
     -apple-system,
@@ -44,7 +43,7 @@
   --psd-transition: 160ms ease;
 }
 
-@keyframes psd-laser-scan {
+@keyframes psd-analysis-sweep {
   0% {
     top: 0%;
   }

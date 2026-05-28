@@ -18,6 +18,27 @@ function formatPercent(value: number) {
   return `${Math.round(value)}%`;
 }
 
+function getTaskStateLabel(
+  state: PsdLayerTaskState | undefined,
+  uiLanguage: 'zh' | 'en'
+) {
+  if (!state)
+    return uiLanguage === 'zh' ? '等待图层任务' : 'Awaiting layer task';
+  const labels: Record<
+    PsdLayerTaskState['status'],
+    { zh: string; en: string }
+  > = {
+    planned: { zh: '等待审阅', en: 'Planned' },
+    queued: { zh: '排队中', en: 'Queued' },
+    processing: { zh: '生成中', en: 'Processing' },
+    ready: { zh: '已生成', en: 'Ready' },
+    failed: { zh: '失败', en: 'Failed' },
+    cancelled: { zh: '已取消', en: 'Cancelled' },
+    skipped: { zh: '已跳过', en: 'Skipped' },
+  };
+  return labels[state.status][uiLanguage];
+}
+
 export function PsdInspectorPanel({
   uiLanguage,
   activeLayer,
@@ -25,9 +46,7 @@ export function PsdInspectorPanel({
   canvasSize,
   selectedLayerBounds,
 }: PsdInspectorPanelProps) {
-  const statusLabel =
-    layerTaskState?.label ||
-    (uiLanguage === 'zh' ? '等待图层任务' : 'Awaiting layer task');
+  const statusLabel = getTaskStateLabel(layerTaskState, uiLanguage);
 
   return (
     <section

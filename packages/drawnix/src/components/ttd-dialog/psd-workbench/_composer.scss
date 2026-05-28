@@ -94,9 +94,16 @@
     background: var(--psd-muted);
   }
 
-  .psd-badge-dot--ready { background: var(--psd-success); }
-  .psd-badge-dot--waiting { background: var(--psd-warning); animation: psd-blink 1s infinite alternate; }
-  .psd-badge-dot--idle { background: var(--psd-muted); }
+  .psd-badge-dot--ready {
+    background: var(--psd-success);
+  }
+  .psd-badge-dot--waiting {
+    background: var(--psd-warning);
+    animation: psd-blink 1s infinite alternate;
+  }
+  .psd-badge-dot--idle {
+    background: var(--psd-muted);
+  }
 
   .psd-analysis-result-card {
     padding: var(--psd-space-3);
@@ -107,8 +114,15 @@
     font-size: 12px;
     line-height: 1.5;
 
-    strong { display: block; font-weight: 850; }
-    div { margin-top: var(--psd-space-1); color: var(--psd-text-secondary); font-weight: 600; }
+    strong {
+      display: block;
+      font-weight: 850;
+    }
+    div {
+      margin-top: var(--psd-space-1);
+      color: var(--psd-text-secondary);
+      font-weight: 600;
+    }
   }
 
   .psd-analysis-result-card--failed {
@@ -146,7 +160,6 @@
     }
   }
 
-
   .psd-source-field {
     position: relative;
     display: grid;
@@ -154,10 +167,14 @@
     overflow: hidden;
     border: 1px dashed var(--psd-border-strong);
     border-radius: var(--psd-radius-lg);
-    background:
-      linear-gradient(135deg, rgba(78, 109, 245, 0.08), transparent 42%),
+    background: linear-gradient(
+        135deg,
+        rgba(243, 156, 18, 0.08),
+        transparent 42%
+      ),
       var(--psd-surface-soft);
-    transition: border-color var(--psd-transition), box-shadow var(--psd-transition), background var(--psd-transition);
+    transition: border-color var(--psd-transition),
+      box-shadow var(--psd-transition), background var(--psd-transition);
 
     &:focus-within,
     &--dragging {
@@ -232,8 +249,11 @@
 
   .psd-source-field__preview-wrap {
     min-height: 132px;
-    background:
-      linear-gradient(45deg, rgba(148, 163, 184, 0.12) 25%, transparent 25%),
+    background: linear-gradient(
+        45deg,
+        rgba(148, 163, 184, 0.12) 25%,
+        transparent 25%
+      ),
       linear-gradient(-45deg, rgba(148, 163, 184, 0.12) 25%, transparent 25%),
       var(--psd-surface-raised);
     background-size: 16px 16px;
@@ -336,13 +356,20 @@
 
     &:disabled {
       cursor: not-allowed;
-      background: var(--td-bg-color-component-disabled, var(--psd-surface-soft));
+      background: var(
+        --td-bg-color-component-disabled,
+        var(--psd-surface-soft)
+      );
       color: var(--td-text-color-disabled, var(--psd-muted));
     }
   }
 
   .psd-composer-action {
-    background: linear-gradient(135deg, var(--psd-accent-soft), var(--psd-surface));
+    background: linear-gradient(
+      135deg,
+      var(--psd-accent-soft),
+      var(--psd-surface)
+    );
 
     > span {
       color: var(--psd-accent-strong);
@@ -371,7 +398,8 @@
     cursor: pointer;
     font-size: 13px;
     font-weight: 850;
-    transition: background var(--psd-transition), border-color var(--psd-transition), box-shadow var(--psd-transition);
+    transition: background var(--psd-transition),
+      border-color var(--psd-transition), box-shadow var(--psd-transition);
 
     &:hover:not(:disabled) {
       border-color: var(--psd-accent-strong);
@@ -381,7 +409,10 @@
 
     &:disabled {
       border-color: var(--psd-border);
-      background: var(--td-bg-color-component-disabled, var(--psd-surface-soft));
+      background: var(
+        --td-bg-color-component-disabled,
+        var(--psd-surface-soft)
+      );
       color: var(--td-text-color-disabled, var(--psd-muted));
       cursor: not-allowed;
       box-shadow: none;

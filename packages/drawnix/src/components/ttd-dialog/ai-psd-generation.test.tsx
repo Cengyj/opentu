@@ -826,6 +826,13 @@ describe('AIImagePsdGeneration contract', () => {
 
     expect(screen.getByText('图层任务简报')).toBeTruthy();
     expect(screen.getByText(/同一个工作区完成源图、拆层目标/)).toBeTruthy();
+    expect(screen.getByLabelText('PSD 分层任务简报')).toBeTruthy();
+    expect(screen.getByLabelText('PSD 连续画布')).toBeTruthy();
+    expect(screen.getByLabelText('PSD 图层计划')).toBeTruthy();
+    expect(screen.getByLabelText('PSD 检查器、生成状态与导出')).toBeTruthy();
+    expect(screen.getByLabelText('PSD 工作流阶段')).toBeTruthy();
+    expect(screen.getByText('画布预览')).toBeTruthy();
+    expect(screen.getByText('检查器')).toBeTruthy();
     expect(screen.getByText('需要 1 张参考图')).toBeTruthy();
     expect(screen.getByText('等待分析简报')).toBeTruthy();
     expect(screen.getByText('分析图层结构')).toBeTruthy();

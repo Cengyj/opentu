@@ -7,12 +7,7 @@ import {
   RefreshCcw,
 } from 'lucide-react';
 import type { PsdGenerationPlan } from '../ai-psd-plan';
-import type {
-  LayerBounds,
-  PsdTaskSummary,
-} from '../ai-psd-workflow-view-utils';
-import { PsdExportPanel } from './PsdExportPanel';
-import { PsdInspectorPanel } from './PsdInspectorPanel';
+import type { PsdTaskSummary } from '../ai-psd-workflow-view-utils';
 import { PsdLayerCard } from './PsdLayerCard';
 import type { PsdLayerTaskState } from './psd-layer-tasks';
 import type { PsdAnalysisStatus } from './psd-workbench-types';
@@ -27,12 +22,7 @@ interface PsdLayerWorkspaceProps {
   isAnalyzingWorkspace: boolean;
   activeLayerId: string | null;
   canvasSize: { width: number; height: number } | null;
-  selectedLayerBounds: LayerBounds | null;
   layerTaskStateMap?: Record<string, PsdLayerTaskState>;
-  resultCount: number;
-  canDownload: boolean;
-  isDownloading?: boolean;
-  onDownload: () => void;
   onLayerPlanReviewedChange?: (reviewed: boolean) => void;
   onSelectLayer: (layerId: string) => void;
   onLayerNameChange?: (layerId: string, name: string) => void;
@@ -140,12 +130,7 @@ export function PsdLayerWorkspace({
   isAnalyzingWorkspace,
   activeLayerId,
   canvasSize,
-  selectedLayerBounds,
   layerTaskStateMap = {},
-  resultCount,
-  canDownload,
-  isDownloading = false,
-  onDownload,
   onLayerPlanReviewedChange,
   onSelectLayer,
   onLayerNameChange,
@@ -159,8 +144,6 @@ export function PsdLayerWorkspace({
   const visibleLayerCount = layers.filter(
     (layer) => layer.visible !== false
   ).length;
-  const activeLayer =
-    layers.find((layer) => layer.id === activeLayerId) || null;
   const retryableLayerIds = useMemo(() => {
     const visibleLayerIds = new Set(
       layers
@@ -183,136 +166,108 @@ export function PsdLayerWorkspace({
   }, [activeLayerId]);
 
   return (
-    <aside
-      className="psd-workbench__layers"
+    <section
+      className="psd-layer-workspace"
       aria-label={
-        uiLanguage === 'zh'
-          ? 'PSD 图层工作区与导出'
-          : 'PSD layer workspace and export'
+        uiLanguage === 'zh' ? 'PSD 图层计划工作区' : 'PSD layer plan workspace'
       }
     >
-      <section className="psd-layer-workspace">
-        <div className="psd-layer-workspace__header">
-          <div>
-            <span>
-              {uiLanguage === 'zh' ? '图层工作区' : 'Layer workspace'}
-            </span>
-            <strong>
-              {layers.length > 0
-                ? uiLanguage === 'zh'
-                  ? plan?.analysis
-                    ? `${layers.length} 个动态图层`
-                    : `${layers.length} 个计划图层`
-                  : plan?.analysis
-                  ? `${layers.length} dynamic layers`
-                  : `${layers.length} planned layers`
-                : uiLanguage === 'zh'
-                ? '等待可审阅计划'
-                : 'Awaiting reviewable plan'}
-            </strong>
-          </div>
-          <div className="psd-layer-workspace__actions">
-            {retryableLayerIds.length > 0 && onRetryFailedLayers ? (
-              <button
-                type="button"
-                className="psd-layer-workspace__retry"
-                onClick={onRetryFailedLayers}
-              >
-                <RefreshCcw size={14} />
-                {uiLanguage === 'zh'
-                  ? '重试全部失败图层'
-                  : 'Retry failed layers'}
-              </button>
-            ) : null}
-            <span className="psd-layer-workspace__visible-count">
-              <PanelRight size={15} />
-              {uiLanguage === 'zh'
-                ? `${visibleLayerCount} 可见`
-                : `${visibleLayerCount} visible`}
-            </span>
-          </div>
+      <div className="psd-layer-workspace__header">
+        <div>
+          <span>{uiLanguage === 'zh' ? '图层工作区' : 'Layer workspace'}</span>
+          <strong>
+            {layers.length > 0
+              ? uiLanguage === 'zh'
+                ? plan?.analysis
+                  ? `${layers.length} 个动态图层`
+                  : `${layers.length} 个计划图层`
+                : plan?.analysis
+                ? `${layers.length} dynamic layers`
+                : `${layers.length} planned layers`
+              : uiLanguage === 'zh'
+              ? '等待可审阅计划'
+              : 'Awaiting reviewable plan'}
+          </strong>
         </div>
+        <div className="psd-layer-workspace__actions">
+          {retryableLayerIds.length > 0 && onRetryFailedLayers ? (
+            <button
+              type="button"
+              className="psd-layer-workspace__retry"
+              onClick={onRetryFailedLayers}
+            >
+              <RefreshCcw size={14} />
+              {uiLanguage === 'zh' ? '重试全部失败图层' : 'Retry failed layers'}
+            </button>
+          ) : null}
+          <span className="psd-layer-workspace__visible-count">
+            <PanelRight size={15} />
+            {uiLanguage === 'zh'
+              ? `${visibleLayerCount} 可见`
+              : `${visibleLayerCount} visible`}
+          </span>
+        </div>
+      </div>
 
-        {layers.length === 0 ? (
-          <PsdWorkspaceEmptyState
-            uiLanguage={uiLanguage}
-            isAnalyzingWorkspace={isAnalyzingWorkspace && !isEmptyWorkspace}
-            analysisStatus={analysisStatus}
-          />
-        ) : (
-          <>
-            <div className="psd-layer-workspace__review-note">
-              <CheckCircle2 size={14} />
-              <span>
-                {uiLanguage === 'zh'
-                  ? '先审阅名称、提示词、显隐与参与生成状态；勾选确认后才会创建图层 IMAGE 任务。'
-                  : 'Review names, prompts, visibility, and inclusion first; layer IMAGE tasks start only after explicit confirmation.'}
-              </span>
-              {onLayerPlanReviewedChange ? (
-                <label className="psd-layer-workspace__review-check">
-                  <input
-                    type="checkbox"
-                    checked={isLayerPlanReviewed}
-                    onChange={(event) =>
-                      onLayerPlanReviewedChange(event.target.checked)
-                    }
-                  />
-                  <span>
-                    {uiLanguage === 'zh'
-                      ? '我已审阅图层计划'
-                      : 'I reviewed the layer plan'}
-                  </span>
-                </label>
-              ) : null}
-            </div>
-            <div className="psd-layer-list">
-              {layers.map((layer) => (
-                <PsdLayerCard
-                  key={layer.id}
-                  uiLanguage={uiLanguage}
-                  layer={layer}
-                  isSelected={layer.id === activeLayerId}
-                  isExpanded={expandedLayerId === layer.id}
-                  canvasSize={canvasSize}
-                  selectedLayerBounds={
-                    layer.id === activeLayerId ? selectedLayerBounds : null
+      {layers.length === 0 ? (
+        <PsdWorkspaceEmptyState
+          uiLanguage={uiLanguage}
+          isAnalyzingWorkspace={isAnalyzingWorkspace && !isEmptyWorkspace}
+          analysisStatus={analysisStatus}
+        />
+      ) : (
+        <>
+          <div className="psd-layer-workspace__review-note">
+            <CheckCircle2 size={14} />
+            <span>
+              {uiLanguage === 'zh'
+                ? '先审阅名称、提示词、显隐与参与生成状态；勾选确认后才会创建图层 IMAGE 任务。'
+                : 'Review names, prompts, visibility, and inclusion first; layer IMAGE tasks start only after explicit confirmation.'}
+            </span>
+            {onLayerPlanReviewedChange ? (
+              <label className="psd-layer-workspace__review-check">
+                <input
+                  type="checkbox"
+                  checked={isLayerPlanReviewed}
+                  onChange={(event) =>
+                    onLayerPlanReviewedChange(event.target.checked)
                   }
-                  layerTaskState={layerTaskStateMap[layer.id]}
-                  status={status}
-                  onSelect={() => onSelectLayer(layer.id)}
-                  onToggleExpanded={() =>
-                    setExpandedLayerId((current) =>
-                      current === layer.id ? null : layer.id
-                    )
-                  }
-                  onLayerNameChange={onLayerNameChange}
-                  onLayerPromptChange={onLayerPromptChange}
-                  onLayerVisibilityChange={onLayerVisibilityChange}
-                  onRetryLayer={onRetryLayer}
                 />
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-
-      <PsdInspectorPanel
-        uiLanguage={uiLanguage}
-        activeLayer={activeLayer}
-        layerTaskState={
-          activeLayer ? layerTaskStateMap[activeLayer.id] : undefined
-        }
-        canvasSize={canvasSize}
-        selectedLayerBounds={selectedLayerBounds}
-      />
-
-      <PsdExportPanel
-        uiLanguage={uiLanguage}
-        resultCount={resultCount}
-        canDownload={canDownload}
-        isDownloading={isDownloading}
-        onDownload={onDownload}
-      />
-    </aside>
+                <span>
+                  {uiLanguage === 'zh'
+                    ? '我已审阅图层计划'
+                    : 'I reviewed the layer plan'}
+                </span>
+              </label>
+            ) : null}
+          </div>
+          <div className="psd-layer-list">
+            {layers.map((layer) => (
+              <PsdLayerCard
+                key={layer.id}
+                uiLanguage={uiLanguage}
+                layer={layer}
+                isSelected={layer.id === activeLayerId}
+                isExpanded={expandedLayerId === layer.id}
+                canvasSize={canvasSize}
+                selectedLayerBounds={null}
+                layerTaskState={layerTaskStateMap[layer.id]}
+                status={status}
+                onSelect={() => onSelectLayer(layer.id)}
+                onToggleExpanded={() =>
+                  setExpandedLayerId((current) =>
+                    current === layer.id ? null : layer.id
+                  )
+                }
+                onLayerNameChange={onLayerNameChange}
+                onLayerPromptChange={onLayerPromptChange}
+                onLayerVisibilityChange={onLayerVisibilityChange}
+                onRetryLayer={onRetryLayer}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </section>
   );
 }

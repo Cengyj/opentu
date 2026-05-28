@@ -280,12 +280,8 @@ const AIImagePsdGeneration = ({
           language: uiLanguage,
           layerIds: targetLayerIds,
         });
-        const baseBatchId = taskPlans[0]?.params.batchId as
-          | string
-          | undefined;
-        const nextBatchId = baseBatchId
-          ? `${baseBatchId}-${Date.now()}`
-          : null;
+        const baseBatchId = taskPlans[0]?.params.batchId as string | undefined;
+        const nextBatchId = baseBatchId ? `${baseBatchId}-${Date.now()}` : null;
         const taskPlansForRun = taskPlans.map((taskPlan) => ({
           ...taskPlan,
           params: {
@@ -338,6 +334,7 @@ const AIImagePsdGeneration = ({
       createTask,
       currentModel,
       currentModelRef,
+      hasCompletedLayerAnalysis,
       isQueuingLayerTasks,
       knowledgeContextRefs,
       plan,

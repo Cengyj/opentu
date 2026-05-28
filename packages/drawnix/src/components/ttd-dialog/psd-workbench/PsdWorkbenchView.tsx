@@ -8,7 +8,8 @@ import type { ReferenceImage } from '../shared';
 import { PsdCanvasStage } from './PsdCanvasStage';
 import { PsdComposerPanel } from './PsdComposerPanel';
 import { PsdLayerWorkspace } from './PsdLayerWorkspace';
-import { PsdStatusBanner } from './PsdStatusBanner';
+import { PsdOperationsPanel } from './PsdOperationsPanel';
+import { PsdWorkbenchShell } from './PsdWorkbenchShell';
 import { PsdWorkflowHeader } from './PsdWorkflowHeader';
 import type { PsdAnalysisStatus } from './psd-workbench-types';
 import type { PsdLayerTaskState } from './psd-layer-tasks';
@@ -91,6 +92,9 @@ export function PsdWorkbenchView({
     useState<LayerBounds | null>(null);
 
   const hasLayerPlan = Boolean(plan && plan.layers.length > 0);
+  const layers = plan?.layers || [];
+  const activeLayer =
+    layers.find((layer) => layer.id === activeLayerId) || null;
   const isAnalyzingWorkspace =
     !hasLayerPlan &&
     Boolean(analysisStatus && analysisStatus.state !== 'completed');
@@ -108,18 +112,20 @@ export function PsdWorkbenchView({
   );
 
   return (
-    <div className="psd-workbench">
-      <PsdWorkflowHeader
-        uiLanguage={uiLanguage}
-        hasSource={sourceImages.length > 0}
-        hasLayerPlan={hasLayerPlan}
-        isLayerPlanReviewed={isLayerPlanReviewed}
-        analysisStatus={analysisStatus}
-        resultCount={resultCount}
-        canDownload={canDownload}
-      />
-
-      <div className="psd-workbench__body">
+    <PsdWorkbenchShell
+      uiLanguage={uiLanguage}
+      header={
+        <PsdWorkflowHeader
+          uiLanguage={uiLanguage}
+          hasSource={sourceImages.length > 0}
+          hasLayerPlan={hasLayerPlan}
+          isLayerPlanReviewed={isLayerPlanReviewed}
+          analysisStatus={analysisStatus}
+          resultCount={resultCount}
+          canDownload={canDownload}
+        />
+      }
+      brief={
         <PsdComposerPanel
           uiLanguage={uiLanguage}
           prompt={prompt}
@@ -138,37 +144,22 @@ export function PsdWorkbenchView({
           onPrimaryAction={onPrimaryAction}
           errorPanel={errorPanel}
         />
-
-        <main className="psd-workbench__stage-column">
-          <PsdCanvasStage
-            uiLanguage={uiLanguage}
-            plan={plan}
-            sourceImages={sourceImages}
-            previewUrl={previewUrl}
-            layerPreviewUrls={layerPreviewUrls}
-            isEmptyWorkspace={isEmptyWorkspace}
-            isAnalyzingWorkspace={isAnalyzingWorkspace}
-            onCanvasSizeChange={setCanvasSize}
-            onSelectionChange={handleSelectionChange}
-            onLayerVisibilityChange={onLayerVisibilityChange}
-          />
-
-          {hasLayerPlan && status ? (
-            <PsdStatusBanner
-              tone={status.tone}
-              title={status.title}
-              countSummary={status.countSummary}
-              detail={status.detail}
-              progressPercent={status.progressPercent}
-              progressLabel={
-                uiLanguage === 'zh'
-                  ? 'PSD-ready 任务进度'
-                  : 'PSD-ready task progress'
-              }
-            />
-          ) : null}
-        </main>
-
+      }
+      canvas={
+        <PsdCanvasStage
+          uiLanguage={uiLanguage}
+          plan={plan}
+          sourceImages={sourceImages}
+          previewUrl={previewUrl}
+          layerPreviewUrls={layerPreviewUrls}
+          isEmptyWorkspace={isEmptyWorkspace}
+          isAnalyzingWorkspace={isAnalyzingWorkspace}
+          onCanvasSizeChange={setCanvasSize}
+          onSelectionChange={handleSelectionChange}
+          onLayerVisibilityChange={onLayerVisibilityChange}
+        />
+      }
+      plan={
         <PsdLayerWorkspace
           uiLanguage={uiLanguage}
           plan={plan}
@@ -180,12 +171,7 @@ export function PsdWorkbenchView({
           isAnalyzingWorkspace={isAnalyzingWorkspace}
           activeLayerId={activeLayerId}
           canvasSize={canvasSize}
-          selectedLayerBounds={selectedLayerBounds}
           layerTaskStateMap={layerTaskStateMap}
-          resultCount={resultCount}
-          canDownload={canDownload}
-          isDownloading={isDownloading}
-          onDownload={onDownload}
           onSelectLayer={setActiveLayerId}
           onLayerNameChange={onLayerNameChange}
           onLayerPromptChange={onLayerPromptChange}
@@ -193,7 +179,24 @@ export function PsdWorkbenchView({
           onRetryLayer={onRetryLayer}
           onRetryFailedLayers={onRetryFailedLayers}
         />
-      </div>
-    </div>
+      }
+      operations={
+        <PsdOperationsPanel
+          uiLanguage={uiLanguage}
+          activeLayer={activeLayer}
+          layerTaskState={
+            activeLayer ? layerTaskStateMap[activeLayer.id] : undefined
+          }
+          canvasSize={canvasSize}
+          selectedLayerBounds={selectedLayerBounds}
+          status={status}
+          hasLayerPlan={hasLayerPlan}
+          resultCount={resultCount}
+          canDownload={canDownload}
+          isDownloading={isDownloading}
+          onDownload={onDownload}
+        />
+      }
+    />
   );
 }
