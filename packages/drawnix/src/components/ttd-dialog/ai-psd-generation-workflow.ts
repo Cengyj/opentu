@@ -90,6 +90,40 @@ export function getTaskBatchId(task: Task): string | null {
   return typeof batchId === 'string' ? batchId : null;
 }
 
+function getTaskLayerId(task: Task): string | null {
+  const layerId = task.params?.psdPlan?.layerId;
+  if (typeof layerId !== 'string' || layerId === 'psd-ready-composite') {
+    return null;
+  }
+  return layerId;
+}
+
+function getTaskUpdatedAt(task: Task): number {
+  return task.updatedAt || task.createdAt || 0;
+}
+
+function isNewerTask(candidate: Task, current: Task): boolean {
+  const candidateUpdatedAt = getTaskUpdatedAt(candidate);
+  const currentUpdatedAt = getTaskUpdatedAt(current);
+  if (candidateUpdatedAt !== currentUpdatedAt) {
+    return candidateUpdatedAt > currentUpdatedAt;
+  }
+  return candidate.id.localeCompare(current.id) >= 0;
+}
+
+function getLatestTaskByLayerId(tasks: Task[]): Map<string, Task> {
+  const latestTaskByLayerId = new Map<string, Task>();
+  for (const task of tasks) {
+    const layerId = getTaskLayerId(task);
+    if (!layerId) continue;
+    const current = latestTaskByLayerId.get(layerId);
+    if (!current || isNewerTask(task, current)) {
+      latestTaskByLayerId.set(layerId, task);
+    }
+  }
+  return latestTaskByLayerId;
+}
+
 function getTaskBatchTotal(task: Task): number {
   const batchTotal = task.params?.batchTotal;
   return typeof batchTotal === 'number' && Number.isFinite(batchTotal)
@@ -354,9 +388,13 @@ export async function downloadPsdReadyWorkspacePackage(options: {
   uiLanguage: 'zh' | 'en';
 }): Promise<PsdReadyWorkspaceExportResult> {
   const { task, tasks, plan, prompt, referenceImages, uiLanguage } = options;
-  const exportTasks = (tasks && tasks.length > 0 ? tasks : [task]).filter(
-    (item) => getTaskResultUrls(item).length > 0
-  );
+  const candidateTasks = tasks && tasks.length > 0 ? tasks : [task];
+  const latestTaskByLayerId = getLatestTaskByLayerId(candidateTasks);
+  const exportTasks = candidateTasks.filter((item) => {
+    if (getTaskResultUrls(item).length === 0) return false;
+    const layerId = getTaskLayerId(item);
+    return !layerId || latestTaskByLayerId.get(layerId)?.id === item.id;
+  });
   const urls = exportTasks.flatMap((item) => getTaskResultUrls(item));
   if (urls.length === 0 || exportTasks.length === 0) {
     throw new Error('No PSD-ready image result URLs to export');
@@ -466,15 +504,6 @@ export async function downloadPsdReadyWorkspacePackage(options: {
       };
     })
   );
-  const latestTaskByLayerId = new Map<string, Task>();
-  for (const candidate of tasks || []) {
-    const layerId = getPsdLayerIdFromTask(candidate);
-    if (!layerId) continue;
-    const current = latestTaskByLayerId.get(layerId);
-    if (!current || getTaskUpdatedAt(candidate) >= getTaskUpdatedAt(current)) {
-      latestTaskByLayerId.set(layerId, candidate);
-    }
-  }
   const failedLayerEntries = Array.from(latestTaskByLayerId.values())
     .filter(
       (item) =>
@@ -610,27 +639,35 @@ export function buildPsdTaskStats(
   expectedTotal: number,
   uiLanguage: 'zh' | 'en'
 ): PsdTaskStats {
+  const latestTaskByLayerId = getLatestTaskByLayerId(psdTasks);
+  const observedTasks =
+    latestTaskByLayerId.size > 0
+      ? [
+          ...psdTasks.filter((task) => !getTaskLayerId(task)),
+          ...latestTaskByLayerId.values(),
+        ]
+      : psdTasks;
   const taskBatchTotal = psdTasks.reduce(
     (max, task) => Math.max(max, getTaskBatchTotal(task)),
     0
   );
-  const total = Math.max(psdTasks.length, expectedTotal, taskBatchTotal);
-  const completed = psdTasks.filter(
+  const total = Math.max(observedTasks.length, expectedTotal, taskBatchTotal);
+  const completed = observedTasks.filter(
     (task) => task.status === TaskStatus.COMPLETED
   ).length;
-  const failed = psdTasks.filter(
+  const failed = observedTasks.filter(
     (task) => task.status === TaskStatus.FAILED
   ).length;
-  const cancelled = psdTasks.filter(
+  const cancelled = observedTasks.filter(
     (task) => task.status === TaskStatus.CANCELLED
   ).length;
-  const processing = psdTasks.filter(
+  const processing = observedTasks.filter(
     (task) => task.status === TaskStatus.PROCESSING
   ).length;
-  const observedPending = psdTasks.filter(
+  const observedPending = observedTasks.filter(
     (task) => task.status === TaskStatus.PENDING
   ).length;
-  const pending = observedPending + Math.max(total - psdTasks.length, 0);
+  const pending = observedPending + Math.max(total - observedTasks.length, 0);
   const terminal = completed + failed + cancelled;
   const isActive = total > 0 && terminal < total;
   const progressPercent = total > 0 ? Math.round((terminal / total) * 100) : 0;

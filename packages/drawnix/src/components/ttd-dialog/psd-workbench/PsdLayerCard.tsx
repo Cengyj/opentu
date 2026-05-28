@@ -43,7 +43,9 @@ export function PsdLayerCard({
   onLayerVisibilityChange,
   onRetryLayer,
 }: PsdLayerCardProps) {
-  const isHidden = layer.visible === false;
+  const isVisible = layer.visible !== false;
+  const isHidden = !isVisible;
+  const nextVisible = !isVisible;
   const layerStatus = layerTaskState?.status || status?.tone || layer.status;
   const canRetryLayer =
     Boolean(onRetryLayer) &&
@@ -111,7 +113,7 @@ export function PsdLayerCard({
           <button
             type="button"
             className="psd-layer-card__visibility"
-            onClick={() => onLayerVisibilityChange?.(layer.id, isHidden)}
+            onClick={() => onLayerVisibilityChange?.(layer.id, nextVisible)}
             aria-pressed={!isHidden}
             aria-label={
               isHidden

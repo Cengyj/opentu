@@ -260,12 +260,24 @@ const AIImagePsdGeneration = ({
           language: uiLanguage,
           layerIds: targetLayerIds,
         });
-        const nextBatchId = taskPlans[0]?.params.batchId as string | undefined;
-        const createdTasks = taskPlans
+        const baseBatchId = taskPlans[0]?.params.batchId as
+          | string
+          | undefined;
+        const nextBatchId = baseBatchId
+          ? `${baseBatchId}-${Date.now()}`
+          : null;
+        const taskPlansForRun = taskPlans.map((taskPlan) => ({
+          ...taskPlan,
+          params: {
+            ...taskPlan.params,
+            ...(nextBatchId ? { batchId: nextBatchId } : {}),
+          },
+        }));
+        const createdTasks = taskPlansForRun
           .map((taskPlan) => createTask(taskPlan.params, taskPlan.taskType))
           .filter((task): task is Task => Boolean(task));
         const queuedLayerIds = new Set(
-          taskPlans.map((taskPlan) => taskPlan.layerId)
+          taskPlansForRun.map((taskPlan) => taskPlan.layerId)
         );
 
         setPsdTaskIds((currentTaskIds) =>
@@ -273,7 +285,7 @@ const AIImagePsdGeneration = ({
             new Set([...currentTaskIds, ...createdTasks.map((task) => task.id)])
           )
         );
-        setPsdBatchId(nextBatchId || null);
+        setPsdBatchId(nextBatchId);
         updateLayerStatuses(Array.from(queuedLayerIds), 'queued');
         setError(null);
 
@@ -566,27 +578,14 @@ const AIImagePsdGeneration = ({
     return getTaskResultUrls(compositeTask)[0];
   }, [completedPsdTasks]);
   const layerPreviewUrls = useMemo(() => {
-    const latestEntries: Record<string, { urls: string[]; updatedAt: number }> =
-      {};
-    for (const task of completedPsdTasks) {
-      const layerId = task.params?.psdPlan?.layerId;
-      if (!layerId || layerId === 'psd-ready-composite') continue;
-      const urls = getTaskResultUrls(task);
-      if (urls.length > 0) {
-        const updatedAt = getTaskUpdatedAt(task);
-        const current = latestEntries[layerId];
-        if (!current || updatedAt >= current.updatedAt) {
-          latestEntries[layerId] = { urls, updatedAt };
-        }
+    const entries: Record<string, string[]> = {};
+    for (const [layerId, state] of Object.entries(layerTaskStateMap)) {
+      if (state.status === 'ready' && state.resultUrls.length > 0) {
+        entries[layerId] = state.resultUrls;
       }
     }
-    return Object.fromEntries(
-      Object.entries(latestEntries).map(([layerId, entry]) => [
-        layerId,
-        entry.urls,
-      ])
-    );
-  }, [completedPsdTasks]);
+    return entries;
+  }, [layerTaskStateMap]);
   const [displayLayerPreviewUrls, setDisplayLayerPreviewUrls] = useState<
     Record<string, string[]>
   >({});
