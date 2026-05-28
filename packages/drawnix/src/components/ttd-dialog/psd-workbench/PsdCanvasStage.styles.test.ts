@@ -84,16 +84,21 @@ describe('PSD canvas stage style contract', () => {
     }
   });
 
-  it('keeps the center canvas sized so source and preview images remain visible', () => {
+  it('keeps the preview viewport in normal grid flow so artboard images keep visible space', () => {
     expect(canvasStyles).toMatch(
-      /\.psd-stage__content\s*\{[\s\S]*?position:\s*relative;[\s\S]*?margin:\s*34px 26px 0;/
+      /\.psd-stage-shell\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1fr\) auto;/
     );
     expect(canvasStyles).toMatch(
-      /\.psd-stage__viewport\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;/
+      /\.psd-stage__content\s*\{[\s\S]*?position:\s*relative;[\s\S]*?min-height:\s*0;[\s\S]*?padding:\s*34px 26px;/
+    );
+    expect(canvasStyles).not.toMatch(
+      /\.psd-stage__content\s*\{[\s\S]*?position:\s*absolute;/
+    );
+    expect(canvasStyles).not.toMatch(
+      /\.psd-stage__content\s*\{[\s\S]*?inset:\s*34px 26px 118px;/
     );
     expect(canvasStyles).toMatch(
-      /\.psd-stage__artboard\s*\{[\s\S]*?min-width:\s*160px;[\s\S]*?min-height:\s*160px;/
+      /\.psd-stage__artboard-image,[\s\S]*?\.psd-stage__stack-layer,[\s\S]*?\.psd-stage__stack-underlay\s*\{[\s\S]*?display:\s*block;[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;[\s\S]*?object-fit:\s*contain;/
     );
-    expect(canvasStyles).toContain('object-fit: contain');
   });
 });
