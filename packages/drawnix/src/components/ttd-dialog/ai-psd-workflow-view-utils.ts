@@ -1,4 +1,5 @@
 import type { PsdLayerPlan } from './ai-psd-plan';
+import type { PsdLayerTaskState } from './psd-workbench/psd-layer-tasks';
 
 export type PsdTaskTone = 'queued' | 'active' | 'success' | 'warning' | 'error';
 
@@ -66,10 +67,29 @@ export function getLayerBounds(
 export function getLayerStatusLabel(
   layer: PsdLayerPlan,
   status: PsdTaskSummary | null,
-  uiLanguage: 'zh' | 'en'
+  uiLanguage: 'zh' | 'en',
+  layerTaskState?: PsdLayerTaskState
 ): string {
+  if (layer.visible === false || layerTaskState?.status === 'skipped') {
+    return uiLanguage === 'zh' ? '已排除' : 'Excluded';
+  }
+  if (layerTaskState?.status === 'ready') {
+    return uiLanguage === 'zh' ? '已生成' : 'Ready';
+  }
+  if (layerTaskState?.status === 'failed') {
+    return uiLanguage === 'zh' ? '失败' : 'Failed';
+  }
+  if (layerTaskState?.status === 'cancelled') {
+    return uiLanguage === 'zh' ? '已取消' : 'Cancelled';
+  }
+  if (layerTaskState?.status === 'processing') {
+    return uiLanguage === 'zh' ? '生成中' : 'Generating';
+  }
+  if (layerTaskState?.status === 'queued') {
+    return uiLanguage === 'zh' ? '已排队' : 'Queued';
+  }
   if (!status || status.total === 0) {
-    return uiLanguage === 'zh' ? '待规划' : 'Not planned';
+    return uiLanguage === 'zh' ? '待生成' : 'Planned';
   }
   if (status.tone === 'success') {
     return uiLanguage === 'zh' ? '可打包' : 'Ready';
@@ -95,10 +115,10 @@ export function getExportMessage(
 ): string {
   if (canDownload) {
     return uiLanguage === 'zh'
-      ? '已生成图片结果，可下载包含生成图、原图、manifest 和 Photoshop 接力说明的 PSD-ready 工作区包。'
-      : 'The image result is ready. Download a PSD-ready workspace with the generated image, source image, manifest, and Photoshop handoff notes.';
+      ? '已有可导出的图层结果，可下载包含 layers、source、manifest 和 README 的 PSD-ready 工作区包（.zip）。'
+      : 'At least one layer result is exportable. Download a PSD-ready workspace package (.zip) with layers, source, manifest, and README.';
   }
   return uiLanguage === 'zh'
-    ? '真实 .psd 写入器尚未接入。生成完成前不会提供下载，也不会把 PNG 伪装成 PSD。'
-    : 'The native .psd writer is not wired yet. Downloads stay unavailable until generation completes, and PNG output is not represented as PSD.';
+    ? '真实 .psd 写入器尚未接入。至少生成一个图层结果后才可下载工作区包，也不会把 PNG 伪装成 PSD。'
+    : 'The native .psd writer is not wired yet. Download becomes available after at least one layer result exists, and PNG output is not represented as PSD.';
 }

@@ -21,7 +21,15 @@ export type PsdLayerType =
   | 'text'
   | 'decoration'
   | 'adjustment';
-export type PsdLayerStatus = 'planned' | 'queued' | 'export-pending';
+export type PsdLayerStatus =
+  | 'planned'
+  | 'queued'
+  | 'processing'
+  | 'ready'
+  | 'failed'
+  | 'cancelled'
+  | 'skipped'
+  | 'export-pending';
 
 export interface PsdLayerBounds {
   left: number;
@@ -231,6 +239,11 @@ export function getStatusLabel(
   const labels: Record<PsdLayerStatus, { zh: string; en: string }> = {
     planned: { zh: '待生成', en: 'Planned' },
     queued: { zh: '待生成', en: 'Queued' },
+    processing: { zh: '生成中', en: 'Generating' },
+    ready: { zh: '已生成', en: 'Ready' },
+    failed: { zh: '失败', en: 'Failed' },
+    cancelled: { zh: '已取消', en: 'Cancelled' },
+    skipped: { zh: '已排除', en: 'Excluded' },
     'export-pending': { zh: '待导出', en: 'Export pending' },
   };
   return labels[status][language];
@@ -938,6 +951,7 @@ export interface BuildPsdLayerImageTaskPlansOptions {
   height?: number;
   extraParams?: Record<string, string>;
   language?: 'zh' | 'en';
+  layerIds?: string[];
 }
 
 function buildPsdPromptSections(
@@ -1079,9 +1093,16 @@ export function buildPsdLayerImageTaskPlans(
   const visualLayers = plan.layers.filter(
     (layer) => layer.visible && layer.type !== 'adjustment'
   );
+  const targetLayerIdSet = options.layerIds
+    ? new Set(options.layerIds)
+    : null;
+  const targetLayers = targetLayerIdSet
+    ? visualLayers.filter((layer) => targetLayerIdSet.has(layer.id))
+    : visualLayers;
 
-  return visualLayers.map((layer, index) => {
+  return targetLayers.map((layer, index) => {
     const currentLayerBounds = formatLayerBounds(layer.bounds);
+    const layerPrompt = layer.generationPrompt || layer.description;
     const excludedLayerGuide = visualLayers
       .filter((candidate) => candidate.id !== layer.id)
       .map(
@@ -1105,7 +1126,7 @@ export function buildPsdLayerImageTaskPlans(
             : `[PSD same-canvas layer: ${layer.name}]`,
           plan.title,
           isZh ? '当前图层定义：' : 'Current layer definition:',
-          layer.description,
+          layerPrompt,
           plan.analysis
             ? isZh
               ? `图层计划来源：${plan.analysis.model} 高思考图片分析；严格服从分析出的动态图层，不要套用固定 8 层结构。`

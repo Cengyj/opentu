@@ -20,11 +20,17 @@ import {
   PSD_LAYER_ANALYSIS_MODEL_ID,
   PSD_LAYER_IMAGE_TASK_CONTRACT,
 } from './ai-psd-plan';
+import {
+  createPsdDraftFromPlan,
+  updatePsdDraftLayer,
+} from './psd-workbench/psd-types';
+import {
+  buildPsdLayerTaskStateMap,
+  getRetryablePsdLayerIds,
+} from './psd-workbench/psd-layer-tasks';
 
 const mockState = vi.hoisted(() => ({
-  actionButtonProps: [] as Array<Record<string, unknown>>,
   referenceUploadProps: [] as Array<Record<string, unknown>>,
-  promptInputProps: [] as Array<Record<string, unknown>>,
   tasks: [] as Task[],
   createTask: vi.fn(() => ({
     id: `task-${mockState.createTask.mock.calls.length}`,
@@ -154,71 +160,12 @@ vi.mock('../shared', () => ({
   ),
 }));
 
-interface MockActionButtonsProps {
-  onGenerate: () => void;
-  onReset: () => void;
-  canGenerate: boolean;
-  hasGenerated: boolean;
-  generateLabel?: string;
-  showReset?: boolean;
-}
-
-interface MockPromptInputProps {
-  prompt: string;
-  onPromptChange: (prompt: string) => void;
-  showPresetButton?: boolean;
-  showOptimizeButton?: boolean;
-}
-
 vi.mock('./shared', () => ({
-  ActionButtons: ({
-    onGenerate,
-    onReset,
-    canGenerate,
-    hasGenerated,
-    generateLabel,
-    showReset = true,
-  }: MockActionButtonsProps) =>
-    (() => {
-      mockState.actionButtonProps.push({
-        canGenerate,
-        hasGenerated,
-        generateLabel,
-        showReset,
-      });
-      return (
-        <div>
-          <button type="button" onClick={onGenerate} disabled={!canGenerate}>
-            {generateLabel || '生成'}
-          </button>
-          {showReset && (
-            <button type="button" onClick={onReset}>
-              重置
-            </button>
-          )}
-        </div>
-      );
-    })(),
   ErrorDisplay: ({ error }: { error: string | null }) =>
     error ? <div role="alert">{error}</div> : null,
   ReferenceImageUpload: (props: Record<string, unknown>) => {
     mockState.referenceUploadProps.push(props);
     return <div data-testid="reference-upload">Reference</div>;
-  },
-  PromptInput: ({
-    prompt,
-    onPromptChange,
-    showPresetButton,
-    showOptimizeButton,
-  }: MockPromptInputProps) => {
-    mockState.promptInputProps.push({ showPresetButton, showOptimizeButton });
-    return (
-      <textarea
-        aria-label="prompt"
-        value={prompt}
-        onChange={(event) => onPromptChange(event.target.value)}
-      />
-    );
   },
   ResizableDivider: () => <div data-testid="resizable-divider" />,
   getMergedPresetPrompts: () => [],
@@ -492,6 +439,122 @@ describe('buildLayerPlan', () => {
     expect(taskPlans[0].params.promptMeta?.tags).not.toContain('layer-plan');
   });
 
+  it('creates a PSD draft and maps per-layer task states by layer id', () => {
+    const plan = buildLayerPlanFromAnalysis(
+      parsePsdLayerAnalysisResponse({
+        title: '深圳城市海报',
+        layers: [
+          {
+            name: '背景底图',
+            type: 'background',
+            include: '背景照片和底色',
+            exclude: '标题、坐标、地图和列表',
+            stackingOrder: 1,
+          },
+          {
+            name: '主标题与副标题',
+            type: 'text',
+            include: '主标题和紧邻副标题',
+            exclude: '地图、列表、背景',
+            stackingOrder: 2,
+          },
+          {
+            name: '地图定位与坐标',
+            type: 'decoration',
+            include: '地图、定位点和坐标文字',
+            exclude: '主标题和列表',
+            stackingOrder: 3,
+          },
+        ],
+      }),
+      {
+        prompt: '品牌活动海报',
+        template: 'poster',
+        strategy: 'ai-plan',
+        language: 'zh',
+      }
+    );
+
+    const draft = createPsdDraftFromPlan({
+      plan,
+      prompt: '品牌活动海报',
+      sourceImage: { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+      analysisTaskId: 'analysis-task',
+    });
+
+    expect(draft).toMatchObject({
+      id: plan.planId,
+      prompt: '品牌活动海报',
+      analysisTaskId: 'analysis-task',
+      assetBatchId: null,
+    });
+    expect(draft.layers.map((layer) => layer.status)).toEqual([
+      'planned',
+      'planned',
+      'planned',
+    ]);
+
+    const editedDraft = updatePsdDraftLayer(draft, 'psd-layer-2', {
+      name: '主视觉标题',
+      prompt: '只提取标题像素，不包含地图',
+      visible: false,
+    });
+    expect(editedDraft.layers[1]).toMatchObject({
+      name: '主视觉标题',
+      prompt: '只提取标题像素，不包含地图',
+      visible: false,
+    });
+    expect(draft.layers[1].name).toBe('主标题与副标题');
+
+    const layerTaskStateMap = buildPsdLayerTaskStateMap(plan.layers, [
+      createMockPsdTask({
+        id: 'layer-task-1',
+        status: TaskStatus.COMPLETED,
+        params: {
+          psdPlan: { layerId: 'psd-layer-1', layerName: '背景底图' },
+        },
+        result: {
+          url: 'data:image/png;base64,YmFja2dyb3VuZA==',
+          format: 'png',
+          size: 100,
+        },
+      }),
+      createMockPsdTask({
+        id: 'layer-task-2',
+        status: TaskStatus.FAILED,
+        params: {
+          psdPlan: { layerId: 'psd-layer-2', layerName: '主标题与副标题' },
+        },
+        error: { code: 'API_ERROR', message: 'quota exceeded' },
+      }),
+      createMockPsdTask({
+        id: 'layer-task-3',
+        status: TaskStatus.PROCESSING,
+        params: {
+          psdPlan: { layerId: 'psd-layer-3', layerName: '地图定位与坐标' },
+        },
+      }),
+    ]);
+
+    expect(layerTaskStateMap['psd-layer-1']).toMatchObject({
+      status: 'ready',
+      taskId: 'layer-task-1',
+      resultUrls: ['data:image/png;base64,YmFja2dyb3VuZA=='],
+    });
+    expect(layerTaskStateMap['psd-layer-2']).toMatchObject({
+      status: 'failed',
+      taskId: 'layer-task-2',
+      error: 'quota exceeded',
+    });
+    expect(layerTaskStateMap['psd-layer-3']).toMatchObject({
+      status: 'processing',
+      taskId: 'layer-task-3',
+    });
+    expect(getRetryablePsdLayerIds(layerTaskStateMap)).toEqual([
+      'psd-layer-2',
+    ]);
+  });
+
   it('builds one PSD-ready image edit task without GPT Image 2 unsupported params', () => {
     const plan = buildLayerPlan(
       '品牌活动海报，产品主体需要独立图层',
@@ -590,9 +653,7 @@ describe('buildLayerPlan', () => {
 describe('AIImagePsdGeneration contract', () => {
   afterEach(() => {
     cleanup();
-    mockState.actionButtonProps = [];
     mockState.referenceUploadProps = [];
-    mockState.promptInputProps = [];
     mockState.tasks = [];
     mockState.createTask.mockClear();
     mockState.triggerBlobDownload.mockClear();
@@ -605,55 +666,30 @@ describe('AIImagePsdGeneration contract', () => {
   it('renders an Opentu PSD workbench composer without tuning controls', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(screen.getByText('Opentu PSD 工作台')).toBeTruthy();
-    expect(screen.getByText(/拆成同画布透明图层/)).toBeTruthy();
-    expect(screen.getByText('等待源图')).toBeTruthy();
-    expect(screen.getByText('未规划')).toBeTruthy();
-    expect(screen.getByText('gpt-5.5 高思考分析')).toBeTruthy();
-    expect(screen.getByText('动态图层生成')).toBeTruthy();
-    expect(screen.getByText('叠放检查与下载')).toBeTruthy();
-    expect(screen.getByText('能力边界')).toBeTruthy();
-    expect((screen.getByLabelText('prompt') as HTMLTextAreaElement).value).toBe(
-      ''
-    );
+    expect(screen.getByText('图层任务简报')).toBeTruthy();
+    expect(screen.getByText(/同一个工作区完成源图、拆层目标/)).toBeTruthy();
+    expect(screen.getByText('需要 1 张参考图')).toBeTruthy();
+    expect(screen.getByText('等待分析简报')).toBeTruthy();
+    expect(screen.getByText('分析图层结构')).toBeTruthy();
+    expect((screen.getByLabelText('PSD 图层提取简报') as HTMLTextAreaElement).value).toBe('');
     expect(screen.queryByTestId('model-dropdown')).toBeNull();
     expect(screen.queryByTestId('parameters-dropdown')).toBeNull();
-    expect(screen.queryByText('重置')).toBeNull();
     const hiddenTuningCopyPattern = new RegExp(
       [
-        '\\u7b56\\u7565',
-        '\\u56fe\\u5c42\\u6570\\u91cf',
-        '\\u6a21\\u578b\\u53c2\\u6570',
-        '\\u8349\\u7a3f',
+        '\u56fe\u5c42\u6570\u91cf',
+        '\u6a21\u578b\u53c2\u6570',
       ].join('|')
     );
     expect(screen.queryByText(hiddenTuningCopyPattern)).toBeNull();
-    expect(
-      mockState.actionButtonProps[mockState.actionButtonProps.length - 1]
-    ).toMatchObject({
-      canGenerate: false,
-      generateLabel: '生成 PSD 工作区',
-      showReset: false,
-    });
-    expect(
-      screen.queryByText('\u53ef\u7f16\u8f91 PSD \u8349\u7a3f')
-    ).toBeNull();
     expect(screen.queryByText('尚未生成图层计划')).toBeNull();
     expect(screen.queryByText('PSD 文件预览')).toBeNull();
     expect(
       mockState.referenceUploadProps[mockState.referenceUploadProps.length - 1]
     ).toMatchObject({ multiple: false, maxCount: 1 });
-    expect(
-      mockState.promptInputProps[mockState.promptInputProps.length - 1]
-    ).toMatchObject({
-      showPresetButton: false,
-      showOptimizeButton: false,
-    });
-    expect(screen.getByText(/当前图片接口返回 png\/jpeg\/webp 图片数据/))
-      .toBeTruthy();
+    expect(screen.getByText(/导出始终是 \.psd-ready-workspace\.zip/)).toBeTruthy();
   });
 
-  it('updates PSD button state, analyzes with GPT-5.5, then queues dynamic layer assets', async () => {
+  it('reviews GPT-5.5 layer analysis before queuing editable layer assets', async () => {
     const { rerender } = render(
       <AIImagePsdGeneration
         initialPrompt="品牌活动海报"
@@ -663,15 +699,7 @@ describe('AIImagePsdGeneration contract', () => {
       />
     );
 
-    let latestActionProps =
-      mockState.actionButtonProps[mockState.actionButtonProps.length - 1];
-    expect(latestActionProps).toMatchObject({
-      canGenerate: true,
-      hasGenerated: false,
-      generateLabel: '生成 PSD 工作区',
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 工作区' }));
+    fireEvent.click(screen.getByRole('button', { name: '分析图层结构' }));
 
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(1);
@@ -685,7 +713,7 @@ describe('AIImagePsdGeneration contract', () => {
         psdLayerAnalysis: true,
       },
     });
-    expect(screen.getByText('gpt-5.5 正在分析图层')).toBeTruthy();
+    expect(screen.getAllByText('gpt-5.5 正在分析图层').length).toBeGreaterThan(0);
 
     mockState.tasks = [
       createMockPsdTask({
@@ -711,6 +739,26 @@ describe('AIImagePsdGeneration contract', () => {
     );
 
     await waitFor(() => {
+      expect(screen.getByText(/gpt-5.5 已完成分析/)).toBeTruthy();
+    });
+    expect(mockState.createTask).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
+    expect(screen.getByText('4 个动态图层')).toBeTruthy();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '查看图层：主标题与副标题' })
+    );
+    fireEvent.change(screen.getByLabelText('图层名称：主标题与副标题'), {
+      target: { value: '主视觉标题' },
+    });
+    fireEvent.change(screen.getByLabelText('图层提示词：主视觉标题'), {
+      target: { value: '只提取标题像素，不包含地图' },
+    });
+    expect(screen.getByDisplayValue('主视觉标题')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
+
+    await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);
     });
     expect(screen.getByText('同画布图层任务已排队')).toBeTruthy();
@@ -722,10 +770,17 @@ describe('AIImagePsdGeneration contract', () => {
     expect(
       mockState.createTask.mock.calls.slice(1).every((call) => call[1] === TaskType.IMAGE)
     ).toBe(true);
-    fireEvent.click(
-      screen.getByRole('button', { name: '查看图层：主标题与副标题' })
-    );
-    expect(screen.getByText('查看图层：主标题与副标题')).toBeTruthy();
+    expect(
+      mockState.createTask.mock.calls
+        .slice(1)
+        .some((call) => call[0]?.psdPlan?.layerName === '主视觉标题')
+    ).toBe(true);
+    expect(
+      mockState.createTask.mock.calls
+        .slice(1)
+        .some((call) => String(call[0]?.prompt).includes('只提取标题像素'))
+    ).toBe(true);
+    expect(screen.getByText('查看图层：主视觉标题')).toBeTruthy();
     expect(screen.getByText('同画布 / 原坐标 / 透明背景')).toBeTruthy();
     expect(screen.queryByText(`查看可选${'拆分'}明细`)).toBeNull();
     expect(screen.queryByRole('button', { name: '删除' })).toBeNull();
@@ -741,7 +796,7 @@ describe('AIImagePsdGeneration contract', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 工作区' }));
+    fireEvent.click(screen.getByRole('button', { name: '分析图层结构' }));
 
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(1);
@@ -769,6 +824,11 @@ describe('AIImagePsdGeneration contract', () => {
         ]}
       />
     );
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
+    });
+    expect(mockState.createTask).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);
     });
@@ -810,9 +870,11 @@ describe('AIImagePsdGeneration contract', () => {
 
     expect(screen.getByText('同画布图层已生成完成')).toBeTruthy();
     expect(screen.getByText(/成功 4 \/ 总计 4/)).toBeTruthy();
-    expect(screen.getByRole('button', { name: '下载工作区包' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
+    ).toBeTruthy();
     expect(screen.getByText('分层结果叠放预览')).toBeTruthy();
-    expect(screen.getByText('叠放顺序')).toBeTruthy();
+    expect(screen.getByText('源图 / 叠放 / 图层目标')).toBeTruthy();
     expect(screen.getByRole('button', { name: /原图对照/ })).toBeTruthy();
     expect(container.querySelectorAll('.psd-stage__layer-outline')).toHaveLength(
       0
@@ -837,7 +899,9 @@ describe('AIImagePsdGeneration contract', () => {
     expect(
       screen.getByRole('img', { name: 'PSD 图层结果：背景底图' }).getAttribute('src')
     ).toBe('data:image/png;base64,YmFja2dyb3VuZA==');
-    fireEvent.click(screen.getByRole('button', { name: '下载工作区包' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
+    );
     await waitFor(() => {
       expect(mockState.triggerBlobDownload).toHaveBeenCalledTimes(1);
     });
@@ -880,7 +944,7 @@ describe('AIImagePsdGeneration contract', () => {
       />
     );
 
-    fireEvent.click(screen.getByRole('button', { name: '生成 PSD 工作区' }));
+    fireEvent.click(screen.getByRole('button', { name: '分析图层结构' }));
 
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(1);
@@ -908,6 +972,11 @@ describe('AIImagePsdGeneration contract', () => {
         ]}
       />
     );
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
+    });
+    expect(mockState.createTask).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);
     });
@@ -941,6 +1010,142 @@ describe('AIImagePsdGeneration contract', () => {
       screen.getByText(/成功 0 \/ 失败 4 \/ 进行中 0 \/ 排队 0 \/ 总计 4/)
     ).toBeTruthy();
     expect(screen.getByText(/任务失败。请在任务队列查看错误详情/)).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '重试图层：背景底图' })
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: '重试全部失败图层' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '重试图层：背景底图' }));
+    await waitFor(() => {
+      expect(mockState.createTask).toHaveBeenCalledTimes(6);
+    });
+    expect(mockState.createTask.mock.calls[5]?.[1]).toBe(TaskType.IMAGE);
+    expect(mockState.createTask.mock.calls[5]?.[0]?.psdPlan?.layerId).toBe(
+      'psd-layer-1'
+    );
+  });
+
+  it('downloads a partial PSD-ready workspace and records failed layers in manifest', async () => {
+    const { rerender } = render(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '分析图层结构' }));
+
+    await waitFor(() => {
+      expect(mockState.createTask).toHaveBeenCalledTimes(1);
+    });
+
+    mockState.tasks = [
+      createMockPsdTask({
+        id: 'task-1',
+        type: TaskType.CHAT,
+        status: TaskStatus.COMPLETED,
+        params: mockState.createTask.mock.calls[0]?.[0],
+        result: {
+          url: '',
+          format: 'md',
+          size: 100,
+          chatResponse: createMockAnalysisResponse(),
+        },
+      }),
+    ];
+    rerender(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+        ]}
+      />
+    );
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
+    await waitFor(() => {
+      expect(mockState.createTask).toHaveBeenCalledTimes(5);
+    });
+
+    const layerTaskCalls = mockState.createTask.mock.calls.slice(1);
+    const createdBatchId = layerTaskCalls[0]?.[0]?.batchId;
+    mockState.tasks = layerTaskCalls.map((call, index) =>
+      createMockPsdTask({
+        id: `layer-task-${index + 1}`,
+        status: index === 0 ? TaskStatus.COMPLETED : TaskStatus.FAILED,
+        params: {
+          ...call[0],
+          batchId: createdBatchId,
+          batchIndex: index + 1,
+          batchTotal: layerTaskCalls.length,
+        },
+        result:
+          index === 0
+            ? {
+                url: 'data:image/png;base64,YmFja2dyb3VuZA==',
+                format: 'png',
+                size: 100,
+                width: 1024,
+                height: 1024,
+              }
+            : undefined,
+        error:
+          index === 0
+            ? undefined
+            : { code: 'API_ERROR', message: 'quota exceeded' },
+      })
+    );
+    rerender(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    expect(screen.getByText('同画布图层任务未完成')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
+    );
+
+    await waitFor(() => {
+      expect(mockState.triggerBlobDownload).toHaveBeenCalledTimes(1);
+    });
+
+    const downloadedBlob =
+      mockState.triggerBlobDownload.mock.calls[0]?.[0] as Blob;
+    const { default: JSZip } = await import('jszip');
+    const zip = await JSZip.loadAsync(downloadedBlob);
+    const manifestText = await zip.file('manifest.json')?.async('string');
+    const manifest = JSON.parse(manifestText || '{}');
+
+    expect(manifest.assets.generated).toHaveLength(1);
+    expect(manifest.assets.failedLayers).toEqual([
+      expect.objectContaining({
+        layerId: 'psd-layer-2',
+        layerName: '主标题与副标题',
+        status: TaskStatus.FAILED,
+        error: 'quota exceeded',
+      }),
+      expect.objectContaining({
+        layerId: 'psd-layer-3',
+        layerName: '地图定位与坐标',
+        status: TaskStatus.FAILED,
+      }),
+      expect.objectContaining({
+        layerId: 'psd-layer-4',
+        layerName: '底部信息与装饰',
+        status: TaskStatus.FAILED,
+      }),
+    ]);
   });
 });
 

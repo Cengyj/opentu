@@ -1,24 +1,24 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import './ttd-dialog.scss';
 import './ai-image-generation.scss';
-import './ai-psd-generation.scss';
-import './ai-psd-workflow-view.scss';
-import './ai-psd-workflow-panels.scss';
+import './psd-workbench/psd-workbench.scss';
 import { MessagePlugin } from 'tdesign-react';
 import { useI18n } from '../../i18n';
 import { useTaskQueue } from '../../hooks/useTaskQueue';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
 import {
-  ActionButtons,
   ErrorDisplay,
-  PromptInput,
-  ReferenceImageUpload,
   savePromptToHistory as savePromptToHistoryUtil,
   type ReferenceImage,
 } from './shared';
 import {
   TaskStatus,
-  TaskType,
   type KnowledgeContextRef,
   type Task,
 } from '../../types/task.types';
@@ -46,21 +46,27 @@ import {
   getDefaultPsdLayerExtractionPrompt,
   parsePsdLayerAnalysisResponse,
   type PsdLayerStrategy,
-  type PsdGenerationPlan,
   type PsdTemplate,
 } from './ai-psd-plan';
 import {
-  PsdWorkflowView,
-  type PsdAnalysisStatus,
-} from './ai-psd-workflow-view';
+  buildPsdLayerTaskStateMap,
+  getPsdLayerIdsNeedingGeneration,
+  getRetryablePsdLayerIds,
+} from './psd-workbench/psd-layer-tasks';
+import { usePsdWorkbench } from './psd-workbench/usePsdWorkbench';
 import {
-  PSD_WORKFLOW_STEPS,
+  PsdWorkbenchView,
+  type PsdAnalysisStatus,
+} from './psd-workbench/PsdWorkbenchView';
+import {
   buildPsdTaskStats,
-  downloadPsdReadyWorkspacePackage,
   getTaskBatchId,
   getTaskResultUrls,
-  normalizePsdLayerTransparency,
 } from './ai-psd-generation-workflow';
+import {
+  downloadPsdReadyWorkspacePackage,
+  normalizePsdLayerTransparency,
+} from './psd-workbench/psd-workspace-package';
 
 interface AIImagePsdGenerationProps {
   initialPrompt?: string;
@@ -92,7 +98,10 @@ const AIImagePsdGeneration = ({
     initialRoute.profileId,
     DEFAULT_IMAGE_MODEL_ID
   );
-  const initialTextRoute = resolveInvocationRoute('text', DEFAULT_TEXT_MODEL_ID);
+  const initialTextRoute = resolveInvocationRoute(
+    'text',
+    DEFAULT_TEXT_MODEL_ID
+  );
   const forcedAnalysisModelRef = createModelRef(
     initialTextRoute.profileId,
     DEFAULT_TEXT_MODEL_ID
@@ -112,7 +121,8 @@ const AIImagePsdGeneration = ({
       DEFAULT_TEXT_MODEL_ID,
       forcedAnalysisModelRef
     ) || getPinnedSelectableModel('text', DEFAULT_TEXT_MODEL_ID, null);
-  const analysisModel = initialAnalysisMatchedModel?.id || DEFAULT_TEXT_MODEL_ID;
+  const analysisModel =
+    initialAnalysisMatchedModel?.id || DEFAULT_TEXT_MODEL_ID;
   const analysisModelRef =
     getModelRefFromConfig(initialAnalysisMatchedModel) ||
     forcedAnalysisModelRef;
@@ -128,10 +138,23 @@ const AIImagePsdGeneration = ({
   const { createTask, tasks } = useTaskQueue();
   const template: PsdTemplate = 'poster';
   const strategy: PsdLayerStrategy = 'ai-plan';
-  const [plan, setPlan] = useState<PsdGenerationPlan | null>(null);
   const [psdTaskIds, setPsdTaskIds] = useState<string[]>([]);
   const [psdBatchId, setPsdBatchId] = useState<string | null>(null);
   const [analysisTaskId, setAnalysisTaskId] = useState<string | null>(null);
+  const {
+    plan,
+    setPlan,
+    reset: resetPsdWorkbench,
+    updateLayerName,
+    updateLayerPrompt,
+    updateLayerVisibility,
+    updateLayerStatuses,
+  } = usePsdWorkbench({
+    prompt,
+    sourceImage: uploadedImages[0] || null,
+    analysisTaskId,
+    assetBatchId: psdBatchId,
+  });
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   const [isCreatingAnalysisTask, setIsCreatingAnalysisTask] = useState(false);
   const [isQueuingLayerTasks, setIsQueuingLayerTasks] = useState(false);
@@ -149,19 +172,6 @@ const AIImagePsdGeneration = ({
     setUploadedImages(initialImages || []);
     setKnowledgeContextRefs(initialKnowledgeContextRefs || []);
   }, [initialPrompt, initialImages, initialKnowledgeContextRefs]);
-
-  const handleReset = useCallback(() => {
-    setPrompt('');
-    setUploadedImages([]);
-    setKnowledgeContextRefs([]);
-    setPlan(null);
-    setPsdTaskIds([]);
-    setPsdBatchId(null);
-    setAnalysisTaskId(null);
-    setAnalysisMessage(null);
-    processedAnalysisTaskIdRef.current = null;
-    setError(null);
-  }, []);
 
   const convertUploadedImagesToSerializable = useCallback(async () => {
     return Promise.all(
@@ -191,8 +201,8 @@ const AIImagePsdGeneration = ({
   }, [uploadedImages]);
 
   const handleGenerateLayerAssets = useCallback(
-    async (planOverride?: PsdGenerationPlan) => {
-      const targetPlan = planOverride || plan;
+    async (options: { layerIds?: string[]; force?: boolean } = {}) => {
+      const targetPlan = plan;
       if (!targetPlan || isQueuingLayerTasks) return;
 
       if (uploadedImages.length === 0) {
@@ -200,6 +210,32 @@ const AIImagePsdGeneration = ({
           uiLanguage === 'zh'
             ? '请先上传原始海报或参考图，再生成 PSD 工作区。'
             : 'Upload the source poster or reference image before generating a PSD workspace.'
+        );
+        return;
+      }
+
+      const psdTaskIdSet = new Set(psdTaskIds);
+      const currentPsdTasks = tasks.filter((task) => {
+        if (psdTaskIdSet.has(task.id)) return true;
+        return Boolean(psdBatchId && getTaskBatchId(task) === psdBatchId);
+      });
+      const currentLayerTaskStateMap = buildPsdLayerTaskStateMap(
+        targetPlan.layers,
+        currentPsdTasks
+      );
+      const targetLayerIds =
+        options.layerIds && options.layerIds.length > 0
+          ? options.layerIds
+          : getPsdLayerIdsNeedingGeneration(
+              targetPlan.layers,
+              currentLayerTaskStateMap
+            );
+
+      if (targetLayerIds.length === 0) {
+        setError(
+          uiLanguage === 'zh'
+            ? '当前没有需要生成或重试的图层。'
+            : 'There are no layers to generate or retry.'
         );
         return;
       }
@@ -217,6 +253,7 @@ const AIImagePsdGeneration = ({
           height: 1024,
           extraParams: selectedParams,
           language: uiLanguage,
+          layerIds: targetLayerIds,
         });
         const nextBatchId = taskPlans[0]?.params.batchId as string | undefined;
         const createdTasks = taskPlans
@@ -226,21 +263,13 @@ const AIImagePsdGeneration = ({
           taskPlans.map((taskPlan) => taskPlan.layerId)
         );
 
-        setPsdTaskIds(createdTasks.map((task) => task.id));
+        setPsdTaskIds((currentTaskIds) =>
+          Array.from(
+            new Set([...currentTaskIds, ...createdTasks.map((task) => task.id)])
+          )
+        );
         setPsdBatchId(nextBatchId || null);
-        setPlan((current) => {
-          const basePlan = current || targetPlan;
-          return {
-            ...basePlan,
-            layers: basePlan.layers.map((layer) => ({
-              ...layer,
-              status:
-                createdTasks.length > 0 && queuedLayerIds.has(layer.id)
-                  ? 'queued'
-                  : 'export-pending',
-            })),
-          };
-        });
+        updateLayerStatuses(Array.from(queuedLayerIds), 'queued');
         setError(null);
 
         if (createdTasks.length > 0) {
@@ -275,7 +304,11 @@ const AIImagePsdGeneration = ({
       isQueuingLayerTasks,
       knowledgeContextRefs,
       plan,
+      psdBatchId,
+      psdTaskIds,
       selectedParams,
+      tasks,
+      updateLayerStatuses,
       uiLanguage,
       uploadedImages.length,
     ]
@@ -302,7 +335,7 @@ const AIImagePsdGeneration = ({
 
     setIsCreatingAnalysisTask(true);
     setError(null);
-    setPlan(null);
+    resetPsdWorkbench();
     setPsdTaskIds([]);
     setPsdBatchId(null);
     setAnalysisTaskId(null);
@@ -358,6 +391,7 @@ const AIImagePsdGeneration = ({
     createTask,
     knowledgeContextRefs,
     prompt,
+    resetPsdWorkbench,
     strategy,
     template,
     uiLanguage,
@@ -382,7 +416,8 @@ const AIImagePsdGeneration = ({
       processedAnalysisTaskIdRef.current = analysisTaskId;
       try {
         const rawAnalysis =
-          analysisTask.result?.analysisData || analysisTask.result?.chatResponse;
+          analysisTask.result?.analysisData ||
+          analysisTask.result?.chatResponse;
         const analysis = parsePsdLayerAnalysisResponse(rawAnalysis, uiLanguage);
         const nextPlan = buildLayerPlanFromAnalysis(analysis, {
           prompt,
@@ -395,13 +430,17 @@ const AIImagePsdGeneration = ({
           },
           analysisModel,
         });
-        setPlan(nextPlan);
+        setPlan(nextPlan, {
+          prompt,
+          sourceImage: uploadedImages[0] || null,
+          analysisTaskId,
+          assetBatchId: psdBatchId,
+        });
         setAnalysisMessage(
           uiLanguage === 'zh'
-            ? `${analysisModel} 已完成分析：${nextPlan.layers.length} 个动态图层`
-            : `${analysisModel} analysis complete: ${nextPlan.layers.length} dynamic layers`
+            ? `${analysisModel} 已完成分析：${nextPlan.layers.length} 个动态图层，请检查后生成图层素材`
+            : `${analysisModel} analysis complete: ${nextPlan.layers.length} dynamic layers. Review before generating assets`
         );
-        void handleGenerateLayerAssets(nextPlan);
       } catch (err) {
         console.error('Failed to parse PSD layer analysis:', err);
         setError(
@@ -437,12 +476,14 @@ const AIImagePsdGeneration = ({
     analysisTask,
     analysisTaskId,
     avoidBakedText,
-    handleGenerateLayerAssets,
     preferEditableText,
     prompt,
+    psdBatchId,
+    setPlan,
     strategy,
     template,
     uiLanguage,
+    uploadedImages,
   ]);
 
   const generatedLayerCount =
@@ -459,8 +500,28 @@ const AIImagePsdGeneration = ({
       return Boolean(psdBatchId && getTaskBatchId(task) === psdBatchId);
     });
   }, [plan, psdBatchId, psdTaskIds, tasks]);
+  const layerTaskStateMap = useMemo(
+    () => (plan ? buildPsdLayerTaskStateMap(plan.layers, psdTasks) : {}),
+    [plan, psdTasks]
+  );
+  const retryablePsdLayerIds = useMemo(
+    () => getRetryablePsdLayerIds(layerTaskStateMap),
+    [layerTaskStateMap]
+  );
+  const canGenerateLayerAssets = useMemo(
+    () =>
+      Boolean(
+        plan &&
+          !isQueuingLayerTasks &&
+          getPsdLayerIdsNeedingGeneration(plan.layers, layerTaskStateMap)
+            .length > 0
+      ),
+    [isQueuingLayerTasks, layerTaskStateMap, plan]
+  );
   const expectedPsdTaskTotal =
-    psdTaskIds.length || generatedLayerCount || plan?.layers.length || 0;
+    psdTaskIds.length > 0 || psdTasks.length > 0
+      ? psdTaskIds.length || generatedLayerCount || plan?.layers.length || 0
+      : 0;
   const psdTaskStats = useMemo(
     () => buildPsdTaskStats(psdTasks, expectedPsdTaskTotal, uiLanguage),
     [expectedPsdTaskTotal, psdTasks, uiLanguage]
@@ -602,7 +663,7 @@ const AIImagePsdGeneration = ({
     try {
       const result = await downloadPsdReadyWorkspacePackage({
         task: completedPsdTask,
-        tasks: completedPsdTasks,
+        tasks: psdTasks,
         plan,
         prompt,
         referenceImages: uploadedImages,
@@ -628,110 +689,96 @@ const AIImagePsdGeneration = ({
   }, [
     completedPsdResultUrls.length,
     completedPsdTask,
-    completedPsdTasks,
     plan,
     prompt,
+    psdTasks,
     uiLanguage,
     uploadedImages,
   ]);
 
-  const inputPanel = (
-    <section className="psd-gpt-composer" aria-label="PSD composer">
-      <ReferenceImageUpload
-        images={uploadedImages}
-        onImagesChange={setUploadedImages}
-        language={language}
-        disabled={isCreatingAnalysisTask || isQueuingLayerTasks}
-        multiple={false}
-        maxCount={1}
-        label={uiLanguage === 'zh' ? '参考图' : 'Reference image'}
-        onError={setError}
-      />
 
-      <PromptInput
-        prompt={prompt}
-        onPromptChange={setPrompt}
-        presetPrompts={[]}
-        language={language}
-        type="image"
-        disabled={isCreatingAnalysisTask || isQueuingLayerTasks}
-        onError={setError}
-        label={uiLanguage === 'zh' ? '提示词' : 'Prompt'}
-        placeholder={defaultPsdPrompt}
-        showPresetButton={false}
-        showOptimizeButton={false}
-      />
-
-      <ol
-        className="psd-workflow-steps"
-        aria-label={
-          uiLanguage === 'zh' ? 'PSD 工作流阶段' : 'PSD workflow stages'
-        }
-      >
-        {PSD_WORKFLOW_STEPS[uiLanguage].map((step, index) => (
-          <li key={step.title}>
-            <span className="psd-workflow-steps__index">{index + 1}</span>
-            <span>
-              <strong>{step.title}</strong>
-              <small>{step.description}</small>
-            </span>
-          </li>
-        ))}
-      </ol>
-
-      <ActionButtons
-        language={uiLanguage}
-        type="image"
-        isGenerating={
-          isCreatingAnalysisTask ||
-          isAnalysisActive ||
-          isQueuingLayerTasks ||
-          psdTaskStats.isActive
-        }
-        hasGenerated={false}
-        canGenerate={
-          !!prompt.trim() &&
-          uploadedImages.length > 0 &&
-          !isCreatingAnalysisTask &&
-          !isAnalysisActive &&
-          !isQueuingLayerTasks
-        }
-        onGenerate={handlePrimaryAction}
-        onReset={handleReset}
-        showQuantity={false}
-        generateLabel={
-          uiLanguage === 'zh'
-            ? '生成 PSD 工作区'
-            : 'Generate PSD workspace'
-        }
-        showReset={false}
-      />
-
-      <details className="psd-capability-disclosure">
-        <summary>{uiLanguage === 'zh' ? '能力边界' : 'Capability boundary'}</summary>
-        <p>
-          {uiLanguage === 'zh'
-            ? 'Opentu 会自动处理生成设置；当前图片接口返回 png/jpeg/webp 图片数据而不是原生 .psd。这里提供可打包的 PSD 工作区包，真正 Photoshop PSD 写入可作为后续本地或服务端打包器接入。'
-            : 'Opentu handles generation settings automatically; the current image endpoint returns png/jpeg/webp image data rather than a native .psd. This tool provides a packable PSD workspace, while true Photoshop PSD writing can be added later through a local or server packer.'}
-        </p>
-      </details>
-    </section>
-  );
 
   return (
     <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--workbench">
-      <PsdWorkflowView
+      <PsdWorkbenchView
         uiLanguage={uiLanguage}
-        inputPanel={inputPanel}
+        language={language}
+        prompt={prompt}
+        defaultPrompt={defaultPsdPrompt}
+        isComposerDisabled={isCreatingAnalysisTask || isQueuingLayerTasks}
+        primaryActionLabel={
+          plan
+            ? uiLanguage === 'zh'
+              ? '生成图层素材'
+              : 'Generate layer assets'
+            : uiLanguage === 'zh'
+            ? '分析图层结构'
+            : 'Analyze layer structure'
+        }
+        primaryActionEyebrow={
+          plan
+            ? uiLanguage === 'zh'
+              ? '审阅完成后生成素材'
+              : 'Reviewed plan, generate assets'
+            : uiLanguage === 'zh'
+            ? '先分析再审阅'
+            : 'Analyze before generation'
+        }
+        canRunPrimaryAction={
+          plan
+            ? canGenerateLayerAssets &&
+              !isCreatingAnalysisTask &&
+              !isAnalysisActive &&
+              !isQueuingLayerTasks &&
+              !(
+                (psdTaskIds.length > 0 || psdTasks.length > 0) &&
+                psdTaskStats.isActive
+              )
+            : !!prompt.trim() &&
+              uploadedImages.length > 0 &&
+              !isCreatingAnalysisTask &&
+              !isAnalysisActive &&
+              !isQueuingLayerTasks
+        }
+        isPrimaryActionBusy={
+          isCreatingAnalysisTask ||
+          isAnalysisActive ||
+          isQueuingLayerTasks ||
+          ((psdTaskIds.length > 0 || psdTasks.length > 0) &&
+            psdTaskStats.isActive)
+        }
+        onPromptChange={setPrompt}
+        onSourceImagesChange={setUploadedImages}
+        onSourceImageError={setError}
+        onPrimaryAction={
+          plan ? () => void handleGenerateLayerAssets() : handlePrimaryAction
+        }
         plan={plan}
         analysisStatus={analysisStatus}
-        status={plan ? psdTaskStats : null}
+        status={
+          plan && (psdTaskIds.length > 0 || psdTasks.length > 0)
+            ? psdTaskStats
+            : null
+        }
         sourceImages={uploadedImages}
         previewUrl={completedPsdPreviewUrl}
         layerPreviewUrls={layerPreviewUrlsForDisplay}
+        layerTaskStateMap={layerTaskStateMap}
         resultCount={completedPsdResultUrls.length}
         canDownload={!!completedPsdTask && completedPsdResultUrls.length > 0}
         onDownload={handleDownloadPsdReadyResult}
+        onLayerNameChange={updateLayerName}
+        onLayerPromptChange={updateLayerPrompt}
+        onLayerVisibilityChange={updateLayerVisibility}
+        onRetryLayer={(layerId) =>
+          void handleGenerateLayerAssets({ layerIds: [layerId], force: true })
+        }
+        onRetryFailedLayers={() =>
+          void handleGenerateLayerAssets({
+            layerIds: retryablePsdLayerIds,
+            force: true,
+          })
+        }
         errorPanel={<ErrorDisplay error={error} />}
       />
     </div>

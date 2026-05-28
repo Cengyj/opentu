@@ -48,12 +48,16 @@ export const PSD_WORKFLOW_STEPS = {
       description: '先识别真实视觉元素，不使用固定图层模板',
     },
     {
-      title: '动态图层生成',
-      description: '按分析 JSON 逐层生成同画布透明 PNG',
+      title: '确认图层计划',
+      description: '检查图层名称、提示词和参与导出的范围',
     },
     {
-      title: '叠放检查与下载',
-      description: '显隐、选择、高亮检查后下载 PSD-ready 工作区包',
+      title: '生成图层素材',
+      description: '确认后逐层生成同画布透明 PNG',
+    },
+    {
+      title: '下载工作区包',
+      description: '显隐、选择、高亮检查后下载 PSD-ready zip',
     },
   ],
   en: [
@@ -66,13 +70,16 @@ export const PSD_WORKFLOW_STEPS = {
       description: 'Identify real visual elements without a fixed layer template',
     },
     {
-      title: 'Dynamic layer generation',
-      description: 'Generate same-canvas transparent PNG layers from analysis JSON',
+      title: 'Review layer plan',
+      description: 'Check layer names, prompts, and export inclusion',
     },
     {
-      title: 'Inspect and download',
-      description:
-        'Toggle, select, highlight, then download the PSD-ready workspace',
+      title: 'Generate layer assets',
+      description: 'Generate same-canvas transparent PNG layers after review',
+    },
+    {
+      title: 'Download package',
+      description: 'Toggle, inspect, then download the PSD-ready zip package',
     },
   ],
 } as const;
@@ -135,6 +142,14 @@ function findLayerTypeInPlan(
 ): PsdLayerType | null {
   if (!plan || !layerId) return null;
   return plan.layers.find((layer) => layer.id === layerId)?.type || null;
+}
+
+function findLayerNameInPlan(
+  plan: PsdGenerationPlan | null,
+  layerId: string | null
+): string | null {
+  if (!plan || !layerId) return null;
+  return plan.layers.find((layer) => layer.id === layerId)?.name || null;
 }
 
 function isLightNeutralBackgroundPixel(
@@ -438,6 +453,30 @@ export async function downloadPsdReadyWorkspacePackage(options: {
       };
     })
   );
+  const failedLayerEntries = (tasks || [])
+    .filter(
+      (item) =>
+        item.status === TaskStatus.FAILED ||
+        item.status === TaskStatus.CANCELLED
+    )
+    .map((failedTask) => {
+      const psdPlan = failedTask.params?.psdPlan;
+      const layerId =
+        typeof psdPlan?.layerId === 'string' ? psdPlan.layerId : null;
+      if (!layerId || layerId === 'psd-ready-composite') return null;
+      const layerName =
+        typeof psdPlan?.layerName === 'string'
+          ? psdPlan.layerName
+          : findLayerNameInPlan(plan, layerId);
+      return {
+        layerId,
+        layerName: layerName || layerId,
+        taskId: failedTask.id,
+        status: failedTask.status,
+        error: failedTask.error?.message || failedTask.error?.code || null,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
 
   const manifest = {
     schema: 'opentu.psd-ready-workspace.v1',
@@ -491,6 +530,7 @@ export async function downloadPsdReadyWorkspacePackage(options: {
     assets: {
       generated: generatedEntries,
       references: referenceEntries,
+      failedLayers: failedLayerEntries,
       linkedUrls,
     },
     photoshopHandoff: {

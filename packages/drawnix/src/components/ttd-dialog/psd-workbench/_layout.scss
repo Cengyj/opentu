@@ -1,0 +1,111 @@
+.ai-psd-generation-container--workbench {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 12% 8%, var(--psd-accent-soft), transparent 30%),
+    linear-gradient(135deg, var(--psd-bg), var(--psd-surface-soft));
+  color: var(--psd-text);
+  font-family: var(--psd-font);
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--psd-border-strong) transparent;
+  }
+
+  button,
+  input,
+  textarea {
+    font-family: inherit;
+  }
+
+  .psd-workbench {
+    display: grid;
+    grid-template-columns: 348px minmax(440px, 1fr) 380px;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: var(--psd-space-3);
+    height: 100%;
+    min-height: 0;
+    padding: var(--psd-space-3);
+  }
+
+  .psd-workbench__composer-panel,
+  .psd-workbench__layers,
+  .psd-workbench__preview {
+    min-height: 0;
+  }
+
+  .psd-workbench__composer-panel,
+  .psd-layer-workspace,
+  .psd-export-card,
+  .psd-preview-toolbar,
+  .psd-stage-shell,
+  .psd-preview-strip,
+  .psd-generation-status {
+    border: 1px solid var(--psd-border);
+    background: var(--psd-surface-raised);
+    box-shadow: var(--psd-shadow-soft);
+  }
+
+  .psd-workbench__preview {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: var(--psd-space-3);
+  }
+
+  .psd-workbench__layers {
+    display: flex;
+    flex-direction: column;
+    gap: var(--psd-space-3);
+    overflow-y: auto;
+  }
+
+  .psd-workbench > .psd-generation-status {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  @media (max-width: 1100px) {
+    .psd-workbench {
+      grid-template-columns: 320px minmax(360px, 1fr);
+      grid-template-rows: minmax(0, 1fr) minmax(320px, 42%) auto;
+    }
+
+    .psd-workbench__layers {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      overflow: hidden;
+    }
+
+    .psd-workbench > .psd-generation-status {
+      grid-column: 1 / -1;
+      grid-row: auto;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .psd-workbench {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(420px, 1fr) auto auto;
+      padding: var(--psd-space-2);
+      gap: var(--psd-space-2);
+      overflow-y: auto;
+    }
+
+    .psd-workbench__composer-panel,
+    .psd-workbench__preview,
+    .psd-workbench__layers {
+      min-height: 360px;
+    }
+
+    .psd-workbench__layers {
+      display: flex;
+      overflow: visible;
+    }
+
+    .psd-workbench > .psd-generation-status {
+      grid-column: 1;
+    }
+  }
+}
