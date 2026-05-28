@@ -1,60 +1,89 @@
 .ai-psd-generation-container--workbench {
-  --psd-accent: #b86f19;
-  --psd-accent-strong: #8f4f0f;
-  --psd-accent-soft: rgba(184, 111, 25, 0.1);
-  --psd-accent-faint: rgba(184, 111, 25, 0.05);
-  --psd-bg: #f4efe6;
-  --psd-bg-grid: rgba(92, 67, 39, 0.08);
-  --psd-border: rgba(92, 67, 39, 0.14);
-  --psd-border-strong: rgba(92, 67, 39, 0.28);
-  --psd-canvas-check: rgba(92, 67, 39, 0.08);
-  --psd-danger: #b42318;
-  --psd-danger-soft: rgba(180, 35, 24, 0.1);
-  --psd-info: #2662a6;
-  --psd-info-soft: rgba(38, 98, 166, 0.1);
-  --psd-muted: #80694f;
-  --psd-success: #147a55;
-  --psd-success-soft: rgba(20, 122, 85, 0.1);
-  --psd-surface: #fffaf2;
-  --psd-surface-raised: #fffdf8;
-  --psd-surface-soft: #fbf5ea;
-  --psd-text: #2f2113;
-  --psd-text-secondary: #624a31;
-  --psd-warning: #b7791f;
-  --psd-warning-soft: rgba(183, 121, 31, 0.12);
-  --psd-radius-sm: 8px;
-  --psd-radius-md: 12px;
-  --psd-radius-lg: 16px;
-  --psd-radius-xl: 22px;
+  --psd-accent: var(--td-brand-color, #f39c12);
+  --psd-accent-strong: var(--td-brand-color-7, #d35400);
+  --psd-accent-soft: var(--td-brand-color-light, rgba(243, 156, 18, 0.12));
+  --psd-accent-faint: rgba(243, 156, 18, 0.06);
+  --psd-bg: var(--td-bg-color-container, #f8f9ff);
+  --psd-bg-grid: rgba(45, 52, 54, 0.06);
+  --psd-border: var(--td-border-level-1-color, #e2e8f0);
+  --psd-border-strong: var(--td-border-level-2-color, #cbd5e1);
+  --psd-canvas-check: rgba(45, 52, 54, 0.07);
+  --psd-danger: var(--td-error-color, #e91e63);
+  --psd-danger-soft: rgba(233, 30, 99, 0.1);
+  --psd-info: var(--aitu-brand-secondary, #5a4fcf);
+  --psd-info-soft: rgba(90, 79, 207, 0.1);
+  --psd-muted: var(--td-text-color-secondary, #636e72);
+  --psd-success: var(--td-success-color, #00b894);
+  --psd-success-soft: rgba(0, 184, 148, 0.1);
+  --psd-surface: var(--td-bg-color-page, #ffffff);
+  --psd-surface-raised: #ffffff;
+  --psd-surface-soft: var(--td-bg-color-container, #f8f9ff);
+  --psd-text: var(--td-text-color-primary, #2d3436);
+  --psd-text-secondary: var(--td-text-color-secondary, #636e72);
+  --psd-warning: var(--td-warning-color, #e67e22);
+  --psd-warning-soft: rgba(230, 126, 34, 0.12);
+  --psd-radius-sm: var(--td-radius-medium, 8px);
+  --psd-radius-md: var(--td-radius-large, 12px);
+  --psd-radius-lg: var(--td-radius-extra-large, 16px);
+  --psd-radius-xl: 18px;
   --psd-space-1: 4px;
   --psd-space-2: 8px;
   --psd-space-3: 12px;
   --psd-space-4: 16px;
   --psd-space-5: 20px;
   --psd-space-6: 24px;
-  --psd-shadow-panel: 0 18px 42px rgba(47, 33, 19, 0.08);
-  --psd-shadow-soft: 0 10px 26px rgba(47, 33, 19, 0.06);
-  --psd-font: 'Outfit', 'Avenir Next', 'Helvetica Neue', sans-serif;
+  --psd-shadow-panel: var(--td-shadow-2, 0 18px 42px rgba(0, 0, 0, 0.08));
+  --psd-shadow-soft: var(--td-shadow-1, 0 10px 26px rgba(0, 0, 0, 0.06));
+  --psd-font: var(
+    --td-font-family,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif
+  );
   --psd-transition: 160ms ease;
 }
 
 @keyframes psd-laser-scan {
-  0% { top: 0%; }
-  50% { top: 100%; }
-  100% { top: 0%; }
+  0% {
+    top: 0%;
+  }
+  50% {
+    top: 100%;
+  }
+  100% {
+    top: 0%;
+  }
 }
 
 @keyframes psd-blink {
-  0% { opacity: 0.36; }
-  100% { opacity: 1; }
+  0% {
+    opacity: 0.36;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 @keyframes psd-progress-pulse {
-  0%, 100% { opacity: 0.78; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.78;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 @keyframes psd-slide-down {
-  from { opacity: 0; transform: translateY(-4px); max-height: 0; }
-  to { opacity: 1; transform: translateY(0); max-height: 480px; }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 480px;
+  }
 }

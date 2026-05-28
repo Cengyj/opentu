@@ -1,11 +1,15 @@
 import React, { useCallback, useState } from 'react';
 import type { PsdGenerationPlan } from '../ai-psd-plan';
-import type { LayerBounds, PsdTaskSummary } from '../ai-psd-workflow-view-utils';
+import type {
+  LayerBounds,
+  PsdTaskSummary,
+} from '../ai-psd-workflow-view-utils';
 import type { ReferenceImage } from '../shared';
 import { PsdCanvasStage } from './PsdCanvasStage';
 import { PsdComposerPanel } from './PsdComposerPanel';
 import { PsdLayerWorkspace } from './PsdLayerWorkspace';
 import { PsdStatusBanner } from './PsdStatusBanner';
+import { PsdWorkflowHeader } from './PsdWorkflowHeader';
 import type { PsdAnalysisStatus } from './psd-workbench-types';
 import type { PsdLayerTaskState } from './psd-layer-tasks';
 
@@ -88,7 +92,8 @@ export function PsdWorkbenchView({
 
   const hasLayerPlan = Boolean(plan && plan.layers.length > 0);
   const isAnalyzingWorkspace =
-    !hasLayerPlan && Boolean(analysisStatus && analysisStatus.state !== 'completed');
+    !hasLayerPlan &&
+    Boolean(analysisStatus && analysisStatus.state !== 'completed');
   const isEmptyWorkspace = !hasLayerPlan && !analysisStatus;
 
   const handleSelectionChange = useCallback(
@@ -104,75 +109,91 @@ export function PsdWorkbenchView({
 
   return (
     <div className="psd-workbench">
-      <PsdComposerPanel
+      <PsdWorkflowHeader
         uiLanguage={uiLanguage}
-        prompt={prompt}
-        defaultPrompt={defaultPrompt}
-        sourceImages={sourceImages}
-        plan={plan}
-        analysisStatus={analysisStatus}
-        isDisabled={isComposerDisabled}
-        primaryActionLabel={primaryActionLabel}
-        primaryActionEyebrow={primaryActionEyebrow}
-        canRunPrimaryAction={canRunPrimaryAction}
-        isPrimaryActionBusy={isPrimaryActionBusy}
-        onPromptChange={onPromptChange}
-        onSourceImagesChange={onSourceImagesChange}
-        onSourceImageError={onSourceImageError}
-        onPrimaryAction={onPrimaryAction}
-        errorPanel={errorPanel}
-      />
-
-      <PsdCanvasStage
-        uiLanguage={uiLanguage}
-        plan={plan}
-        sourceImages={sourceImages}
-        previewUrl={previewUrl}
-        layerPreviewUrls={layerPreviewUrls}
-        isEmptyWorkspace={isEmptyWorkspace}
-        isAnalyzingWorkspace={isAnalyzingWorkspace}
-        onCanvasSizeChange={setCanvasSize}
-        onSelectionChange={handleSelectionChange}
-        onLayerVisibilityChange={onLayerVisibilityChange}
-      />
-
-      <PsdLayerWorkspace
-        uiLanguage={uiLanguage}
-        plan={plan}
+        hasSource={sourceImages.length > 0}
+        hasLayerPlan={hasLayerPlan}
         isLayerPlanReviewed={isLayerPlanReviewed}
-        onLayerPlanReviewedChange={onLayerPlanReviewedChange}
         analysisStatus={analysisStatus}
-        status={status}
-        isEmptyWorkspace={isEmptyWorkspace}
-        isAnalyzingWorkspace={isAnalyzingWorkspace}
-        activeLayerId={activeLayerId}
-        canvasSize={canvasSize}
-        selectedLayerBounds={selectedLayerBounds}
-        layerTaskStateMap={layerTaskStateMap}
         resultCount={resultCount}
         canDownload={canDownload}
-        isDownloading={isDownloading}
-        onDownload={onDownload}
-        onSelectLayer={setActiveLayerId}
-        onLayerNameChange={onLayerNameChange}
-        onLayerPromptChange={onLayerPromptChange}
-        onLayerVisibilityChange={onLayerVisibilityChange}
-        onRetryLayer={onRetryLayer}
-        onRetryFailedLayers={onRetryFailedLayers}
       />
 
-      {hasLayerPlan && status ? (
-        <PsdStatusBanner
-          tone={status.tone}
-          title={status.title}
-          countSummary={status.countSummary}
-          detail={status.detail}
-          progressPercent={status.progressPercent}
-          progressLabel={
-            uiLanguage === 'zh' ? 'PSD-ready 任务进度' : 'PSD-ready task progress'
-          }
+      <div className="psd-workbench__body">
+        <PsdComposerPanel
+          uiLanguage={uiLanguage}
+          prompt={prompt}
+          defaultPrompt={defaultPrompt}
+          sourceImages={sourceImages}
+          plan={plan}
+          analysisStatus={analysisStatus}
+          isDisabled={isComposerDisabled}
+          primaryActionLabel={primaryActionLabel}
+          primaryActionEyebrow={primaryActionEyebrow}
+          canRunPrimaryAction={canRunPrimaryAction}
+          isPrimaryActionBusy={isPrimaryActionBusy}
+          onPromptChange={onPromptChange}
+          onSourceImagesChange={onSourceImagesChange}
+          onSourceImageError={onSourceImageError}
+          onPrimaryAction={onPrimaryAction}
+          errorPanel={errorPanel}
         />
-      ) : null}
+
+        <main className="psd-workbench__stage-column">
+          <PsdCanvasStage
+            uiLanguage={uiLanguage}
+            plan={plan}
+            sourceImages={sourceImages}
+            previewUrl={previewUrl}
+            layerPreviewUrls={layerPreviewUrls}
+            isEmptyWorkspace={isEmptyWorkspace}
+            isAnalyzingWorkspace={isAnalyzingWorkspace}
+            onCanvasSizeChange={setCanvasSize}
+            onSelectionChange={handleSelectionChange}
+            onLayerVisibilityChange={onLayerVisibilityChange}
+          />
+
+          {hasLayerPlan && status ? (
+            <PsdStatusBanner
+              tone={status.tone}
+              title={status.title}
+              countSummary={status.countSummary}
+              detail={status.detail}
+              progressPercent={status.progressPercent}
+              progressLabel={
+                uiLanguage === 'zh'
+                  ? 'PSD-ready 任务进度'
+                  : 'PSD-ready task progress'
+              }
+            />
+          ) : null}
+        </main>
+
+        <PsdLayerWorkspace
+          uiLanguage={uiLanguage}
+          plan={plan}
+          isLayerPlanReviewed={isLayerPlanReviewed}
+          onLayerPlanReviewedChange={onLayerPlanReviewedChange}
+          analysisStatus={analysisStatus}
+          status={status}
+          isEmptyWorkspace={isEmptyWorkspace}
+          isAnalyzingWorkspace={isAnalyzingWorkspace}
+          activeLayerId={activeLayerId}
+          canvasSize={canvasSize}
+          selectedLayerBounds={selectedLayerBounds}
+          layerTaskStateMap={layerTaskStateMap}
+          resultCount={resultCount}
+          canDownload={canDownload}
+          isDownloading={isDownloading}
+          onDownload={onDownload}
+          onSelectLayer={setActiveLayerId}
+          onLayerNameChange={onLayerNameChange}
+          onLayerPromptChange={onLayerPromptChange}
+          onLayerVisibilityChange={onLayerVisibilityChange}
+          onRetryLayer={onRetryLayer}
+          onRetryFailedLayers={onRetryFailedLayers}
+        />
+      </div>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import type {
   PsdTaskSummary,
 } from '../ai-psd-workflow-view-utils';
 import { PsdExportPanel } from './PsdExportPanel';
+import { PsdInspectorPanel } from './PsdInspectorPanel';
 import { PsdLayerCard } from './PsdLayerCard';
 import type { PsdLayerTaskState } from './psd-layer-tasks';
 import type { PsdAnalysisStatus } from './psd-workbench-types';
@@ -158,6 +159,8 @@ export function PsdLayerWorkspace({
   const visibleLayerCount = layers.filter(
     (layer) => layer.visible !== false
   ).length;
+  const activeLayer =
+    layers.find((layer) => layer.id === activeLayerId) || null;
   const retryableLayerIds = useMemo(() => {
     const visibleLayerIds = new Set(
       layers
@@ -292,6 +295,16 @@ export function PsdLayerWorkspace({
           </>
         )}
       </section>
+
+      <PsdInspectorPanel
+        uiLanguage={uiLanguage}
+        activeLayer={activeLayer}
+        layerTaskState={
+          activeLayer ? layerTaskStateMap[activeLayer.id] : undefined
+        }
+        canvasSize={canvasSize}
+        selectedLayerBounds={selectedLayerBounds}
+      />
 
       <PsdExportPanel
         uiLanguage={uiLanguage}
