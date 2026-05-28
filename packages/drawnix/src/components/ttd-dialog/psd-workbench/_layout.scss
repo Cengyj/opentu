@@ -1,5 +1,6 @@
 .ai-psd-generation-container--workbench {
   height: 100%;
+  max-height: 100%;
   min-height: 0;
   overflow: hidden;
   background: radial-gradient(
@@ -40,15 +41,20 @@
     grid-template-rows: auto minmax(0, 1fr);
     gap: var(--psd-space-3);
     height: 100%;
+    max-height: 100%;
     min-height: 0;
     padding: var(--psd-space-3);
+    overflow: hidden;
+    box-sizing: border-box;
   }
 
   .psd-workbench__workspace-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.85fr);
     gap: var(--psd-space-3);
+    height: 100%;
     min-height: 0;
+    overflow: hidden;
     padding: var(--psd-space-2);
     border: 1px solid var(--psd-border);
     border-radius: calc(var(--psd-radius-xl) + 4px);
@@ -73,24 +79,27 @@
   }
 
   .psd-workbench__main-column {
-    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-rows: minmax(168px, 0.4fr) minmax(0, 1fr);
   }
 
   .psd-workbench__side-column {
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1.05fr) minmax(0, 0.95fr);
   }
 
   .psd-workbench__brief-column {
     min-height: 0;
+    overflow: hidden;
   }
 
   .psd-workbench__canvas-column {
     display: grid;
+    overflow: hidden;
   }
 
   .psd-workbench__plan-column {
     display: grid;
     min-height: 0;
+    overflow: hidden;
   }
 
   .psd-workbench__operations {
@@ -98,6 +107,7 @@
     gap: var(--psd-space-3);
     grid-template-rows: auto minmax(0, 1fr) auto;
     align-content: stretch;
+    overflow: hidden;
   }
 
   .psd-workbench__composer-panel,
@@ -128,8 +138,14 @@
   }
 
   @media (max-width: 1320px) {
+    .psd-workbench {
+      overflow-y: auto;
+    }
+
     .psd-workbench__workspace-grid {
       grid-template-columns: 1fr;
+      height: auto;
+      overflow: visible;
     }
 
     .psd-workbench__main-column,

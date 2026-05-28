@@ -3,6 +3,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--psd-space-3);
+    min-height: 0;
+    overflow: hidden;
   }
 
   .psd-export-card__head {
