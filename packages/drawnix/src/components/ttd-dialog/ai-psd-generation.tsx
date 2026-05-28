@@ -715,7 +715,7 @@ const AIImagePsdGeneration = ({
   ]);
 
   return (
-    <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--workbench">
+    <div className="ai-psd-generation-container ai-psd-generation-container--workbench">
       <PsdWorkbenchView
         uiLanguage={uiLanguage}
         prompt={prompt}
