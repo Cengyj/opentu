@@ -68,6 +68,11 @@
     background: var(--psd-danger-soft);
     color: var(--psd-danger);
     cursor: pointer;
+
+    &:hover:not(:disabled) {
+      border-color: var(--psd-danger);
+      box-shadow: 0 6px 16px rgba(213, 73, 65, 0.12);
+    }
   }
 
   .psd-layer-workspace__visible-count {
@@ -403,22 +408,33 @@
     border: 1px solid var(--psd-danger-soft);
     background: var(--psd-danger-soft);
     color: var(--psd-danger);
+
+    &:hover:not(:disabled) {
+      border-color: var(--psd-danger);
+      box-shadow: 0 5px 12px rgba(213, 73, 65, 0.12);
+    }
   }
 
   .psd-layer-card__visibility {
     border: 1px solid var(--psd-border);
     background: var(--psd-surface);
     color: var(--psd-muted);
+
+    &:hover:not(:disabled) {
+      border-color: var(--psd-accent);
+      background: var(--psd-accent-faint);
+      color: var(--psd-accent-strong);
+    }
   }
 
   .psd-layer-card__retry:disabled,
   .psd-layer-card__visibility:disabled,
   .psd-layer-workspace__retry:disabled {
-    border-color: var(--psd-border);
-    background: var(--td-bg-color-component-disabled, var(--psd-surface-soft));
-    color: var(--td-text-color-disabled, var(--psd-muted));
+    border-color: var(--psd-control-disabled-border);
+    background: var(--psd-control-disabled-bg);
+    color: var(--psd-control-disabled-text);
+    box-shadow: var(--psd-control-disabled-shadow);
     cursor: not-allowed;
-    opacity: 0.72;
   }
 
   .psd-layer-card__body {

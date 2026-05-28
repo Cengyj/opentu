@@ -45,13 +45,24 @@ export function PsdExportPanel({
       </div>
       <button
         type="button"
-        className="psd-export-card__button"
+        className={`psd-export-card__button${
+          isDownloading ? ' psd-export-card__button--busy' : ''
+        }`}
         disabled={!canDownload || isDownloading}
+        aria-disabled={!canDownload || isDownloading}
         aria-busy={isDownloading}
         onClick={onDownload}
       >
         {isDownloading ? <RefreshCw size={16} /> : <Download size={16} />}
-        <span>{isDownloading ? (uiLanguage === 'zh' ? '正在下载 PSD-ready 工作区包' : 'Downloading PSD-ready package') : (uiLanguage === 'zh' ? '下载 PSD-ready 工作区包' : 'Download PSD-ready package')}</span>
+        <span>
+          {isDownloading
+            ? uiLanguage === 'zh'
+              ? '正在下载 PSD-ready 工作区包'
+              : 'Downloading PSD-ready package'
+            : uiLanguage === 'zh'
+            ? '下载 PSD-ready 工作区包'
+            : 'Download PSD-ready package'}
+        </span>
       </button>
       <dl>
         <div>
