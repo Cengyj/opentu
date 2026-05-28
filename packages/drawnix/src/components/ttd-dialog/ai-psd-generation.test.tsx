@@ -978,6 +978,16 @@ describe('AIImagePsdGeneration contract', () => {
     );
     expect(layoutScss).not.toContain('psd-workbench__main-column');
     expect(layoutScss).not.toContain('psd-workbench__side-column');
+    expect(layoutScss).not.toMatch(/<<<<<<<|=======|>>>>>>>/);
+
+    const desktopColumns = layoutScss.match(
+      /grid-template-columns:\s*minmax\(286px,\s*([\d.]+)fr\)\s*minmax\(440px,\s*([\d.]+)fr\)\s*minmax\(344px,\s*([\d.]+)fr\);/
+    );
+    expect(desktopColumns).toBeTruthy();
+    if (desktopColumns) {
+      const [, leftRail, centerStage, rightRail] = desktopColumns.map(Number);
+      expect(centerStage).toBeGreaterThan(leftRail + rightRail);
+    }
   });
 
   it('loads the PSD source image from the media library as well as local upload paths', async () => {
