@@ -214,6 +214,7 @@ export function PsdCanvasStage({
   const hasLayerResults = Object.values(layerPreviewUrls).some((urls) => urls.length > 0);
   const isCompositeStackPreview = previewSelection.type === 'composite' && layers.length > 0;
   const isLayerPreview = previewSelection.type === 'layer' && !!selectedLayer;
+  const isSourcePreview = previewSelection.type === 'source';
   const generatedStackLayerCount = visibleStackItems.filter((item) => item.previewUrl).length;
   const hiddenLayerCount = layerStackItems.filter((item) => item.isHidden).length;
   const visibleLayerCount = visibleLayers.length;
@@ -225,6 +226,7 @@ export function PsdCanvasStage({
     : previewSelection.type === 'composite'
     ? previewUrl || sourcePreviewUrl
     : sourcePreviewUrl || previewUrl;
+  const shouldShowActiveImage = Boolean(activePreviewUrl) && !isCompositeStackPreview;
   const canvasAspectRatio = canvasSize ? `${canvasSize.width} / ${canvasSize.height}` : '1 / 1';
   const fittedArtboardSize = useMemo(() => {
     if (!canvasSize || !stageViewportSize) return null;
@@ -249,6 +251,13 @@ export function PsdCanvasStage({
     : sourcePreviewUrl
     ? uiLanguage === 'zh' ? '源图预览' : 'Source preview'
     : uiLanguage === 'zh' ? '源图等待区' : 'Source intake area';
+  const activePreviewAlt = isLayerPreview
+    ? uiLanguage === 'zh' ? `PSD 图层结果：${selectedLayer?.name}` : `PSD layer result: ${selectedLayer?.name}`
+    : previewSelection.type === 'composite' && (hasResult || hasLayerResults)
+    ? uiLanguage === 'zh' ? 'PSD 分层结果预览' : 'PSD layered result preview'
+    : isAnalyzingWorkspace
+    ? uiLanguage === 'zh' ? '正在扫描的源图' : 'Scanning source image'
+    : uiLanguage === 'zh' ? '上传的原始图片' : 'Uploaded source image';
 
   const fitView = useCallback(() => {
     setZoom(DEFAULT_ZOOM);
@@ -370,11 +379,17 @@ export function PsdCanvasStage({
         >
           <div className="psd-stage__viewport" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}>
             <div className="psd-stage__artboard psd-stage__artboard--transparent" style={artboardStyle}>
-              {sourcePreviewUrl && (isEmptyWorkspace || (isAnalyzingWorkspace && !activePreviewUrl)) ? (
-                <img className="psd-stage__artboard-image" src={sourcePreviewUrl} alt={isAnalyzingWorkspace ? 'Scanning reference' : 'Source reference'} onLoad={(event) => handleCanvasImageLoad(event, { force: true })} />
+              {shouldShowActiveImage ? (
+                <img
+                  className="psd-stage__artboard-image"
+                  src={activePreviewUrl}
+                  alt={activePreviewAlt}
+                  data-psd-preview-kind={isLayerPreview ? 'layer' : isSourcePreview ? 'source' : 'result'}
+                  onLoad={(event) => handleCanvasImageLoad(event, { force: isSourcePreview || isEmptyWorkspace || isAnalyzingWorkspace || !hasLayerResults })}
+                />
               ) : null}
               {isAnalyzingWorkspace ? <><div className="psd-analysis-scanner-line" /><div className="psd-analysis-scanner-overlay" /></> : null}
-              {!sourcePreviewUrl && layers.length === 0 ? (
+              {!sourcePreviewUrl && !activePreviewUrl && layers.length === 0 ? (
                 <div className="psd-stage__empty psd-stage__empty--source-waiting">
                   <Layers size={42} className="psd-stage__empty-icon psd-stage__empty-icon--muted" />
                   <span>{uiLanguage === 'zh' ? '等待左侧上传海报参考图；画布、图层与导出面板会保持在同一工作区。' : 'Waiting for a reference poster on the left; canvas, layers, and export stay in one workspace.'}</span>
@@ -389,13 +404,6 @@ export function PsdCanvasStage({
                         <img key={layer.id} className="psd-stage__stack-layer" src={previewUrl} alt={uiLanguage === 'zh' ? `叠放图层：${layer.name}` : `Stacked layer: ${layer.name}`} style={{ opacity: layer.opacity / 100 }} onLoad={handleCanvasImageLoad} />
                       ) : renderLayerSilhouette(layer, index))}
                     </div>
-                  ) : activePreviewUrl ? (
-                    <img
-                      className="psd-stage__artboard-image"
-                      src={activePreviewUrl}
-                      alt={isLayerPreview ? uiLanguage === 'zh' ? `PSD 图层结果：${selectedLayer?.name}` : `PSD layer result: ${selectedLayer?.name}` : previewSelection.type === 'composite' && (hasResult || hasLayerResults) ? uiLanguage === 'zh' ? 'PSD 分层结果预览' : 'PSD layered result preview' : uiLanguage === 'zh' ? '上传的原始图片' : 'Uploaded source image'}
-                      onLoad={(event) => handleCanvasImageLoad(event, { force: previewSelection.type === 'source' || !hasLayerResults })}
-                    />
                   ) : null}
 
                   {isLayerPreview && selectedLayer ? (

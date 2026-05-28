@@ -1179,6 +1179,32 @@ describe('AIImagePsdGeneration contract', () => {
     }
   });
 
+  it('renders the uploaded PSD source inside the center canvas artboard', () => {
+    const { container } = render(
+      <AIImagePsdGeneration
+        initialPrompt="品牌活动海报"
+        initialImages={[
+          { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+        ]}
+      />
+    );
+
+    const centerStage = container.querySelector('.psd-workbench__center-stage');
+    const artboard = centerStage?.querySelector('.psd-stage__artboard');
+    const sourcePreview = artboard?.querySelector(
+      'img.psd-stage__artboard-image[data-psd-preview-kind="source"]'
+    ) as HTMLImageElement | null;
+
+    expect(sourcePreview).toBeTruthy();
+    expect(sourcePreview?.getAttribute('src')).toBe(
+      'data:image/png;base64,cG9zdGVy'
+    );
+    expect(sourcePreview?.getAttribute('alt')).toBe('上传的原始图片');
+    expect(
+      centerStage?.querySelector('.psd-stage__empty--source-waiting')
+    ).toBeNull();
+  });
+
   it('preserves local upload, drag, paste, preview, and brief controls in the PSD source desk', async () => {
     const { container } = render(<AIImagePsdGeneration />);
     const sourceInput = container.querySelector(
@@ -1502,6 +1528,9 @@ describe('AIImagePsdGeneration contract', () => {
     ).toBe('data:image/png;base64,aGVhZGxpbmU=');
     fireEvent.click(screen.getByRole('button', { name: '原图' }));
     expect(screen.getByText('源图预览')).toBeTruthy();
+    expect(
+      screen.getByRole('img', { name: '上传的原始图片' }).getAttribute('src')
+    ).toBe('data:image/png;base64,cG9zdGVy');
     fireEvent.click(screen.getByRole('button', { name: '叠放' }));
     expect(screen.getByText('分层结果叠放预览')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '查看图层：背景底图' }));

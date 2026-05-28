@@ -40,9 +40,7 @@ describe('PSD canvas stage style contract', () => {
   it('routes center-stage colors through PSD tokens backed by TDesign surfaces', () => {
     expect(tokenStyles).toContain('--psd-bg: var(--td-bg-color-container');
     expect(tokenStyles).toContain('--psd-board: var(--td-bg-color-container');
-    expect(tokenStyles).toContain(
-      '--psd-surface: var(--td-bg-color-container'
-    );
+    expect(tokenStyles).toContain('--psd-surface: var(--td-bg-color-container');
     expect(tokenStyles).toContain('--psd-stage-bg:');
     expect(tokenStyles).toContain('--psd-stage-bg-soft:');
     expect(tokenStyles).toContain('--psd-stage-grid:');
@@ -56,7 +54,21 @@ describe('PSD canvas stage style contract', () => {
       'linear-gradient(180deg, var(--psd-stage-bg), var(--psd-stage-bg-soft))'
     );
     expect(canvasStyles).toContain('var(--psd-stage-grid)');
-    expect(canvasStyles).not.toMatch(/background(?:-color)?:\s*#[0-9a-f]{3,8}/i);
+    expect(canvasStyles).not.toMatch(
+      /background(?:-color)?:\s*#[0-9a-f]{3,8}/i
+    );
+  });
+
+  it('keeps the preview viewport and artboard from collapsing invisible images', () => {
+    expect(canvasStyles).toMatch(
+      /\.psd-stage__viewport\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;[\s\S]*?max-width:\s*100%;[\s\S]*?max-height:\s*100%;/
+    );
+    expect(canvasStyles).toMatch(
+      /\.psd-stage__artboard\s*\{[\s\S]*?min-width:\s*min\(100%,\s*160px\);[\s\S]*?min-height:\s*min\(100%,\s*160px\);/
+    );
+    expect(canvasStyles).toMatch(
+      /\.psd-stage__artboard-image,[\s\S]*?\.psd-stage__stack-layer,[\s\S]*?\.psd-stage__stack-underlay\s*\{[\s\S]*?display:\s*block;[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;[\s\S]*?object-fit:\s*contain;/
+    );
   });
 
   it('preserves the existing center-stage selectors used by the three-column workflow', () => {
