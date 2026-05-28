@@ -213,6 +213,7 @@ export function PsdCanvasStage({
   const hasResult = Boolean(previewUrl);
   const hasLayerResults = Object.values(layerPreviewUrls).some((urls) => urls.length > 0);
   const isCompositeStackPreview = previewSelection.type === 'composite' && layers.length > 0;
+  const shouldRenderCompositeStack = isCompositeStackPreview && (!hasResult || hasLayerResults);
   const isLayerPreview = previewSelection.type === 'layer' && !!selectedLayer;
   const generatedStackLayerCount = visibleStackItems.filter((item) => item.previewUrl).length;
   const hiddenLayerCount = layerStackItems.filter((item) => item.isHidden).length;
@@ -220,7 +221,7 @@ export function PsdCanvasStage({
   const shouldShowLayerGuides = !isLayerPreview && visibleLayers.length > 0 && (!hasLayerResults || showLayerGuides);
   const activePreviewUrl = isLayerPreview
     ? selectedLayerPreviewUrl
-    : isCompositeStackPreview
+    : shouldRenderCompositeStack
     ? undefined
     : previewSelection.type === 'composite'
     ? previewUrl || sourcePreviewUrl
@@ -243,8 +244,12 @@ export function PsdCanvasStage({
   const previewHeading = isLayerPreview
     ? uiLanguage === 'zh' ? `查看图层：${selectedLayer?.name}` : `Viewing layer: ${selectedLayer?.name}`
     : previewSelection.type === 'composite'
-    ? hasResult || hasLayerResults
-      ? uiLanguage === 'zh' ? '分层结果叠放预览' : 'Layer stack preview'
+    ? shouldRenderCompositeStack
+      ? hasLayerResults
+        ? uiLanguage === 'zh' ? '分层结果叠放预览' : 'Layer stack preview'
+        : uiLanguage === 'zh' ? '计划图层叠放预览' : 'Planned layer stack'
+      : hasResult
+      ? uiLanguage === 'zh' ? 'PSD 分层结果预览' : 'PSD layered result preview'
       : uiLanguage === 'zh' ? '计划图层叠放预览' : 'Planned layer stack'
     : sourcePreviewUrl
     ? uiLanguage === 'zh' ? '源图预览' : 'Source preview'
@@ -318,7 +323,7 @@ export function PsdCanvasStage({
     resizeObserver.observe(node);
     return () => resizeObserver.disconnect();
   }, []);
-  useEffect(() => { if (!isCompositeStackPreview) setShowSourceUnderlay(false); }, [isCompositeStackPreview]);
+  useEffect(() => { if (!shouldRenderCompositeStack) setShowSourceUnderlay(false); }, [shouldRenderCompositeStack]);
   useEffect(() => { if (hasLayerResults) setShowLayerGuides(false); }, [hasLayerResults]);
   useEffect(() => {
     if (previewSelection.type === 'layer' && !layers.some((layer) => layer.id === previewSelection.layerId)) {
@@ -348,7 +353,7 @@ export function PsdCanvasStage({
         heading={previewHeading}
         hasSource={hasSource}
         isLayerPreview={isLayerPreview}
-        isCompositeStackPreview={isCompositeStackPreview}
+        isCompositeStackPreview={shouldRenderCompositeStack}
         hasLayerResults={hasResult || hasLayerResults}
         visibleLayerCount={visibleLayerCount}
         layerCount={layers.length}
@@ -382,7 +387,7 @@ export function PsdCanvasStage({
               ) : null}
               {layers.length > 0 && plan ? (
                 <>
-                  {isCompositeStackPreview ? (
+                  {shouldRenderCompositeStack ? (
                     <div className="psd-stage__stack" aria-label={uiLanguage === 'zh' ? '同画布透明图层叠放预览' : 'Same-canvas transparent layer stack preview'}>
                       {showSourceUnderlay && sourcePreviewUrl ? <img className="psd-stage__stack-underlay" src={sourcePreviewUrl} alt={uiLanguage === 'zh' ? '原图对照底稿' : 'Source comparison underlay'} onLoad={(event) => handleCanvasImageLoad(event, { force: true })} /> : null}
                       {visibleStackItems.map(({ layer, index, previewUrl }) => previewUrl ? (
@@ -444,7 +449,7 @@ export function PsdCanvasStage({
                   <ScanSearch size={13} />
                   {showLayerGuides ? uiLanguage === 'zh' ? '隐藏边界' : 'Hide guides' : uiLanguage === 'zh' ? '显示边界' : 'Show guides'}
                 </button>
-                <button type="button" onClick={() => setShowSourceUnderlay((current) => !current)} aria-pressed={showSourceUnderlay} disabled={!sourcePreviewUrl || !isCompositeStackPreview}>
+                <button type="button" onClick={() => setShowSourceUnderlay((current) => !current)} aria-pressed={showSourceUnderlay} disabled={!sourcePreviewUrl || !shouldRenderCompositeStack}>
                   <Eye size={13} />
                   {showSourceUnderlay ? uiLanguage === 'zh' ? '隐藏原图' : 'Hide source' : uiLanguage === 'zh' ? '原图对照' : 'Compare source'}
                 </button>
