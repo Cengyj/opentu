@@ -2,6 +2,8 @@
   .psd-inspector-card {
     display: grid;
     gap: var(--psd-space-3);
+    min-height: 0;
+    overflow: auto;
     padding: var(--psd-space-4);
     border: 1px solid var(--psd-border);
     border-radius: var(--psd-radius-xl);
