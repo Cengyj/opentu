@@ -321,7 +321,7 @@ async function imageInputToBlob(
   const normalized = normalizeImageDataUrl(value, 'image/png');
 
   if (normalized.startsWith('data:')) {
-    const blob = base64ToBlob(normalized);
+    const blob = await normalizeFormDataBlob(base64ToBlob(normalized));
     return {
       blob,
       filename: `${filenamePrefix}.${getBlobExtension(
@@ -339,7 +339,7 @@ async function imageInputToBlob(
     );
   }
 
-  const blob = await response.blob();
+  const blob = await normalizeFormDataBlob(await response.blob());
   return {
     blob,
     filename: `${filenamePrefix}.${getBlobExtension(
@@ -348,6 +348,16 @@ async function imageInputToBlob(
       getFileExtension
     )}`,
   };
+}
+
+async function normalizeFormDataBlob(blob: Blob): Promise<Blob> {
+  if (blob instanceof Blob) {
+    return blob;
+  }
+
+  return new Blob([await blob.arrayBuffer()], {
+    type: blob.type || 'application/octet-stream',
+  });
 }
 
 export async function buildGPTImageEditFormData(
