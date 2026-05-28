@@ -38,23 +38,23 @@ describe('PSD canvas stage style contract', () => {
   });
 
   it('routes center-stage colors through PSD tokens backed by TDesign surfaces', () => {
-    expect(tokenStyles).toContain(
-      '--psd-bg: var(--td-bg-color-container'
-    );
-    expect(tokenStyles).toContain(
-      '--psd-board: var(--td-bg-color-container'
-    );
+    expect(tokenStyles).toContain('--psd-bg: var(--td-bg-color-container');
+    expect(tokenStyles).toContain('--psd-board: var(--td-bg-color-container');
     expect(tokenStyles).toContain(
       '--psd-surface: var(--td-bg-color-container'
     );
     expect(tokenStyles).toContain('--psd-stage-bg:');
     expect(tokenStyles).toContain('--psd-stage-bg-soft:');
     expect(tokenStyles).toContain('--psd-stage-grid:');
-    expect(tokenStyles).not.toMatch(/--psd-stage-bg(?:-soft)?:\s*#[12][0-9a-f]{5}\b/i);
+    expect(tokenStyles).not.toMatch(
+      /--psd-stage-bg(?:-soft)?:\s*#[12][0-9a-f]{5}\b/i
+    );
     expect(tokenStyles).not.toContain('#20242c');
     expect(tokenStyles).not.toContain('#2b303a');
 
-    expect(canvasStyles).toContain('linear-gradient(180deg, var(--psd-stage-bg-soft), var(--psd-stage-bg))');
+    expect(canvasStyles).toContain(
+      'linear-gradient(180deg, var(--psd-stage-bg), var(--psd-stage-bg-soft))'
+    );
     expect(canvasStyles).toContain('var(--psd-stage-grid)');
     expect(canvasStyles).not.toMatch(/background(?:-color)?:\s*#[0-9a-f]{3,8}/i);
   });
