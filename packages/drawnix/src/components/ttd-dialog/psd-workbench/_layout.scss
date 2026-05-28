@@ -90,15 +90,15 @@
     grid-template-rows: auto minmax(0, 1fr);
     gap: var(--psd-space-3);
     padding: var(--psd-space-3);
-    border: 1px solid var(--psd-border-strong);
+    border: 1px solid var(--psd-stage-border);
     border-radius: calc(var(--psd-radius-xl) + 6px);
     background: radial-gradient(
-        circle at 50% -8%,
-        var(--psd-accent-soft),
-        transparent 30%
+        circle at 50% -10%,
+        var(--psd-stage-wash),
+        transparent 34%
       ),
-      linear-gradient(180deg, var(--psd-stage-bg-soft), var(--psd-stage-bg));
-    box-shadow: var(--psd-shadow-stage);
+      linear-gradient(180deg, var(--psd-stage-bg), var(--psd-stage-bg-soft));
+    box-shadow: var(--psd-shadow-medium);
     overflow: hidden;
   }
 
@@ -108,19 +108,19 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--psd-space-3);
-    color: var(--psd-text-secondary);
+    color: var(--psd-stage-chrome-muted);
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
 
     span {
-      color: var(--psd-text);
+      color: var(--psd-stage-chrome);
     }
 
     strong {
       overflow: hidden;
-      color: var(--psd-muted);
+      color: var(--psd-stage-chrome-muted);
       font-size: 10.5px;
       font-weight: 750;
       text-align: right;

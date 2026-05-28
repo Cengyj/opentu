@@ -7,7 +7,7 @@
   --psd-board: var(--td-bg-color-container, #f7f8fb);
   --psd-border: var(--td-border-level-1-color, #e7e9ee);
   --psd-border-strong: var(--td-border-level-2-color, #d8dce5);
-  --psd-canvas-check: rgba(31, 35, 41, 0.055);
+  --psd-canvas-check: rgba(78, 89, 105, 0.12);
   --psd-control-disabled-bg: var(--td-bg-color-component-disabled, #f7f8fa);
   --psd-control-disabled-border: var(--td-border-level-1-color, #e5e6eb);
   --psd-control-disabled-text: var(--td-text-color-placeholder, #a8abb2);
@@ -27,9 +27,16 @@
   --psd-surface-soft: var(--td-bg-color-page, #fafbfc);
   --psd-surface-wash: rgba(255, 255, 255, 0.78);
   --psd-rail-bg: rgba(255, 255, 255, 0.92);
-  --psd-stage-bg: var(--td-bg-color-secondarycontainer, #f5f7fa);
-  --psd-stage-bg-soft: var(--td-brand-color-1, #fff8ec);
-  --psd-stage-grid: rgba(31, 35, 41, 0.055);
+  --psd-stage-bg: var(--td-bg-color-page, #ffffff);
+  --psd-stage-bg-soft: var(--td-bg-color-container, #f5f5f5);
+  --psd-stage-border: var(--td-border-level-1-color, #e0e0e0);
+  --psd-stage-chrome: var(--td-text-color-primary, #333333);
+  --psd-stage-chrome-muted: var(--td-text-color-secondary, #666666);
+  --psd-stage-dock-bg: rgba(255, 255, 255, 0.9);
+  --psd-stage-grid: rgba(78, 89, 105, 0.08);
+  --psd-stage-inset-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94),
+    inset 0 -28px 72px rgba(31, 35, 41, 0.045);
+  --psd-stage-wash: var(--td-brand-color-light, rgba(243, 156, 18, 0.12));
   --psd-text: var(--td-text-color-primary, #1f2329);
   --psd-text-secondary: var(--td-text-color-secondary, #4e5969);
   --psd-warning: var(--td-warning-color, #d9822b);
