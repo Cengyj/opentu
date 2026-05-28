@@ -753,6 +753,59 @@ describe('buildLayerPlan', () => {
     ]);
   });
 
+  it('summarizes retry status by params.psdPlan.layerId instead of stale top-level layerId', () => {
+    const olderFailedTask = {
+      ...createMockPsdTask({
+        id: 'layer-task-old-failed',
+        status: TaskStatus.FAILED,
+        createdAt: 100,
+        updatedAt: 100,
+        params: {
+          psdPlan: {
+            layerId: 'psd-layer-2',
+            layerName: '主标题与副标题',
+          },
+        },
+        error: { code: 'API_ERROR', message: 'old layer failed' },
+      }),
+      layerId: 'psd-layer-1',
+    } as Task & { layerId: string };
+    const newerSuccessfulRetry = {
+      ...createMockPsdTask({
+        id: 'layer-task-new-ready',
+        status: TaskStatus.COMPLETED,
+        createdAt: 200,
+        updatedAt: 200,
+        params: {
+          psdPlan: {
+            layerId: 'psd-layer-2',
+            layerName: '主标题与副标题',
+          },
+        },
+        result: {
+          url: 'data:image/png;base64,cmV0cnk=',
+          format: 'png',
+          size: 100,
+        },
+      }),
+      layerId: 'psd-layer-1',
+    } as Task & { layerId: string };
+
+    const stats = buildPsdTaskStats(
+      [olderFailedTask, newerSuccessfulRetry],
+      1,
+      'zh'
+    );
+
+    expect(stats).toMatchObject({
+      total: 1,
+      completed: 1,
+      failed: 0,
+      tone: 'success',
+      isActive: false,
+    });
+  });
+
   it('builds one PSD-ready image edit task without GPT Image 2 unsupported params', () => {
     const plan = buildLayerPlan(
       '品牌活动海报，产品主体需要独立图层',
