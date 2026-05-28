@@ -1,19 +1,16 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
   FileImage,
-  Images,
   ImagePlus,
+  Library,
   Replace,
   UploadCloud,
   X,
 } from 'lucide-react';
 import type { ReferenceImage } from '../shared';
 import { MediaLibraryModal } from '../../media-library/MediaLibraryModal';
-import {
-  AssetType,
-  SelectionMode,
-  type Asset,
-} from '../../../types/asset.types';
+import type { Asset } from '../../../types/asset.types';
+import { AssetType, SelectionMode } from '../../../types/asset.types';
 
 interface PsdSourceImageFieldProps {
   uiLanguage: 'zh' | 'en';
@@ -69,8 +66,7 @@ export function PsdSourceImageField({
 }: PsdSourceImageFieldProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false);
-  const [isImportingLibraryImage, setIsImportingLibraryImage] = useState(false);
+  const [showMediaLibrary, setShowMediaLibrary] = useState(false);
   const sourceImage = images[0] ?? null;
 
   const labels = uiLanguage === 'zh'
@@ -79,14 +75,13 @@ export function PsdSourceImageField({
         fileTooLarge: '源图不能超过 25MB',
         loadFailed: '源图读取失败',
         pick: '载入源图',
-        library: '从素材库选择',
-        libraryShort: '素材库',
-        importingLibrary: '正在载入素材',
+        library: '素材库',
+        librarySelect: '从素材库选择源图',
         replace: '替换源图',
         remove: '移除源图',
         drop: '松开以载入 PSD 源图',
-        emptyTitle: '拖入或选择一张源图',
-        emptyHint: '用于 CHAT 图层分析；这里只保留 1 张 PSD 分层参考图。',
+        emptyTitle: '拖入、粘贴或选择一张源图',
+        emptyHint: '可上传本地文件或从素材库选择；用于 CHAT 图层分析，只保留 1 张 PSD 分层参考图。',
         loaded: '源图已载入',
         localOnly: '本地源图',
       }
@@ -95,14 +90,13 @@ export function PsdSourceImageField({
         fileTooLarge: 'Source image must be under 25MB',
         loadFailed: 'Failed to read source image',
         pick: 'Load source',
-        library: 'Select from library',
-        libraryShort: 'Library',
-        importingLibrary: 'Loading asset',
+        library: 'Library',
+        librarySelect: 'Choose source from media library',
         replace: 'Replace source',
         remove: 'Remove source',
         drop: 'Drop to load PSD source',
-        emptyTitle: 'Drop or choose one source image',
-        emptyHint: 'Used for the CHAT layer analysis; this brief keeps one PSD layering reference.',
+        emptyTitle: 'Drop, paste, or choose one source image',
+        emptyHint: 'Upload locally or choose from the media library; used for the CHAT layer analysis and keeps one PSD layering reference.',
         loaded: 'Source loaded',
         localOnly: 'Local source',
       };
@@ -140,6 +134,45 @@ export function PsdSourceImageField({
       }
     },
     [disabled, labels.fileTooLarge, labels.invalidFile, labels.loadFailed, onError, onImagesChange]
+  );
+
+  const openMediaLibrary = useCallback(() => {
+    if (!disabled) {
+      setShowMediaLibrary(true);
+    }
+  }, [disabled]);
+
+  const handleMediaLibrarySelect = useCallback(
+    async (asset: Asset) => {
+      if (disabled) return;
+      if (asset.type !== AssetType.IMAGE) {
+        onError?.(labels.invalidFile);
+        return;
+      }
+
+      try {
+        const response = await fetch(asset.url);
+        const blob = await response.blob();
+        if (!blob.type.startsWith('image/')) {
+          onError?.(labels.invalidFile);
+          return;
+        }
+
+        const file = new File([blob], asset.name, {
+          type: blob.type || asset.mimeType || 'image/png',
+        });
+        await handleFile(file);
+        setShowMediaLibrary(false);
+      } catch (error) {
+        console.error(
+          '[PsdSourceImageField] Failed to load source from media library:',
+          error
+        );
+        onError?.(labels.loadFailed);
+        setShowMediaLibrary(false);
+      }
+    },
+    [disabled, handleFile, labels.invalidFile, labels.loadFailed, onError]
   );
 
   const handleInputChange = useCallback(
@@ -255,29 +288,49 @@ export function PsdSourceImageField({
               <small>{labels.emptyHint}</small>
               <em>{labels.pick}</em>
             </button>
-            <button
-              type="button"
-              className="psd-source-field__library"
-              onClick={openMediaLibrary}
-              disabled={disabled || isImportingLibraryImage}
-            >
-              <Images size={14} />
-              {isImportingLibraryImage ? labels.importingLibrary : labels.library}
+            <button type="button" onClick={openMediaLibrary} disabled={disabled}>
+              <Library size={13} /> {labels.library}
+            </button>
+            <button type="button" onClick={() => onImagesChange([])} disabled={disabled}>
+              <X size={13} /> {labels.remove}
             </button>
           </div>
-        )}
-      </div>
+        </>
+      ) : (
+        <div
+          className="psd-source-field__empty"
+        >
+          <span className="psd-source-field__icon">
+            {isDragging ? <UploadCloud size={22} /> : <ImagePlus size={22} />}
+          </span>
+          <strong>{isDragging ? labels.drop : labels.emptyTitle}</strong>
+          <small>{labels.emptyHint}</small>
+          <span className="psd-source-field__empty-actions">
+            <button type="button" onClick={openFilePicker} disabled={disabled}>
+              <ImagePlus size={12} /> {labels.pick}
+            </button>
+            <button
+              type="button"
+              aria-label={labels.librarySelect}
+              onClick={openMediaLibrary}
+              disabled={disabled}
+            >
+              <Library size={12} /> {labels.library}
+            </button>
+          </span>
+        </div>
+      )}
 
-      {isMediaLibraryOpen ? (
+      {showMediaLibrary ? (
         <MediaLibraryModal
-          isOpen={isMediaLibraryOpen}
-          onClose={() => setIsMediaLibraryOpen(false)}
+          isOpen={showMediaLibrary}
+          onClose={() => setShowMediaLibrary(false)}
           mode={SelectionMode.SELECT}
           filterType={AssetType.IMAGE}
-          onSelect={handleLibrarySelect}
-          selectButtonText={labels.pick}
+          onSelect={handleMediaLibrarySelect}
+          selectButtonText={labels.librarySelect}
         />
       ) : null}
-    </>
+    </div>
   );
 }
