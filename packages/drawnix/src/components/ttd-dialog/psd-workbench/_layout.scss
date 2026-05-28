@@ -47,8 +47,8 @@
     display: grid;
     grid-template-columns:
       minmax(286px, 0.72fr)
-      minmax(460px, 1.72fr)
-      minmax(340px, 0.86fr);
+      minmax(440px, 1.68fr)
+      minmax(344px, 0.86fr);
     grid-template-areas: 'brief canvas plan';
     gap: var(--psd-space-3);
     height: 100%;
@@ -59,12 +59,12 @@
     border-radius: calc(var(--psd-radius-xl) + 4px);
     background: linear-gradient(
         90deg,
-        rgba(255, 122, 26, 0.05),
-        transparent 24%,
-        transparent 76%,
-        rgba(31, 35, 41, 0.028)
+        rgba(255, 122, 26, 0.055),
+        transparent 22%,
+        transparent 78%,
+        rgba(31, 35, 41, 0.03)
       ),
-      var(--psd-surface-wash);
+      rgba(255, 255, 255, 0.78);
     box-shadow: var(--psd-shadow-panel);
   }
 
@@ -92,8 +92,8 @@
   .psd-workbench__right-rail {
     grid-area: plan;
     display: grid;
-    grid-template-rows: minmax(0, 1.12fr) minmax(280px, 0.9fr);
-    gap: var(--psd-space-2);
+    grid-template-rows: minmax(0, 1.12fr) minmax(292px, 0.88fr);
+    gap: var(--psd-space-3);
     overflow: hidden;
   }
 
@@ -140,13 +140,13 @@
   @media (max-width: 1220px) {
     .psd-workbench__workspace-grid {
       grid-template-columns:
-        minmax(260px, 0.72fr)
-        minmax(380px, 1.55fr)
+        minmax(260px, 0.76fr)
+        minmax(360px, 1.45fr)
         minmax(316px, 0.9fr);
     }
 
     .psd-workbench__right-rail {
-      grid-template-rows: minmax(0, 1fr) minmax(260px, 0.86fr);
+      grid-template-rows: minmax(0, 1fr) minmax(268px, 0.86fr);
     }
   }
 
