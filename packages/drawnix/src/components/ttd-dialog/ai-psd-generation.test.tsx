@@ -1028,11 +1028,12 @@ describe('AIImagePsdGeneration contract', () => {
       /\.psd-workbench\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\);[\s\S]*?height:\s*100%;/
     );
     expect(layoutScss).toMatch(
-      /\.psd-workbench__workspace-grid\s*\{[\s\S]*?grid-template-columns:[\s\S]*?minmax\(286px,\s*0\.72fr\)[\s\S]*?minmax\(440px,\s*1\.68fr\)[\s\S]*?minmax\(344px,\s*0\.86fr\);[\s\S]*?grid-template-areas:\s*'brief canvas plan';[\s\S]*?min-height:\s*0;/
+      /\.psd-workbench__workspace-grid\s*\{[\s\S]*?grid-template-columns:[\s\S]*?minmax\(244px,\s*0\.54fr\)[\s\S]*?minmax\(500px,\s*2\.28fr\)[\s\S]*?minmax\(284px,\s*0\.72fr\);[\s\S]*?grid-template-areas:\s*'brief canvas plan';[\s\S]*?min-height:\s*0;/
     );
     expect(layoutScss).toMatch(
-      /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1\.12fr\) minmax\(292px,\s*0\.88fr\);[\s\S]*?overflow:\s*hidden;/
+      /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1\.18fr\) minmax\(250px,\s*0\.82fr\);[\s\S]*?overflow:\s*hidden;/
     );
+    expect(layoutScss).toContain('psd-workbench__rail-marker--canvas');
     expect(layoutScss).toMatch(
       /\.psd-workbench__operations\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;/
     );
@@ -1041,13 +1042,39 @@ describe('AIImagePsdGeneration contract', () => {
     expect(layoutScss).not.toMatch(/<<<<<<<|=======|>>>>>>>/);
 
     const desktopColumns = layoutScss.match(
-      /grid-template-columns:\s*minmax\(286px,\s*([\d.]+)fr\)\s*minmax\(440px,\s*([\d.]+)fr\)\s*minmax\(344px,\s*([\d.]+)fr\);/
+      /grid-template-columns:\s*minmax\(244px,\s*([\d.]+)fr\)\s*minmax\(500px,\s*([\d.]+)fr\)\s*minmax\(284px,\s*([\d.]+)fr\);/
     );
     expect(desktopColumns).toBeTruthy();
     if (desktopColumns) {
       const [, leftRail, centerStage, rightRail] = desktopColumns.map(Number);
       expect(centerStage).toBeGreaterThan(leftRail + rightRail);
     }
+  });
+
+  it('gives PSD mode its own WinBox shell instead of inheriting the generic image frame', () => {
+    const dialogPath = 'packages/drawnix/src/components/ttd-dialog/ttd-dialog.tsx';
+    const packageCwdDialogPath = 'src/components/ttd-dialog/ttd-dialog.tsx';
+    const winboxScssPath = 'packages/drawnix/src/components/winbox/winbox-custom.scss';
+    const packageCwdWinboxScssPath = 'src/components/winbox/winbox-custom.scss';
+    const dialogSource = readFileSync(
+      existsSync(dialogPath) ? dialogPath : packageCwdDialogPath,
+      'utf8'
+    );
+    const winboxScss = readFileSync(
+      existsSync(winboxScssPath) ? winboxScssPath : packageCwdWinboxScssPath,
+      'utf8'
+    );
+
+    expect(dialogSource).toContain('winbox-ai-image-generation--psd');
+    expect(winboxScss).toMatch(
+      /\.winbox-ai-generation\.winbox-ai-image-generation--psd\s*\{[\s\S]*?\.wb-body\s*\{[\s\S]*?overflow:\s*hidden;/
+    );
+    expect(winboxScss).toMatch(
+      /\.winbox-ai-generation\.winbox-ai-image-generation--psd\s*\{[\s\S]*?\.winbox-content-wrapper\s*\{[\s\S]*?padding:\s*0;[\s\S]*?overflow:\s*hidden;/
+    );
+    expect(winboxScss).toMatch(
+      /\.ai-psd-generation-container--workbench\s*\{[\s\S]*?height:\s*100%;[\s\S]*?overflow:\s*hidden;/
+    );
   });
 
   it('loads the PSD source image from the media library as well as local upload paths', async () => {

@@ -3,7 +3,7 @@
   max-height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: linear-gradient(180deg, #fff, var(--psd-bg));
+  background: var(--psd-bg);
   color: var(--psd-text);
   font-family: var(--psd-font);
 
@@ -34,11 +34,11 @@
   .psd-workbench {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
-    gap: var(--psd-space-3);
+    gap: var(--psd-space-2);
     height: 100%;
     max-height: 100%;
     min-height: 0;
-    padding: var(--psd-space-3);
+    padding: var(--psd-space-2);
     overflow: hidden;
     box-sizing: border-box;
   }
@@ -46,25 +46,21 @@
   .psd-workbench__workspace-grid {
     display: grid;
     grid-template-columns:
-      minmax(286px, 0.72fr)
-      minmax(440px, 1.68fr)
-      minmax(344px, 0.86fr);
+      minmax(244px, 0.54fr)
+      minmax(500px, 2.28fr)
+      minmax(284px, 0.72fr);
     grid-template-areas: 'brief canvas plan';
-    gap: var(--psd-space-3);
+    gap: var(--psd-space-2);
     height: 100%;
     min-height: 0;
     overflow: hidden;
     padding: var(--psd-space-2);
     border: 1px solid var(--psd-border);
     border-radius: calc(var(--psd-radius-xl) + 4px);
-    background: linear-gradient(
-        90deg,
-        rgba(255, 122, 26, 0.055),
-        transparent 22%,
-        transparent 78%,
-        rgba(31, 35, 41, 0.03)
-      ),
-      rgba(255, 255, 255, 0.78);
+    background:
+      linear-gradient(90deg, rgba(255, 122, 26, 0.08), transparent 20%),
+      linear-gradient(270deg, rgba(31, 35, 41, 0.045), transparent 18%),
+      var(--psd-board);
     box-shadow: var(--psd-shadow-panel);
   }
 
@@ -92,8 +88,8 @@
   .psd-workbench__right-rail {
     grid-area: plan;
     display: grid;
-    grid-template-rows: minmax(0, 1.12fr) minmax(292px, 0.88fr);
-    gap: var(--psd-space-3);
+    grid-template-rows: minmax(0, 1.18fr) minmax(250px, 0.82fr);
+    gap: var(--psd-space-2);
     overflow: hidden;
   }
 
@@ -108,6 +104,29 @@
     grid-template-rows: auto minmax(0, 1fr) auto;
     align-content: stretch;
     overflow: hidden;
+  }
+
+  .psd-workbench__rail-marker {
+    display: inline-flex;
+    width: fit-content;
+    min-height: 22px;
+    align-items: center;
+    margin: 0 0 var(--psd-space-1);
+    padding: 0 var(--psd-space-2);
+    border: 1px solid var(--psd-border);
+    border-radius: 999px;
+    background: var(--psd-surface-wash);
+    color: var(--psd-text-secondary);
+    font-size: 10px;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .psd-workbench__rail-marker--canvas {
+    border-color: rgba(255, 122, 26, 0.32);
+    background: var(--psd-accent-soft);
+    color: var(--psd-accent-strong);
   }
 
   .psd-workbench__composer-panel,
@@ -140,9 +159,9 @@
   @media (max-width: 1220px) {
     .psd-workbench__workspace-grid {
       grid-template-columns:
-        minmax(260px, 0.76fr)
-        minmax(360px, 1.45fr)
-        minmax(316px, 0.9fr);
+        minmax(230px, 0.58fr)
+        minmax(420px, 1.9fr)
+        minmax(260px, 0.76fr);
     }
 
     .psd-workbench__right-rail {

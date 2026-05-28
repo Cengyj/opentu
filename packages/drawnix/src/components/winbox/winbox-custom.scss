@@ -490,6 +490,32 @@
   }
 }
 
+
+// PSD mode needs a real workbench shell instead of the generic image form frame.
+// Keep this mode-specific so single/batch image generation retain their existing spacing.
+.winbox-ai-generation.winbox-ai-image-generation--psd {
+  .wb-body {
+    overflow: hidden;
+    background: var(--td-bg-color-page, #f3f5f8);
+  }
+
+  .winbox-content-wrapper {
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    overflow: hidden;
+    background: var(--td-bg-color-page, #f3f5f8);
+  }
+
+  .ai-psd-generation-container--workbench {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
 // 图片生成弹窗 - 仅在顶部有自定义 tabs 时隐藏标题，避免单图模式丢标题
 .winbox-ai-image-generation {
   &:has(.wb-header-custom) .wb-title {

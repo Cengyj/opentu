@@ -780,7 +780,9 @@ const TTDDialogComponent = ({
         y="center"
         modal={false}
         minimizable={false}
-        className="winbox-ai-generation winbox-ai-image-generation"
+        className={`winbox-ai-generation winbox-ai-image-generation ${
+          imageGenerationMode === 'psd' ? 'winbox-ai-image-generation--psd' : ''
+        }`}
         container={container}
         autoMaximize={
           imageDialogAutoMaximize || isMobile || imageGenerationMode === 'psd'
