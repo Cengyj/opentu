@@ -158,6 +158,7 @@ const AIImagePsdGeneration = ({
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   const [isCreatingAnalysisTask, setIsCreatingAnalysisTask] = useState(false);
   const [isQueuingLayerTasks, setIsQueuingLayerTasks] = useState(false);
+  const [isLayerPlanReviewed, setIsLayerPlanReviewed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const processedAnalysisTaskIdRef = useRef<string | null>(null);
   const preferEditableText = true;
@@ -339,6 +340,7 @@ const AIImagePsdGeneration = ({
     setPsdTaskIds([]);
     setPsdBatchId(null);
     setAnalysisTaskId(null);
+    setIsLayerPlanReviewed(false);
     processedAnalysisTaskIdRef.current = null;
 
     try {
@@ -436,6 +438,7 @@ const AIImagePsdGeneration = ({
           analysisTaskId,
           assetBatchId: psdBatchId,
         });
+        setIsLayerPlanReviewed(false);
         setAnalysisMessage(
           uiLanguage === 'zh'
             ? `${analysisModel} 已完成分析：${nextPlan.layers.length} 个动态图层，请检查后生成图层素材`
@@ -727,6 +730,7 @@ const AIImagePsdGeneration = ({
         canRunPrimaryAction={
           plan
             ? canGenerateLayerAssets &&
+              isLayerPlanReviewed &&
               !isCreatingAnalysisTask &&
               !isAnalysisActive &&
               !isQueuingLayerTasks &&
@@ -754,6 +758,8 @@ const AIImagePsdGeneration = ({
           plan ? () => void handleGenerateLayerAssets() : handlePrimaryAction
         }
         plan={plan}
+        isLayerPlanReviewed={isLayerPlanReviewed}
+        onLayerPlanReviewedChange={setIsLayerPlanReviewed}
         analysisStatus={analysisStatus}
         status={
           plan && (psdTaskIds.length > 0 || psdTasks.length > 0)
