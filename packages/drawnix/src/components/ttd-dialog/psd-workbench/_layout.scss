@@ -104,7 +104,7 @@
 
   .psd-workbench__operations {
     display: grid;
-    gap: var(--psd-space-2);
+    gap: var(--psd-space-3);
     grid-template-rows: auto minmax(0, 1fr) auto;
     align-content: stretch;
     overflow: hidden;
@@ -151,6 +151,29 @@
   }
 
   @media (max-width: 980px) {
+    .psd-workbench {
+      overflow-y: auto;
+    }
+
+    .psd-workbench__workspace-grid {
+      grid-template-columns: 1fr;
+      height: auto;
+      overflow: visible;
+    }
+
+    .psd-workbench__main-column,
+    .psd-workbench__side-column {
+      grid-template-rows: auto;
+    }
+
+    .psd-workbench__operations {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: auto;
+      align-items: stretch;
+    }
+  }
+
+  @media (max-width: 900px) {
     .psd-workbench {
       grid-template-rows: auto auto;
       padding: var(--psd-space-2);
