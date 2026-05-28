@@ -880,7 +880,10 @@ describe('AIImagePsdGeneration contract', () => {
     });
     expect(mockState.createTask).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '生成图层素材' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: '生成图层素材' })).toHaveProperty(
+      'disabled',
+      true
+    );
     expect(screen.getByText('4 个动态图层')).toBeTruthy();
 
     fireEvent.click(
@@ -896,19 +899,23 @@ describe('AIImagePsdGeneration contract', () => {
     fireEvent.click(
       screen.getAllByRole('button', { name: '隐藏图层：主视觉标题' })[1]
     );
-    expect((
-      screen.getByRole('checkbox', {
-        name: '参与生成与导出：主视觉标题',
-      }) as HTMLInputElement
-    ).checked).toBe(false);
+    expect(
+      (
+        screen.getByRole('checkbox', {
+          name: '参与生成与导出：主视觉标题',
+        }) as HTMLInputElement
+      ).checked
+    ).toBe(false);
     fireEvent.click(
       screen.getAllByRole('button', { name: '显示图层：主视觉标题' })[1]
     );
-    expect((
-      screen.getByRole('checkbox', {
-        name: '参与生成与导出：主视觉标题',
-      }) as HTMLInputElement
-    ).checked).toBe(true);
+    expect(
+      (
+        screen.getByRole('checkbox', {
+          name: '参与生成与导出：主视觉标题',
+        }) as HTMLInputElement
+      ).checked
+    ).toBe(true);
 
     markLayerPlanReviewed();
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
