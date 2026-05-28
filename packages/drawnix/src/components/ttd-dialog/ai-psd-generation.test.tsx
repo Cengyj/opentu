@@ -785,6 +785,10 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.getAllByText('gpt-5.5 正在分析图层').length).toBeGreaterThan(
       0
     );
+    expect(screen.queryByRole('button', { name: '生成图层素材' })).toBeNull();
+    expect(mockState.createTask.mock.calls.map((call) => call[1])).toEqual([
+      TaskType.CHAT,
+    ]);
 
     mockState.tasks = [
       createMockPsdTask({

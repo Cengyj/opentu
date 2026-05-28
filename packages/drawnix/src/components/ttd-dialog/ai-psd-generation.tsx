@@ -201,10 +201,34 @@ const AIImagePsdGeneration = ({
     );
   }, [uploadedImages]);
 
+  const analysisTask = useMemo(
+    () => tasks.find((task) => task.id === analysisTaskId) || null,
+    [analysisTaskId, tasks]
+  );
+
+  const isAnalysisActive =
+    isCreatingAnalysisTask ||
+    analysisTask?.status === TaskStatus.PENDING ||
+    analysisTask?.status === TaskStatus.PROCESSING;
+  const hasCompletedLayerAnalysis = Boolean(
+    analysisTaskId &&
+      processedAnalysisTaskIdRef.current === analysisTaskId &&
+      !isAnalysisActive
+  );
+
   const handleGenerateLayerAssets = useCallback(
     async (options: { layerIds?: string[]; force?: boolean } = {}) => {
       const targetPlan = plan;
       if (!targetPlan || isQueuingLayerTasks) return;
+
+      if (!hasCompletedLayerAnalysis) {
+        setError(
+          uiLanguage === 'zh'
+            ? '请先完成图层分析并审阅计划，再生成图层素材。'
+            : 'Complete the layer analysis and review the plan before generating layer assets.'
+        );
+        return;
+      }
 
       if (uploadedImages.length === 0) {
         setError(
@@ -411,16 +435,6 @@ const AIImagePsdGeneration = ({
     uiLanguage,
     uploadedImages.length,
   ]);
-
-  const analysisTask = useMemo(
-    () => tasks.find((task) => task.id === analysisTaskId) || null,
-    [analysisTaskId, tasks]
-  );
-
-  const isAnalysisActive =
-    isCreatingAnalysisTask ||
-    analysisTask?.status === TaskStatus.PENDING ||
-    analysisTask?.status === TaskStatus.PROCESSING;
 
   useEffect(() => {
     if (!analysisTaskId || !analysisTask) return;
@@ -743,6 +757,7 @@ const AIImagePsdGeneration = ({
           plan
             ? canGenerateLayerAssets &&
               isLayerPlanReviewed &&
+              hasCompletedLayerAnalysis &&
               !isCreatingAnalysisTask &&
               !isAnalysisActive &&
               !isQueuingLayerTasks &&
