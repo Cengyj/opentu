@@ -6,6 +6,13 @@
     min-height: 0;
     overflow: hidden;
     padding: var(--psd-space-3);
+    border-color: var(--psd-border-strong);
+    background: linear-gradient(
+        180deg,
+        rgba(255, 122, 26, 0.045),
+        transparent 86px
+      ),
+      var(--psd-surface-raised);
   }
 
   .psd-export-card__head {
@@ -52,7 +59,7 @@
     align-items: center;
     justify-content: center;
     gap: var(--psd-space-2);
-    border: 0;
+    border: 1px solid transparent;
     border-radius: var(--psd-radius-md);
     background: linear-gradient(
       135deg,
@@ -63,9 +70,11 @@
     cursor: pointer;
     font-size: 13px;
     font-weight: 850;
-    box-shadow: 0 8px 18px var(--psd-accent-soft);
+    box-shadow: 0 8px 18px var(--psd-accent-soft),
+      inset 0 1px 0 rgba(255, 255, 255, 0.26);
     transition: transform var(--psd-transition),
-      box-shadow var(--psd-transition);
+      box-shadow var(--psd-transition), border-color var(--psd-transition),
+      background var(--psd-transition), color var(--psd-transition);
 
     &:hover:not(:disabled) {
       transform: translateY(-1px);
@@ -74,7 +83,11 @@
 
     &:disabled {
       border: 1px solid var(--psd-control-disabled-border);
-      background: var(--psd-control-disabled-bg);
+      background: linear-gradient(
+        180deg,
+        var(--psd-control-disabled-bg),
+        var(--psd-surface-soft)
+      );
       color: var(--psd-control-disabled-text);
       box-shadow: var(--psd-control-disabled-shadow);
       cursor: not-allowed;
@@ -94,6 +107,18 @@
       svg {
         animation: psd-spin 0.85s linear infinite;
       }
+    }
+
+    &--busy:disabled {
+      border-color: var(--psd-control-loading-border);
+      background: linear-gradient(
+        135deg,
+        var(--psd-warning),
+        var(--psd-accent)
+      );
+      color: var(--psd-surface-raised);
+      box-shadow: 0 10px 22px rgba(217, 130, 43, 0.16);
+      cursor: progress;
     }
   }
 

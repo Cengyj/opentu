@@ -199,6 +199,7 @@
         var(--psd-control-disabled-bg);
       color: var(--psd-control-disabled-text);
       cursor: not-allowed;
+      box-shadow: var(--psd-control-disabled-shadow);
     }
 
     &--loading {
@@ -295,7 +296,11 @@
 
     &:disabled {
       border-color: var(--psd-control-disabled-border);
-      background: var(--psd-control-disabled-bg);
+      background: linear-gradient(
+        180deg,
+        var(--psd-control-disabled-bg),
+        var(--psd-surface-soft)
+      );
       color: var(--psd-control-disabled-text);
       box-shadow: var(--psd-control-disabled-shadow);
       cursor: not-allowed;
@@ -392,7 +397,11 @@
 
       &:disabled {
         border-color: var(--psd-control-disabled-border);
-        background: var(--psd-control-disabled-bg);
+        background: linear-gradient(
+          180deg,
+          var(--psd-control-disabled-bg),
+          var(--psd-surface-soft)
+        );
         color: var(--psd-control-disabled-text);
         box-shadow: var(--psd-control-disabled-shadow);
         cursor: not-allowed;
@@ -529,7 +538,11 @@
     &:disabled {
       cursor: not-allowed;
       border-color: var(--psd-control-disabled-border);
-      background: var(--psd-control-disabled-bg);
+      background: linear-gradient(
+        180deg,
+        var(--psd-control-disabled-bg),
+        var(--psd-surface-soft)
+      );
       color: var(--psd-control-disabled-text);
       box-shadow: var(--psd-control-disabled-shadow);
     }
@@ -564,26 +577,43 @@
     gap: var(--psd-space-2);
     border: 1px solid var(--psd-accent);
     border-radius: var(--psd-radius-md);
-    background: var(--psd-accent);
+    background: linear-gradient(
+      135deg,
+      var(--psd-accent),
+      var(--psd-accent-strong)
+    );
     color: var(--psd-surface-raised);
     cursor: pointer;
     font-size: 13px;
     font-weight: 850;
+    box-shadow: 0 8px 18px var(--psd-accent-soft),
+      inset 0 1px 0 rgba(255, 255, 255, 0.24);
     transition: background var(--psd-transition),
-      border-color var(--psd-transition), box-shadow var(--psd-transition);
+      border-color var(--psd-transition), box-shadow var(--psd-transition),
+      color var(--psd-transition), transform var(--psd-transition);
 
     &:hover:not(:disabled) {
       border-color: var(--psd-accent-strong);
-      background: var(--psd-accent-strong);
+      background: linear-gradient(
+        135deg,
+        var(--psd-accent-strong),
+        var(--psd-accent)
+      );
       box-shadow: 0 10px 20px var(--psd-accent-soft);
+      transform: translateY(-1px);
     }
 
     &:disabled {
       border-color: var(--psd-control-disabled-border);
-      background: var(--psd-control-disabled-bg);
+      background: linear-gradient(
+        180deg,
+        var(--psd-control-disabled-bg),
+        var(--psd-surface-soft)
+      );
       color: var(--psd-control-disabled-text);
       cursor: not-allowed;
       box-shadow: var(--psd-control-disabled-shadow);
+      transform: none;
     }
 
     &--busy {
@@ -600,6 +630,18 @@
       svg {
         animation: psd-spin 0.85s linear infinite;
       }
+    }
+
+    &--busy:disabled {
+      border-color: var(--psd-control-loading-border);
+      background: linear-gradient(
+        135deg,
+        var(--psd-warning),
+        var(--psd-accent)
+      );
+      color: var(--psd-surface-raised);
+      cursor: progress;
+      box-shadow: 0 10px 22px rgba(217, 130, 43, 0.16);
     }
   }
 }
