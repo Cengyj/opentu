@@ -131,10 +131,6 @@ function getTaskBatchTotal(task: Task): number {
     : 0;
 }
 
-function getTaskUpdatedAt(task: Task): number {
-  return task.updatedAt || task.createdAt || 0;
-}
-
 function getPsdLayerIdFromTask(task: Task): string | null {
   const layerId = task.params?.psdPlan?.layerId;
   if (typeof layerId !== 'string' || layerId === 'psd-ready-composite') {

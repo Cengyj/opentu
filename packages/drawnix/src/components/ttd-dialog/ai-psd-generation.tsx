@@ -83,10 +83,6 @@ const EMPTY_KNOWLEDGE_CONTEXT_REFS: KnowledgeContextRef[] = [];
 
 export { buildLayerPlan };
 
-function getTaskUpdatedAt(task: Task): number {
-  return task.updatedAt || task.createdAt || 0;
-}
-
 const AIImagePsdGeneration = ({
   initialPrompt = '',
   initialImages = EMPTY_REFERENCE_IMAGES,
