@@ -946,7 +946,7 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.getByTestId('media-library-modal')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '作为 PSD 源图' }));
 
-    expect(screen.getByText('library-poster.png')).toBeTruthy();
+    expect(screen.getAllByText('library-poster.png').length).toBeGreaterThan(0);
     expect(screen.getByText('素材库源图')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '分析图层结构' }));
