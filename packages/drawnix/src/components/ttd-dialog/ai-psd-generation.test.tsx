@@ -608,6 +608,68 @@ describe('buildLayerPlan', () => {
     ]);
   });
 
+  it('maps PSD layer task state from params.psdPlan.layerId instead of any top-level layerId', () => {
+    const plan = buildLayerPlanFromAnalysis(
+      parsePsdLayerAnalysisResponse({
+        title: '深圳城市海报',
+        layers: [
+          {
+            name: '背景底图',
+            type: 'background',
+            include: '背景照片和底色',
+            exclude: '标题',
+            stackingOrder: 1,
+          },
+          {
+            name: '主标题与副标题',
+            type: 'text',
+            include: '主标题和紧邻副标题',
+            exclude: '背景',
+            stackingOrder: 2,
+          },
+        ],
+      }),
+      {
+        prompt: '品牌活动海报',
+        template: 'poster',
+        strategy: 'ai-plan',
+        language: 'zh',
+      }
+    );
+    const taskWithStaleTopLevelLayerId = {
+      ...createMockPsdTask({
+        id: 'layer-task-from-params',
+        status: TaskStatus.COMPLETED,
+        params: {
+          psdPlan: {
+            layerId: 'psd-layer-2',
+            layerName: '主标题与副标题',
+          },
+        },
+        result: {
+          url: 'data:image/png;base64,aGVhZGxpbmU=',
+          format: 'png',
+          size: 100,
+        },
+      }),
+      layerId: 'psd-layer-1',
+    } as Task & { layerId: string };
+
+    const layerTaskStateMap = buildPsdLayerTaskStateMap(plan.layers, [
+      taskWithStaleTopLevelLayerId,
+    ]);
+
+    expect(layerTaskStateMap['psd-layer-1']).toMatchObject({
+      status: 'planned',
+      taskId: null,
+    });
+    expect(layerTaskStateMap['psd-layer-2']).toMatchObject({
+      status: 'ready',
+      taskId: 'layer-task-from-params',
+      resultUrls: ['data:image/png;base64,aGVhZGxpbmU='],
+    });
+  });
+
   it('builds one PSD-ready image edit task without GPT Image 2 unsupported params', () => {
     const plan = buildLayerPlan(
       '品牌活动海报，产品主体需要独立图层',
