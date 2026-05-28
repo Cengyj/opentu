@@ -621,6 +621,12 @@ describe('buildLayerPlan', () => {
       model: 'image-model',
       width: 1024,
       height: 1024,
+      extraParams: {
+        size: '1024x1024',
+        response_format: 'url',
+        inputFidelity: 'high',
+        background: 'transparent',
+      },
     });
 
     expect(plan.exportSkeleton).toEqual({
@@ -645,6 +651,11 @@ describe('buildLayerPlan', () => {
       expect(taskPlan.params.background).toBe(
         PSD_LAYER_IMAGE_TASK_CONTRACT.background
       );
+      expect(taskPlan.params.inputFidelity).toBeUndefined();
+      expect(taskPlan.params.params).toEqual({
+        size: '1024x1024',
+        background: 'auto',
+      });
       expect(taskPlan.params.prompt).toMatch(/later app-side PSD packaging/i);
     }
   });

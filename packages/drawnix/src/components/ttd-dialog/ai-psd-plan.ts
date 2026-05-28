@@ -1099,6 +1099,9 @@ export function buildPsdLayerImageTaskPlans(
   const targetLayers = targetLayerIdSet
     ? visualLayers.filter((layer) => targetLayerIdSet.has(layer.id))
     : visualLayers;
+  const sanitizedExtraParams = stripUnsupportedGPTImage2Params(
+    options.extraParams
+  );
 
   return targetLayers.map((layer, index) => {
     const currentLayerBounds = formatLayerBounds(layer.bounds);
@@ -1215,9 +1218,7 @@ export function buildPsdLayerImageTaskPlans(
         downloadWhenSupported:
           PSD_LAYER_IMAGE_TASK_CONTRACT.downloadWhenSupported,
       },
-      ...(stripUnsupportedGPTImage2Params(options.extraParams)
-        ? { params: stripUnsupportedGPTImage2Params(options.extraParams) }
-        : {}),
+      ...(sanitizedExtraParams ? { params: sanitizedExtraParams } : {}),
       },
     };
   });
