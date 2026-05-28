@@ -170,7 +170,7 @@ vi.mock('../media-library/MediaLibraryModal', () => ({
     isOpen: boolean;
     onSelect: (asset: {
       id: string;
-      type: AssetType;
+      type: string;
       source: string;
       url: string;
       name: string;
@@ -185,7 +185,7 @@ vi.mock('../media-library/MediaLibraryModal', () => ({
         onClick={() =>
           onSelect({
             id: 'asset-1',
-            type: AssetType.IMAGE,
+            type: 'IMAGE',
             source: 'LOCAL',
             url: 'data:image/png;base64,bGlicmFyeQ==',
             name: 'library-poster.png',
