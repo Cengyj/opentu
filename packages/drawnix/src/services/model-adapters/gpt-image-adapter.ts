@@ -321,7 +321,7 @@ async function imageInputToBlob(
   const normalized = normalizeImageDataUrl(value, 'image/png');
 
   if (normalized.startsWith('data:')) {
-    const blob = base64ToBlob(normalized);
+    const blob = await normalizeFormDataBlob(base64ToBlob(normalized));
     return {
       blob,
       filename: `${filenamePrefix}.${getBlobExtension(
@@ -339,7 +339,7 @@ async function imageInputToBlob(
     );
   }
 
-  const blob = await response.blob();
+  const blob = await normalizeFormDataBlob(await response.blob());
   return {
     blob,
     filename: `${filenamePrefix}.${getBlobExtension(
@@ -348,6 +348,24 @@ async function imageInputToBlob(
       getFileExtension
     )}`,
   };
+}
+
+async function normalizeFormDataBlob(blob: unknown): Promise<Blob> {
+  if (blob instanceof Blob) {
+    return blob;
+  }
+
+  const blobLike = blob as {
+    arrayBuffer?: () => Promise<ArrayBuffer>;
+    type?: string;
+  };
+  if (typeof blobLike.arrayBuffer !== 'function') {
+    throw new Error('GPT Image 编辑图片读取结果不是有效 Blob');
+  }
+
+  return new Blob([await blobLike.arrayBuffer()], {
+    type: blobLike.type || 'application/octet-stream',
+  });
 }
 
 export async function buildGPTImageEditFormData(
