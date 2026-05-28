@@ -2,9 +2,10 @@
   .psd-export-card {
     display: flex;
     flex-direction: column;
-    gap: var(--psd-space-3);
+    gap: var(--psd-space-2);
     min-height: 0;
     overflow: hidden;
+    padding: var(--psd-space-3);
   }
 
   .psd-export-card__head {
@@ -15,25 +16,25 @@
   .psd-export-card h3 {
     margin: 0;
     color: var(--psd-text);
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 850;
   }
 
   .psd-export-card p {
     margin: 0;
     color: var(--psd-muted);
-    font-size: 11.5px;
+    font-size: 11px;
     line-height: 1.5;
   }
 
   .psd-export-card__assets {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--psd-space-1);
+    gap: 6px;
 
     span {
       display: inline-flex;
-      min-height: 22px;
+      min-height: 20px;
       align-items: center;
       padding: 0 var(--psd-space-2);
       border: 1px solid var(--psd-border);
@@ -47,7 +48,7 @@
 
   .psd-export-card__button {
     display: inline-flex;
-    min-height: 40px;
+    min-height: 38px;
     align-items: center;
     justify-content: center;
     gap: var(--psd-space-2);
@@ -99,7 +100,7 @@
   .psd-export-card dl {
     display: flex;
     flex-direction: column;
-    gap: var(--psd-space-2);
+    gap: 0;
     margin: 0;
 
     div {
@@ -107,7 +108,7 @@
       align-items: center;
       justify-content: space-between;
       gap: var(--psd-space-3);
-      padding-top: var(--psd-space-2);
+      min-height: 30px;
       border-top: 1px solid var(--psd-border);
     }
 

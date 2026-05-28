@@ -24,6 +24,7 @@
   --psd-surface: var(--td-bg-color-container, #ffffff);
   --psd-surface-raised: var(--td-bg-color-container, #ffffff);
   --psd-surface-soft: var(--td-bg-color-page, #fafbfc);
+  --psd-surface-wash: rgba(255, 255, 255, 0.78);
   --psd-text: var(--td-text-color-primary, #1f2329);
   --psd-text-secondary: var(--td-text-color-secondary, #4e5969);
   --psd-warning: var(--td-warning-color, #d9822b);
@@ -41,6 +42,7 @@
   --psd-shadow-panel: 0 14px 36px rgba(31, 35, 41, 0.08);
   --psd-shadow-medium: 0 10px 24px rgba(31, 35, 41, 0.1);
   --psd-shadow-soft: 0 5px 18px rgba(31, 35, 41, 0.055);
+  --psd-focus-ring: 0 0 0 3px var(--psd-accent-soft);
   --psd-font: var(
     --td-font-family,
     -apple-system,

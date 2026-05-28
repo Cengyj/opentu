@@ -407,8 +407,11 @@
         color: var(--psd-accent);
       }
       &:disabled {
+        border-color: var(--psd-control-disabled-border);
+        background: var(--psd-control-disabled-bg);
+        color: var(--psd-control-disabled-text);
+        box-shadow: var(--psd-control-disabled-shadow);
         cursor: not-allowed;
-        opacity: 0.45;
       }
     }
   }
@@ -479,6 +482,14 @@
     background: var(--psd-surface);
     color: var(--psd-muted);
     cursor: pointer;
+
+    &:disabled {
+      border-color: var(--psd-control-disabled-border);
+      background: var(--psd-control-disabled-bg);
+      color: var(--psd-control-disabled-text);
+      box-shadow: var(--psd-control-disabled-shadow);
+      cursor: not-allowed;
+    }
   }
 
   .psd-stage__stack-chip-index {
@@ -539,8 +550,10 @@
     text-align: center;
 
     &:disabled {
+      border-color: var(--psd-control-disabled-border);
+      background: transparent;
+      color: var(--psd-control-disabled-text);
       cursor: not-allowed;
-      opacity: 0.3;
     }
     strong {
       overflow: hidden;

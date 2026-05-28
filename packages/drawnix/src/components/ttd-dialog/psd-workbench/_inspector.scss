@@ -1,10 +1,11 @@
 .ai-psd-generation-container--workbench {
   .psd-inspector-card {
     display: grid;
-    gap: var(--psd-space-3);
+    align-content: start;
+    gap: var(--psd-space-2);
     min-height: 0;
     overflow: auto;
-    padding: var(--psd-space-4);
+    padding: var(--psd-space-3);
     border: 1px solid var(--psd-border);
     border-radius: var(--psd-radius-xl);
     background: var(--psd-surface-raised);
@@ -12,8 +13,12 @@
   }
 
   .psd-inspector-card__head {
-    display: grid;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
     gap: var(--psd-space-1);
+    padding-bottom: var(--psd-space-2);
+    border-bottom: 1px solid var(--psd-border);
 
     span {
       display: inline-flex;
@@ -27,9 +32,14 @@
     }
 
     strong {
+      max-width: 54%;
+      overflow: hidden;
       color: var(--psd-text);
       font-size: 14px;
       font-weight: 850;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
   }
 
@@ -40,10 +50,11 @@
 
     div {
       display: grid;
-      grid-template-columns: minmax(94px, 0.8fr) minmax(0, 1fr);
+      grid-template-columns: minmax(86px, 0.76fr) minmax(0, 1fr);
       align-items: center;
       gap: var(--psd-space-2);
-      padding: var(--psd-space-2);
+      min-height: 34px;
+      padding: 6px var(--psd-space-2);
       border: 1px solid var(--psd-border);
       border-radius: var(--psd-radius-md);
       background: var(--psd-surface-soft);
@@ -74,7 +85,8 @@
   .psd-inspector-contract {
     display: grid;
     gap: var(--psd-space-1);
-    padding: var(--psd-space-3);
+    padding: var(--psd-space-2);
+    border: 1px solid var(--psd-border);
     border-radius: var(--psd-radius-md);
     background: var(--psd-accent-faint);
     color: var(--psd-text-secondary);
