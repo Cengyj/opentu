@@ -227,7 +227,8 @@ export function PsdCanvasStage({
     : previewSelection.type === 'composite'
     ? previewUrl || sourcePreviewUrl
     : sourcePreviewUrl || previewUrl;
-  const shouldShowActiveImage = Boolean(activePreviewUrl) && !isCompositeStackPreview;
+  const shouldShowActiveImage =
+    Boolean(activePreviewUrl) && !shouldRenderCompositeStack;
   const canvasAspectRatio = canvasSize ? `${canvasSize.width} / ${canvasSize.height}` : '1 / 1';
   const fittedArtboardSize = useMemo(() => {
     if (!canvasSize || !stageViewportSize) return null;
