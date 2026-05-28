@@ -211,7 +211,6 @@
     border-radius: var(--psd-radius-md);
     background: transparent;
     color: var(--psd-text);
-    cursor: pointer;
     text-align: center;
 
     strong {
@@ -227,18 +226,41 @@
       line-height: 1.45;
     }
 
-    em {
+    button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--psd-space-1);
       padding: 6px 10px;
+      border: 1px solid var(--psd-accent);
       border-radius: 999px;
       background: var(--psd-accent);
       color: var(--psd-surface-raised);
+      cursor: pointer;
       font-size: 11px;
-      font-style: normal;
       font-weight: 850;
-    }
 
-    &:disabled {
-      cursor: not-allowed;
+      &:hover:not(:disabled) {
+        border-color: var(--psd-accent-strong);
+        background: var(--psd-accent-strong);
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+    }
+  }
+
+  .psd-source-field__empty-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--psd-space-2);
+
+    button:nth-child(2) {
+      background: var(--psd-surface-raised);
+      color: var(--psd-accent-strong);
     }
   }
 
