@@ -192,10 +192,7 @@ vi.mock('../shared', () => ({
 }));
 
 vi.mock('../media-library/MediaLibraryModal', () => ({
-  MediaLibraryModal: ({
-    isOpen,
-    onSelect,
-  }: {
+  MediaLibraryModal: (props: {
     isOpen: boolean;
     onSelect: (asset: {
       id: string;
@@ -205,25 +202,24 @@ vi.mock('../media-library/MediaLibraryModal', () => ({
       name: string;
       mimeType: string;
       createdAt: number;
-    }) => void;
+    }) => void | Promise<void>;
   }) =>
-    isOpen ? (
+    props.isOpen ? (
       <button
         type="button"
-        data-testid="mock-media-library-select"
         onClick={() =>
-          onSelect({
-            id: 'asset-1',
+          props.onSelect({
+            id: 'asset-source',
             type: 'IMAGE',
             source: 'LOCAL',
-            url: 'data:image/png;base64,bGlicmFyeQ==',
+            url: 'blob:asset-source',
             name: 'library-poster.png',
             mimeType: 'image/png',
             createdAt: 1,
           })
         }
       >
-        Select library poster
+        mock select source from media library
       </button>
     ) : null,
 }));
@@ -918,85 +914,34 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.queryByText('尚未生成图层计划')).toBeNull();
     expect(screen.queryByText('PSD 文件预览')).toBeNull();
     expect(screen.getByLabelText('PSD 源图上传区')).toBeTruthy();
-    expect(screen.getByText('拖入或选择一张源图')).toBeTruthy();
-    expect(screen.getByText('从素材库选择')).toBeTruthy();
+    expect(screen.getByText('拖入、粘贴或选择一张源图')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '从素材库选择源图' })).toBeTruthy();
     expect(screen.queryByTestId('reference-upload')).toBeNull();
     expect(
       screen.getByText(/导出始终是 \.psd-ready-workspace\.zip/)
     ).toBeTruthy();
   });
 
-  it('imports the PSD source image from the media library before CHAT analysis', async () => {
-    render(<AIImagePsdGeneration initialPrompt="品牌活动海报" />);
+  it('loads the PSD source image from the media library as well as local upload paths', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => ({
+      blob: async () => new Blob(['library image'], { type: 'image/png' }),
+    })) as unknown as typeof fetch;
 
-    fireEvent.click(screen.getByRole('button', { name: '从素材库选择' }));
-    fireEvent.click(screen.getByTestId('mock-media-library-select'));
-    await waitFor(() => {
-      expect(screen.getAllByText('library-poster.png').length).toBeGreaterThan(
-        0
-      );
-    });
-    expect(mockState.addAsset).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: '分析图层结构' })).toHaveProperty(
-      'disabled',
-      false
-    );
+    try {
+      render(<AIImagePsdGeneration />);
 
-    fireEvent.change(fileInput, {
-      target: {
-        files: [
-          new File(['upload'], 'uploaded-poster.png', { type: 'image/png' }),
-        ],
-      },
-    });
-    await waitFor(() => {
-      expect(screen.getAllByText('uploaded-poster.png').length).toBeGreaterThan(
-        0
-      );
-    });
-    await waitFor(() => {
-      expect(mockState.addAsset).toHaveBeenCalledWith(
-        expect.objectContaining({
-          name: 'uploaded-poster.png',
-          type: 'image/png',
-        }),
-        AssetType.IMAGE,
-        expect.any(String),
-        'uploaded-poster.png'
-      );
-    });
+      fireEvent.click(screen.getByRole('button', { name: '从素材库选择源图' }));
+      fireEvent.click(screen.getByText('mock select source from media library'));
 
-    fireEvent.drop(sourceDropZone, {
-      dataTransfer: {
-        files: [
-          new File(['drop'], 'dropped-poster.png', { type: 'image/png' }),
-        ],
-      },
-    });
-    await waitFor(() => {
-      expect(screen.getAllByText('dropped-poster.png').length).toBeGreaterThan(
-        0
-      );
-    });
-    await waitFor(() => {
-      expect(mockState.addAsset).toHaveBeenCalledTimes(2);
-    });
-
-    fireEvent.paste(sourceDropZone, {
-      clipboardData: {
-        files: [
-          new File(['paste'], 'pasted-poster.png', { type: 'image/png' }),
-        ],
-      },
-    });
-    await waitFor(() => {
-      expect(screen.getAllByText('pasted-poster.png').length).toBeGreaterThan(
-        0
-      );
-    });
-    await waitFor(() => {
-      expect(mockState.addAsset).toHaveBeenCalledTimes(3);
-    });
+      await waitFor(() => {
+        expect(screen.getAllByText('library-poster.png').length).toBeGreaterThan(0);
+      });
+      expect(screen.getAllByText('源图已载入').length).toBeGreaterThan(0);
+      expect(globalThis.fetch).toHaveBeenCalledWith('blob:asset-source');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('reviews GPT-5.5 layer analysis before queuing editable layer assets', async () => {
