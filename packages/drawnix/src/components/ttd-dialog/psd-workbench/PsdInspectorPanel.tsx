@@ -25,13 +25,16 @@ export function PsdInspectorPanel({
   canvasSize,
   selectedLayerBounds,
 }: PsdInspectorPanelProps) {
-  const statusLabel = layerTaskState?.label ||
+  const statusLabel =
+    layerTaskState?.label ||
     (uiLanguage === 'zh' ? '等待图层任务' : 'Awaiting layer task');
 
   return (
     <section
       className="psd-inspector-card"
-      aria-label={uiLanguage === 'zh' ? 'PSD 图层检查器' : 'PSD layer inspector'}
+      aria-label={
+        uiLanguage === 'zh' ? 'PSD 图层检查器' : 'PSD layer inspector'
+      }
     >
       <div className="psd-inspector-card__head">
         <span>
@@ -50,7 +53,9 @@ export function PsdInspectorPanel({
             <SquareStack size={13} />
             {uiLanguage === 'zh' ? '图层类型' : 'Layer type'}
           </dt>
-          <dd>{activeLayer?.type || (uiLanguage === 'zh' ? '未选择' : 'None')}</dd>
+          <dd>
+            {activeLayer?.type || (uiLanguage === 'zh' ? '未选择' : 'None')}
+          </dd>
         </div>
         <div>
           <dt>
@@ -74,9 +79,9 @@ export function PsdInspectorPanel({
             {selectedLayerBounds
               ? `${formatPercent(selectedLayerBounds.left)}, ${formatPercent(
                   selectedLayerBounds.top
-                )} · ${formatPercent(selectedLayerBounds.width)} × ${formatPercent(
-                  selectedLayerBounds.height
-                )}`
+                )} · ${formatPercent(
+                  selectedLayerBounds.width
+                )} × ${formatPercent(selectedLayerBounds.height)}`
               : uiLanguage === 'zh'
               ? '选择图层查看'
               : 'Select a layer'}

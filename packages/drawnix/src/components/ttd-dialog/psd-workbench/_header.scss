@@ -7,8 +7,11 @@
     padding: var(--psd-space-4);
     border: 1px solid var(--psd-border);
     border-radius: var(--psd-radius-xl);
-    background:
-      linear-gradient(135deg, var(--psd-surface-raised), var(--psd-surface-soft));
+    background: linear-gradient(
+      135deg,
+      var(--psd-surface-raised),
+      var(--psd-surface-soft)
+    );
     box-shadow: var(--psd-shadow-soft);
   }
 
@@ -141,7 +144,9 @@
     color: var(--psd-text-secondary);
     font-size: 12px;
 
-    strong { color: var(--psd-accent-strong); }
+    strong {
+      color: var(--psd-accent-strong);
+    }
   }
 
   @media (max-width: 1180px) {

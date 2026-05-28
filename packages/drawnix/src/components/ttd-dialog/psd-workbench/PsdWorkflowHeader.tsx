@@ -67,9 +67,11 @@ export function PsdWorkflowHeader({
     {
       id: 'review',
       label: uiLanguage === 'zh' ? '审阅' : 'Review',
-      detail:
-        uiLanguage === 'zh' ? '编辑图层计划' : 'Edit the layer plan',
-      state: getStepState(isLayerPlanReviewed, hasLayerPlan && !isLayerPlanReviewed),
+      detail: uiLanguage === 'zh' ? '编辑图层计划' : 'Edit the layer plan',
+      state: getStepState(
+        isLayerPlanReviewed,
+        hasLayerPlan && !isLayerPlanReviewed
+      ),
       icon: <ClipboardCheck size={15} />,
     },
     {
@@ -93,7 +95,9 @@ export function PsdWorkflowHeader({
       <div className="psd-workbench__headline">
         <span className="psd-workbench__kicker">
           <Layers3 size={15} />
-          {uiLanguage === 'zh' ? 'AI 图片窗口内的 PSD 工作台' : 'PSD workbench inside AI image'}
+          {uiLanguage === 'zh'
+            ? 'AI 图片窗口内的 PSD 工作台'
+            : 'PSD workbench inside AI image'}
         </span>
         <div>
           <h2>
@@ -109,7 +113,12 @@ export function PsdWorkflowHeader({
         </div>
       </div>
 
-      <ol className="psd-workbench__step-rail" aria-label={uiLanguage === 'zh' ? 'PSD 工作流阶段' : 'PSD workflow stages'}>
+      <ol
+        className="psd-workbench__step-rail"
+        aria-label={
+          uiLanguage === 'zh' ? 'PSD 工作流阶段' : 'PSD workflow stages'
+        }
+      >
         {steps.map((step, index) => (
           <li
             key={step.id}
@@ -122,7 +131,9 @@ export function PsdWorkflowHeader({
               <strong>{step.label}</strong>
               <small>{step.detail}</small>
             </span>
-            {index < steps.length - 1 ? <span className="psd-workbench__step-line" /> : null}
+            {index < steps.length - 1 ? (
+              <span className="psd-workbench__step-line" />
+            ) : null}
           </li>
         ))}
       </ol>
