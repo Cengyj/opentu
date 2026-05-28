@@ -7,7 +7,7 @@
   --psd-board: var(--td-bg-color-container, #f7f8fb);
   --psd-border: var(--td-border-level-1-color, #e7e9ee);
   --psd-border-strong: var(--td-border-level-2-color, #d8dce5);
-  --psd-canvas-check: rgba(31, 41, 55, 0.075);
+  --psd-canvas-check: rgba(31, 35, 41, 0.055);
   --psd-control-disabled-bg: var(--td-bg-color-component-disabled, #f7f8fa);
   --psd-control-disabled-border: var(--td-border-level-1-color, #e5e6eb);
   --psd-control-disabled-text: var(--td-text-color-placeholder, #a8abb2);
@@ -27,9 +27,9 @@
   --psd-surface-soft: var(--td-bg-color-page, #fafbfc);
   --psd-surface-wash: rgba(255, 255, 255, 0.78);
   --psd-rail-bg: rgba(255, 255, 255, 0.92);
-  --psd-stage-bg: #20242c;
-  --psd-stage-bg-soft: #2b303a;
-  --psd-stage-grid: rgba(255, 255, 255, 0.07);
+  --psd-stage-bg: var(--td-bg-color-secondarycontainer, #f5f7fa);
+  --psd-stage-bg-soft: var(--td-brand-color-1, #fff8ec);
+  --psd-stage-grid: rgba(31, 35, 41, 0.055);
   --psd-text: var(--td-text-color-primary, #1f2329);
   --psd-text-secondary: var(--td-text-color-secondary, #4e5969);
   --psd-warning: var(--td-warning-color, #d9822b);
@@ -45,7 +45,7 @@
   --psd-space-5: 20px;
   --psd-space-6: 24px;
   --psd-shadow-panel: 0 14px 36px rgba(31, 35, 41, 0.08);
-  --psd-shadow-stage: 0 22px 52px rgba(31, 35, 41, 0.2);
+  --psd-shadow-stage: 0 18px 42px rgba(31, 35, 41, 0.11);
   --psd-shadow-medium: 0 10px 24px rgba(31, 35, 41, 0.1);
   --psd-shadow-soft: 0 5px 18px rgba(31, 35, 41, 0.055);
   --psd-focus-ring: 0 0 0 3px var(--psd-accent-soft);
