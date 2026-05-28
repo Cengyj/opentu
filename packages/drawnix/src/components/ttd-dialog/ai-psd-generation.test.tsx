@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import {
   cleanup,
@@ -876,7 +877,38 @@ describe('AIImagePsdGeneration contract', () => {
   });
 
   it('renders an Opentu PSD workbench composer without tuning controls', () => {
-    render(<AIImagePsdGeneration />);
+    const { container } = render(<AIImagePsdGeneration />);
+
+    const root = container.querySelector('.ai-psd-generation-container');
+    const workbench = root?.querySelector('.psd-workbench');
+    expect(root?.classList.contains('ai-psd-generation-container--workbench')).toBe(
+      true
+    );
+    expect(workbench).toBeTruthy();
+    expect(workbench?.querySelectorAll('.psd-workbench__workspace-grid')).toHaveLength(
+      1
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__main-column')).toHaveLength(
+      1
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__side-column')).toHaveLength(
+      1
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__region--header')).toHaveLength(
+      1
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__region--brief')).toHaveLength(
+      1
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__region--canvas')).toHaveLength(
+      1
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__region--plan')).toHaveLength(
+      1
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__operations')).toHaveLength(
+      1
+    );
 
     expect(screen.getByText('PSD 分层任务简报')).toBeTruthy();
     expect(
@@ -910,6 +942,27 @@ describe('AIImagePsdGeneration contract', () => {
     expect(
       screen.getByText(/导出始终是 \.psd-ready-workspace\.zip/)
     ).toBeTruthy();
+  });
+
+  it('locks the desktop PSD workbench to one no-page-scroll viewport shell', () => {
+    const layoutScss = readFileSync(
+      'packages/drawnix/src/components/ttd-dialog/psd-workbench/_layout.scss',
+      'utf8'
+    );
+
+    expect(layoutScss).toContain('.ai-psd-generation-container--workbench');
+    expect(layoutScss).toMatch(
+      /\.ai-psd-generation-container--workbench\s*\{[\s\S]*?height:\s*100%;[\s\S]*?overflow:\s*hidden;/
+    );
+    expect(layoutScss).toMatch(
+      /\.psd-workbench\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\);[\s\S]*?height:\s*100%;/
+    );
+    expect(layoutScss).toMatch(
+      /\.psd-workbench__workspace-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1\.35fr\) minmax\(360px,\s*0\.85fr\);[\s\S]*?min-height:\s*0;/
+    );
+    expect(layoutScss).toMatch(
+      /\.psd-workbench__operations\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;/
+    );
   });
 
   it('loads the PSD source image from the media library as well as local upload paths', async () => {
