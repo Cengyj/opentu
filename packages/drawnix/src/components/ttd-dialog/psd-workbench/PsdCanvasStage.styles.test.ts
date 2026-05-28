@@ -83,4 +83,17 @@ describe('PSD canvas stage style contract', () => {
       expect(canvasStyles).toContain(selector);
     }
   });
+
+  it('keeps the center canvas sized so source and preview images remain visible', () => {
+    expect(canvasStyles).toMatch(
+      /\.psd-stage__content\s*\{[\s\S]*?position:\s*relative;[\s\S]*?margin:\s*34px 26px 0;/
+    );
+    expect(canvasStyles).toMatch(
+      /\.psd-stage__viewport\s*\{[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;/
+    );
+    expect(canvasStyles).toMatch(
+      /\.psd-stage__artboard\s*\{[\s\S]*?min-width:\s*160px;[\s\S]*?min-height:\s*160px;/
+    );
+    expect(canvasStyles).toContain('object-fit: contain');
+  });
 });
