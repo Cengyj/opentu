@@ -462,6 +462,54 @@
       font-weight: 850;
     }
 
+    .psd-composer-action__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--psd-space-2);
+
+      > span {
+        color: var(--psd-accent-strong);
+        font-size: 11px;
+        font-weight: 850;
+      }
+    }
+
+    .psd-composer-auto {
+      display: inline-flex;
+      flex-shrink: 0;
+      align-items: center;
+      gap: var(--psd-space-1);
+      padding: 3px var(--psd-space-2);
+      border: 1px solid var(--psd-border);
+      border-radius: 999px;
+      background: var(--psd-surface-raised);
+      color: var(--psd-text-secondary);
+      cursor: pointer;
+      font-size: 10.5px;
+      font-weight: 800;
+      white-space: nowrap;
+      transition: border-color var(--psd-transition),
+        color var(--psd-transition), background var(--psd-transition);
+
+      &:hover {
+        border-color: var(--psd-accent);
+        color: var(--psd-accent-strong);
+      }
+
+      input {
+        width: 13px;
+        height: 13px;
+        accent-color: var(--psd-accent);
+        cursor: pointer;
+      }
+
+      &:has(input:disabled) {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+    }
+
     .psd-composer-action__status {
       display: grid;
       gap: 3px;

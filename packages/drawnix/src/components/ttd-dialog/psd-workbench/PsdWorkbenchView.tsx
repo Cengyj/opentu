@@ -25,6 +25,8 @@ export interface PsdWorkbenchViewProps {
   primaryActionEyebrow: string;
   canRunPrimaryAction: boolean;
   isPrimaryActionBusy: boolean;
+  autoGenerateAfterAnalysis?: boolean;
+  onAutoGenerateAfterAnalysisChange?: (enabled: boolean) => void;
   onOpenHistory?: () => void;
   onPromptChange: (prompt: string) => void;
   onSourceImagesChange: (images: ReferenceImage[]) => void;
@@ -59,6 +61,8 @@ export function PsdWorkbenchView({
   primaryActionEyebrow,
   canRunPrimaryAction,
   isPrimaryActionBusy,
+  autoGenerateAfterAnalysis,
+  onAutoGenerateAfterAnalysisChange,
   onOpenHistory,
   onPromptChange,
   onSourceImagesChange,
@@ -139,6 +143,8 @@ export function PsdWorkbenchView({
           primaryActionEyebrow={primaryActionEyebrow}
           canRunPrimaryAction={canRunPrimaryAction}
           isPrimaryActionBusy={isPrimaryActionBusy}
+          autoGenerateAfterAnalysis={autoGenerateAfterAnalysis}
+          onAutoGenerateAfterAnalysisChange={onAutoGenerateAfterAnalysisChange}
           onPromptChange={onPromptChange}
           onSourceImagesChange={onSourceImagesChange}
           onSourceImageError={onSourceImageError}

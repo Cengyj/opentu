@@ -17,6 +17,8 @@ interface PsdComposerPanelProps {
   primaryActionEyebrow: string;
   canRunPrimaryAction: boolean;
   isPrimaryActionBusy: boolean;
+  autoGenerateAfterAnalysis?: boolean;
+  onAutoGenerateAfterAnalysisChange?: (enabled: boolean) => void;
   onPromptChange: (prompt: string) => void;
   onSourceImagesChange: (images: ReferenceImage[]) => void;
   onSourceImageError: (message: string | null) => void;
@@ -36,6 +38,8 @@ export function PsdComposerPanel({
   primaryActionEyebrow,
   canRunPrimaryAction,
   isPrimaryActionBusy,
+  autoGenerateAfterAnalysis = false,
+  onAutoGenerateAfterAnalysisChange,
   onPromptChange,
   onSourceImagesChange,
   onSourceImageError,
@@ -43,6 +47,8 @@ export function PsdComposerPanel({
   errorPanel,
 }: PsdComposerPanelProps) {
   const hasSource = sourceImages.length > 0;
+  const showAutoGenerateToggle =
+    !plan && Boolean(onAutoGenerateAfterAnalysisChange);
   const layerCount = plan?.layers.length || 0;
   const readyLabel = plan
     ? uiLanguage === 'zh'
@@ -184,7 +190,26 @@ export function PsdComposerPanel({
       </section>
 
       <section className="psd-composer-action">
-        <span>{primaryActionEyebrow}</span>
+        <div className="psd-composer-action__head">
+          <span>{primaryActionEyebrow}</span>
+          {showAutoGenerateToggle ? (
+            <label className="psd-composer-auto">
+              <input
+                type="checkbox"
+                checked={autoGenerateAfterAnalysis}
+                disabled={isDisabled}
+                onChange={(event) =>
+                  onAutoGenerateAfterAnalysisChange?.(event.target.checked)
+                }
+              />
+              <span>
+                {uiLanguage === 'zh'
+                  ? '分析后自动生成图层'
+                  : 'Auto-generate after analysis'}
+              </span>
+            </label>
+          ) : null}
+        </div>
         <button
           type="button"
           className={`psd-composer-primary${isPrimaryActionBusy ? ' psd-composer-primary--busy' : ''}`}
