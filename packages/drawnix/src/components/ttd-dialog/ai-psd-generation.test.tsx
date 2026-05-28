@@ -1181,7 +1181,7 @@ describe('AIImagePsdGeneration contract', () => {
     });
 
     expect(
-      screen.getByRole('progressbar', { name: 'PSD-ready task progress' })
+      screen.getByRole('progressbar', { name: 'PSD-ready 任务进度' })
     ).toHaveAttribute('aria-valuenow', '0');
     expect(
       screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
@@ -1224,7 +1224,7 @@ describe('AIImagePsdGeneration contract', () => {
       screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
     ).toBeTruthy();
     expect(
-      screen.getByRole('progressbar', { name: 'PSD-ready task progress' })
+      screen.getByRole('progressbar', { name: 'PSD-ready 任务进度' })
     ).toHaveAttribute('aria-valuenow', '100');
     expect(
       screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })

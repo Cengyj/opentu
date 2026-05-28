@@ -48,8 +48,21 @@ function fileToReferenceImage(file: File): Promise<ReferenceImage> {
   });
 }
 
-function isLibraryAssetUrl(url: string): boolean {
-  return !url.startsWith('data:') && !url.startsWith('blob:');
+function blobToReferenceImage(
+  blob: Blob,
+  name: string
+): Promise<ReferenceImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({
+        url: reader.result as string,
+        name,
+      });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
 export function PsdSourceImageField({
@@ -73,38 +86,34 @@ export function PsdSourceImageField({
           invalidFile: '请上传图片文件',
           fileTooLarge: '源图不能超过 25MB',
           loadFailed: '源图读取失败',
-          pick: '本地载入',
-          pickFromLibrary: '从素材库导入',
-          replaceFromLibrary: '素材库替换',
+          pick: '载入源图',
+          library: '从素材库选择',
+          libraryShort: '素材库',
+          importingLibrary: '正在载入素材',
           replace: '替换源图',
           remove: '移除源图',
           drop: '松开以载入 PSD 源图',
-          emptyTitle: '建立 PSD 源图上下文',
-          emptyHint: '上传、拖拽、粘贴，或从素材库/媒体库导入一张分层参考图。',
+          emptyTitle: '拖入或选择一张源图',
+          emptyHint: '用于 CHAT 图层分析；这里只保留 1 张 PSD 分层参考图。',
           loaded: '源图已载入',
-          importing: '正在载入源图…',
           localOnly: '本地源图',
-          libraryOnly: '素材库源图',
-          librarySelectText: '作为 PSD 源图',
         }
       : {
           invalidFile: 'Please upload an image file',
           fileTooLarge: 'Source image must be under 25MB',
           loadFailed: 'Failed to read source image',
-          pick: 'Load local',
-          pickFromLibrary: 'Import from library',
-          replaceFromLibrary: 'Replace from library',
+          pick: 'Load source',
+          library: 'Select from library',
+          libraryShort: 'Library',
+          importingLibrary: 'Loading asset',
           replace: 'Replace source',
           remove: 'Remove source',
           drop: 'Drop to load PSD source',
-          emptyTitle: 'Build the PSD source context',
+          emptyTitle: 'Drop or choose one source image',
           emptyHint:
-            'Upload, drop, paste, or import one layering reference from the media library.',
+            'Used for the CHAT layer analysis; this brief keeps one PSD layering reference.',
           loaded: 'Source loaded',
-          importing: 'Loading source…',
           localOnly: 'Local source',
-          libraryOnly: 'Library source',
-          librarySelectText: 'Use as PSD source',
         };
 
   const openFilePicker = useCallback(() => {
@@ -153,34 +162,13 @@ export function PsdSourceImageField({
       }
     },
     [
-      addAsset,
-      isBusy,
+      disabled,
       labels.fileTooLarge,
       labels.invalidFile,
       labels.loadFailed,
       onError,
       onImagesChange,
     ]
-  );
-
-  const handleMediaLibrarySelect = useCallback(
-    (asset: Asset) => {
-      if (isBusy) return;
-      if (asset.type !== AssetType.IMAGE || !asset.url) {
-        onError?.(labels.invalidFile);
-        return;
-      }
-
-      onImagesChange([
-        {
-          url: asset.url,
-          name: asset.name || `asset-${asset.id}`,
-        },
-      ]);
-      onError?.(null);
-      setShowMediaLibrary(false);
-    },
-    [isBusy, labels.invalidFile, onError, onImagesChange]
   );
 
   const handleInputChange = useCallback(
@@ -214,14 +202,45 @@ export function PsdSourceImageField({
     [handleFile]
   );
 
+  const handleLibrarySelect = useCallback(
+    async (asset: Asset) => {
+      if (disabled || isImportingLibraryImage) return;
+      setIsImportingLibraryImage(true);
+      try {
+        const image = asset.url.startsWith('data:image/')
+          ? { url: asset.url, name: asset.name }
+          : await blobToReferenceImage(
+              await (await fetch(asset.url)).blob(),
+              asset.name
+            );
+        onImagesChange([image]);
+        onError?.(null);
+        setIsMediaLibraryOpen(false);
+      } catch (error) {
+        console.error(
+          '[PsdSourceImageField] Failed to load media library asset:',
+          error
+        );
+        onError?.(labels.loadFailed);
+      } finally {
+        setIsImportingLibraryImage(false);
+      }
+    },
+    [
+      disabled,
+      isImportingLibraryImage,
+      labels.loadFailed,
+      onError,
+      onImagesChange,
+    ]
+  );
+
   return (
     <>
       <div
         className={`psd-source-field${
           isDragging ? ' psd-source-field--dragging' : ''
-        }${disabled ? ' psd-source-field--disabled' : ''}${
-          isImportingLocalImage ? ' psd-source-field--loading' : ''
-        }`}
+        }${disabled ? ' psd-source-field--disabled' : ''}`}
         onDragEnter={(event) => {
           event.preventDefault();
           if (!isBusy) setIsDragging(true);
@@ -230,8 +249,7 @@ export function PsdSourceImageField({
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
         onPaste={handlePaste}
-        tabIndex={isBusy ? -1 : 0}
-        aria-busy={isImportingLocalImage}
+        tabIndex={disabled ? -1 : 0}
         aria-label={
           uiLanguage === 'zh' ? 'PSD 源图上传区' : 'PSD source image uploader'
         }
@@ -268,8 +286,6 @@ export function PsdSourceImageField({
               <small>
                 {sourceImage.file
                   ? formatFileSize(sourceImage.file.size)
-                  : isLibraryAssetUrl(sourceImage.url)
-                  ? labels.libraryOnly
                   : labels.localOnly}
               </small>
             </div>
@@ -277,49 +293,59 @@ export function PsdSourceImageField({
               <button
                 type="button"
                 onClick={openFilePicker}
-                disabled={isBusy}
+                disabled={disabled || isImportingLibraryImage}
               >
                 <Replace size={13} /> {labels.replace}
               </button>
               <button
                 type="button"
                 onClick={openMediaLibrary}
-                disabled={isBusy}
+                disabled={disabled || isImportingLibraryImage}
               >
-                <FolderOpen size={13} /> {labels.replaceFromLibrary}
+                <Images size={13} />{' '}
+                {isImportingLibraryImage
+                  ? labels.importingLibrary
+                  : labels.libraryShort}
               </button>
               <button
                 type="button"
                 onClick={() => onImagesChange([])}
-                disabled={isBusy}
+                disabled={disabled || isImportingLibraryImage}
               >
                 <X size={13} /> {labels.remove}
               </button>
             </div>
           </>
         ) : (
-          <div className="psd-source-field__empty">
-            <span className="psd-source-field__icon">
-              {isDragging ? <UploadCloud size={22} /> : <ImagePlus size={22} />}
-            </span>
-            <strong>{isDragging ? labels.drop : labels.emptyTitle}</strong>
-            <small>{labels.emptyHint}</small>
-            <div className="psd-source-field__empty-actions">
-              <button
-                type="button"
-                onClick={openFilePicker}
-                disabled={isBusy}
-              >
-                <ImagePlus size={13} /> {labels.pick}
-              </button>
-              <button
-                type="button"
-                onClick={openMediaLibrary}
-                disabled={isBusy}
-              >
-                <FolderOpen size={13} /> {labels.pickFromLibrary}
-              </button>
-            </div>
+          <div className="psd-source-field__empty-group">
+            <button
+              type="button"
+              className="psd-source-field__empty"
+              onClick={openFilePicker}
+              disabled={disabled || isImportingLibraryImage}
+            >
+              <span className="psd-source-field__icon">
+                {isDragging ? (
+                  <UploadCloud size={22} />
+                ) : (
+                  <ImagePlus size={22} />
+                )}
+              </span>
+              <strong>{isDragging ? labels.drop : labels.emptyTitle}</strong>
+              <small>{labels.emptyHint}</small>
+              <em>{labels.pick}</em>
+            </button>
+            <button
+              type="button"
+              className="psd-source-field__library"
+              onClick={openMediaLibrary}
+              disabled={disabled || isImportingLibraryImage}
+            >
+              <Images size={14} />
+              {isImportingLibraryImage
+                ? labels.importingLibrary
+                : labels.library}
+            </button>
           </div>
         )}
       </div>
