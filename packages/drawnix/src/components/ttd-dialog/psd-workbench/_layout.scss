@@ -167,6 +167,11 @@
       gap: var(--psd-space-2);
     }
 
+    .psd-workbench__main-column,
+    .psd-workbench__side-column {
+      gap: var(--psd-space-2);
+    }
+
     .psd-workbench__composer-panel,
     .psd-workbench__preview,
     .psd-layer-workspace {
