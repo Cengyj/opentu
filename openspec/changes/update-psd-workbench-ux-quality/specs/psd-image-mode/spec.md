@@ -11,6 +11,13 @@ The system SHALL provide a PSD-oriented generation surface that reuses existing 
 - **THEN** the system SHALL create a `TaskType.CHAT` layer analysis task
 - **AND** the system SHALL NOT create layer image tasks until the analysis result has been reviewed and the user explicitly starts layer asset generation
 
+#### Scenario: User chooses a source image from supported inputs
+
+- **GIVEN** PSD mode is open in the existing AI image generation window
+- **WHEN** the user uploads, drags, pastes, or selects an image from the media library
+- **THEN** the PSD workbench SHALL use that image as the single source image for `TaskType.CHAT` layer analysis
+- **AND** selecting from the media library SHALL NOT create `AssetType.PSD` or a separate PSD asset
+
 #### Scenario: User edits the analyzed layer plan
 
 - **GIVEN** a PSD layer analysis result has created a local layer plan

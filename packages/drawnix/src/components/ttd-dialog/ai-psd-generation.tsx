@@ -158,6 +158,7 @@ const AIImagePsdGeneration = ({
   const [analysisMessage, setAnalysisMessage] = useState<string | null>(null);
   const [isCreatingAnalysisTask, setIsCreatingAnalysisTask] = useState(false);
   const [isQueuingLayerTasks, setIsQueuingLayerTasks] = useState(false);
+  const [isDownloadingPsdReady, setIsDownloadingPsdReady] = useState(false);
   const [isLayerPlanReviewed, setIsLayerPlanReviewed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const processedAnalysisTaskIdRef = useRef<string | null>(null);
@@ -678,7 +679,7 @@ const AIImagePsdGeneration = ({
   ]);
 
   const handleDownloadPsdReadyResult = useCallback(async () => {
-    if (!completedPsdTask) return;
+    if (!completedPsdTask || isDownloadingPsdReady) return;
 
     if (completedPsdResultUrls.length === 0) {
       setError(
@@ -689,6 +690,7 @@ const AIImagePsdGeneration = ({
       return;
     }
 
+    setIsDownloadingPsdReady(true);
     try {
       const result = await downloadPsdReadyWorkspacePackage({
         task: completedPsdTask,
@@ -714,10 +716,13 @@ const AIImagePsdGeneration = ({
           ? 'PSD-ready 资产包打包失败，请先打开原图保存，或稍后重试。'
           : 'Failed to package the PSD-ready workspace. Open the image directly or try again.'
       );
+    } finally {
+      setIsDownloadingPsdReady(false);
     }
   }, [
     completedPsdResultUrls.length,
     completedPsdTask,
+    isDownloadingPsdReady,
     plan,
     prompt,
     psdTasks,
@@ -796,6 +801,7 @@ const AIImagePsdGeneration = ({
         layerTaskStateMap={layerTaskStateMap}
         resultCount={completedPsdResultUrls.length}
         canDownload={!!completedPsdTask && completedPsdResultUrls.length > 0}
+        isDownloading={isDownloadingPsdReady}
         onDownload={handleDownloadPsdReadyResult}
         onLayerNameChange={updateLayerName}
         onLayerPromptChange={updateLayerPrompt}

@@ -38,7 +38,10 @@ const mockState = vi.hoisted(() => ({
     id: `task-${mockState.createTask.mock.calls.length}`,
   })),
   triggerBlobDownload: vi.fn(),
+  addAsset: vi.fn(() => Promise.resolve({ id: 'stored-source-asset' })),
 }));
+
+type CreateTaskCall = [Record<string, unknown>, TaskType];
 
 vi.mock('tdesign-react', () => ({
   MessagePlugin: {
@@ -146,6 +149,12 @@ vi.mock('../../services/ai-generation-preferences-service', () => ({
 
 vi.mock('../../utils/download-utils', () => ({
   triggerBlobDownload: mockState.triggerBlobDownload,
+}));
+
+vi.mock('../../contexts/AssetContext', () => ({
+  useAssets: () => ({
+    addAsset: mockState.addAsset,
+  }),
 }));
 
 vi.mock('../ai-input-bar/ModelDropdown', () => ({
@@ -848,6 +857,7 @@ describe('AIImagePsdGeneration contract', () => {
     mockState.tasks = [];
     mockState.createTask.mockClear();
     mockState.triggerBlobDownload.mockClear();
+    mockState.addAsset.mockClear();
   });
 
   const markLayerPlanReviewed = () => {
@@ -888,7 +898,11 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.queryByText('PSD 文件预览')).toBeNull();
     expect(screen.getByLabelText('PSD 源图上传区')).toBeTruthy();
     expect(screen.getByText('建立 PSD 源图上下文')).toBeTruthy();
-    expect(screen.getByText('上传、拖拽、粘贴，或从素材库/媒体库导入一张分层参考图。')).toBeTruthy();
+    expect(
+      screen.getByText(
+        '上传、拖拽、粘贴，或从素材库/媒体库导入一张分层参考图。'
+      )
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: '本地载入' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '从素材库导入' })).toBeTruthy();
     expect(screen.queryByTestId('reference-upload')).toBeNull();
@@ -921,7 +935,9 @@ describe('AIImagePsdGeneration contract', () => {
 
     fireEvent.change(fileInput, {
       target: {
-        files: [new File(['upload'], 'uploaded-poster.png', { type: 'image/png' })],
+        files: [
+          new File(['upload'], 'uploaded-poster.png', { type: 'image/png' }),
+        ],
       },
     });
     await waitFor(() => {
@@ -929,10 +945,18 @@ describe('AIImagePsdGeneration contract', () => {
         screen.getByRole('img', { name: 'uploaded-poster.png' })
       ).toBeTruthy();
     });
+    expect(mockState.addAsset).toHaveBeenCalledWith(
+      expect.any(File),
+      AssetType.IMAGE,
+      'LOCAL',
+      'uploaded-poster.png'
+    );
 
     fireEvent.drop(sourceDropZone, {
       dataTransfer: {
-        files: [new File(['drop'], 'dropped-poster.png', { type: 'image/png' })],
+        files: [
+          new File(['drop'], 'dropped-poster.png', { type: 'image/png' }),
+        ],
       },
     });
     await waitFor(() => {
@@ -943,7 +967,9 @@ describe('AIImagePsdGeneration contract', () => {
 
     fireEvent.paste(sourceDropZone, {
       clipboardData: {
-        files: [new File(['paste'], 'pasted-poster.png', { type: 'image/png' })],
+        files: [
+          new File(['paste'], 'pasted-poster.png', { type: 'image/png' }),
+        ],
       },
     });
     await waitFor(() => {
@@ -981,9 +1007,9 @@ describe('AIImagePsdGeneration contract', () => {
       0
     );
     expect(screen.queryByRole('button', { name: '生成图层素材' })).toBeNull();
-    expect(mockState.createTask.mock.calls.map((call) => call[1])).toEqual([
-      TaskType.CHAT,
-    ]);
+    expect(
+      mockState.createTask.mock.calls.map((call: CreateTaskCall) => call[1])
+    ).toEqual([TaskType.CHAT]);
 
     mockState.tasks = [
       createMockPsdTask({
@@ -1065,17 +1091,21 @@ describe('AIImagePsdGeneration contract', () => {
     expect(
       mockState.createTask.mock.calls
         .slice(1)
-        .every((call) => call[1] === TaskType.IMAGE)
+        .every((call: CreateTaskCall) => call[1] === TaskType.IMAGE)
     ).toBe(true);
     expect(
       mockState.createTask.mock.calls
         .slice(1)
-        .some((call) => call[0]?.psdPlan?.layerName === '主视觉标题')
+        .some(
+          (call: CreateTaskCall) => call[0]?.psdPlan?.layerName === '主视觉标题'
+        )
     ).toBe(true);
     expect(
       mockState.createTask.mock.calls
         .slice(1)
-        .some((call) => String(call[0]?.prompt).includes('只提取标题像素'))
+        .some((call: CreateTaskCall) =>
+          String(call[0]?.prompt).includes('只提取标题像素')
+        )
     ).toBe(true);
     expect(screen.getByText('查看图层：主视觉标题')).toBeTruthy();
     expect(screen.getByText('同画布 / 原坐标 / 透明背景')).toBeTruthy();
@@ -1133,7 +1163,7 @@ describe('AIImagePsdGeneration contract', () => {
 
     const layerTaskCalls = mockState.createTask.mock.calls.slice(1);
     const createdBatchId = layerTaskCalls[0]?.[0]?.batchId;
-    mockState.tasks = layerTaskCalls.map((call, index) =>
+    mockState.tasks = layerTaskCalls.map((call: CreateTaskCall, index) =>
       createMockPsdTask({
         id: `layer-task-${index + 1}`,
         status: TaskStatus.COMPLETED,
@@ -1278,7 +1308,7 @@ describe('AIImagePsdGeneration contract', () => {
 
     const layerTaskCalls = mockState.createTask.mock.calls.slice(1);
     const createdBatchId = layerTaskCalls[0]?.[0]?.batchId;
-    mockState.tasks = layerTaskCalls.map((call, index) =>
+    mockState.tasks = layerTaskCalls.map((call: CreateTaskCall, index) =>
       createMockPsdTask({
         id: `layer-task-${index + 1}`,
         status: TaskStatus.FAILED,
@@ -1371,33 +1401,34 @@ describe('AIImagePsdGeneration contract', () => {
 
     const layerTaskCalls = mockState.createTask.mock.calls.slice(1);
     const createdBatchId = layerTaskCalls[0]?.[0]?.batchId;
-    const currentLayerTasks = layerTaskCalls.map((call, index) =>
-      createMockPsdTask({
-        id: `layer-task-${index + 1}`,
-        status: index === 0 ? TaskStatus.COMPLETED : TaskStatus.FAILED,
-        createdAt: 200 + index,
-        updatedAt: 200 + index,
-        params: {
-          ...call[0],
-          batchId: createdBatchId,
-          batchIndex: index + 1,
-          batchTotal: layerTaskCalls.length,
-        },
-        result:
-          index === 0
-            ? {
-                url: 'data:image/png;base64,YmFja2dyb3VuZA==',
-                format: 'png',
-                size: 100,
-                width: 1024,
-                height: 1024,
-              }
-            : undefined,
-        error:
-          index === 0
-            ? undefined
-            : { code: 'API_ERROR', message: 'quota exceeded' },
-      })
+    const currentLayerTasks = layerTaskCalls.map(
+      (call: CreateTaskCall, index) =>
+        createMockPsdTask({
+          id: `layer-task-${index + 1}`,
+          status: index === 0 ? TaskStatus.COMPLETED : TaskStatus.FAILED,
+          createdAt: 200 + index,
+          updatedAt: 200 + index,
+          params: {
+            ...call[0],
+            batchId: createdBatchId,
+            batchIndex: index + 1,
+            batchTotal: layerTaskCalls.length,
+          },
+          result:
+            index === 0
+              ? {
+                  url: 'data:image/png;base64,YmFja2dyb3VuZA==',
+                  format: 'png',
+                  size: 100,
+                  width: 1024,
+                  height: 1024,
+                }
+              : undefined,
+          error:
+            index === 0
+              ? undefined
+              : { code: 'API_ERROR', message: 'quota exceeded' },
+        })
     );
     mockState.tasks = [
       createMockPsdTask({
@@ -1600,7 +1631,11 @@ function createMockAnalysisResponse(): string {
   });
 }
 
-function createMockPsdTask(overrides: Partial<Task> = {}): Task {
+function createMockPsdTask(
+  overrides: Partial<Task> & {
+    params?: Partial<NonNullable<Task['params']>>;
+  } = {}
+): Task {
   return {
     id: 'task-1',
     type: TaskType.IMAGE,
