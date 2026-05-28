@@ -1,12 +1,12 @@
 import React from 'react';
 import { FileImage, Layers3, Play, RefreshCw, ShieldCheck } from 'lucide-react';
 import type { PsdGenerationPlan } from '../ai-psd-plan';
-import { ReferenceImageUpload, type ReferenceImage } from '../shared';
+import type { ReferenceImage } from '../shared';
+import { PsdSourceImageField } from './PsdSourceImageField';
 import type { PsdAnalysisStatus } from './PsdWorkbenchView';
 
 interface PsdComposerPanelProps {
   uiLanguage: 'zh' | 'en';
-  language: 'zh' | 'en';
   prompt: string;
   defaultPrompt: string;
   sourceImages: ReferenceImage[];
@@ -26,7 +26,6 @@ interface PsdComposerPanelProps {
 
 export function PsdComposerPanel({
   uiLanguage,
-  language,
   prompt,
   defaultPrompt,
   sourceImages,
@@ -98,14 +97,11 @@ export function PsdComposerPanel({
           <span><FileImage size={13} /> {uiLanguage === 'zh' ? '源图' : 'Source image'}</span>
           <strong>{uiLanguage === 'zh' ? '原始海报 / 参考图' : 'Original poster / reference'}</strong>
         </div>
-        <ReferenceImageUpload
+        <PsdSourceImageField
+          uiLanguage={uiLanguage}
           images={sourceImages}
-          onImagesChange={onSourceImagesChange}
-          language={language}
           disabled={isDisabled}
-          multiple={false}
-          maxCount={1}
-          label={uiLanguage === 'zh' ? '参考图' : 'Reference image'}
+          onImagesChange={onSourceImagesChange}
           onError={onSourceImageError}
         />
       </section>

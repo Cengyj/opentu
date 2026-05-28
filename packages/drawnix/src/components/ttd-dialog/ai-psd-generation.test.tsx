@@ -750,9 +750,9 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.queryByText(hiddenTuningCopyPattern)).toBeNull();
     expect(screen.queryByText('尚未生成图层计划')).toBeNull();
     expect(screen.queryByText('PSD 文件预览')).toBeNull();
-    expect(
-      mockState.referenceUploadProps[mockState.referenceUploadProps.length - 1]
-    ).toMatchObject({ multiple: false, maxCount: 1 });
+    expect(screen.getByLabelText('PSD 源图上传区')).toBeTruthy();
+    expect(screen.getByText('拖入或选择一张源图')).toBeTruthy();
+    expect(screen.queryByTestId('reference-upload')).toBeNull();
     expect(
       screen.getByText(/导出始终是 \.psd-ready-workspace\.zip/)
     ).toBeTruthy();

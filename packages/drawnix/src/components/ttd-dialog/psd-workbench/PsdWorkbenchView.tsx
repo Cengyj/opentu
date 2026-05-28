@@ -13,7 +13,6 @@ export type { PsdAnalysisStatus } from './psd-workbench-types';
 
 export interface PsdWorkbenchViewProps {
   uiLanguage: 'zh' | 'en';
-  language: 'zh' | 'en';
   prompt: string;
   defaultPrompt: string;
   isComposerDisabled: boolean;
@@ -48,7 +47,6 @@ export interface PsdWorkbenchViewProps {
 
 export function PsdWorkbenchView({
   uiLanguage,
-  language,
   prompt,
   defaultPrompt,
   isComposerDisabled,
@@ -108,7 +106,6 @@ export function PsdWorkbenchView({
     <div className="psd-workbench">
       <PsdComposerPanel
         uiLanguage={uiLanguage}
-        language={language}
         prompt={prompt}
         defaultPrompt={defaultPrompt}
         sourceImages={sourceImages}

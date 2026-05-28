@@ -146,10 +146,173 @@
     }
   }
 
-  .psd-composer-card .reference-image-upload__placeholder {
-    min-height: 112px;
-    border-radius: var(--psd-radius-md);
-    background: var(--psd-surface-soft);
+
+  .psd-source-field {
+    position: relative;
+    display: grid;
+    min-height: 132px;
+    overflow: hidden;
+    border: 1px dashed var(--psd-border-strong);
+    border-radius: var(--psd-radius-lg);
+    background:
+      linear-gradient(135deg, rgba(78, 109, 245, 0.08), transparent 42%),
+      var(--psd-surface-soft);
+    transition: border-color var(--psd-transition), box-shadow var(--psd-transition), background var(--psd-transition);
+
+    &:focus-within,
+    &--dragging {
+      border-color: var(--psd-accent);
+      box-shadow: 0 0 0 3px var(--psd-accent-soft);
+    }
+
+    &--disabled {
+      opacity: 0.68;
+    }
+  }
+
+  .psd-source-field__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .psd-source-field__empty {
+    display: grid;
+    place-items: center;
+    gap: var(--psd-space-2);
+    min-height: 132px;
+    padding: var(--psd-space-4);
+    border: 0;
+    background: transparent;
+    color: var(--psd-text);
+    cursor: pointer;
+    text-align: center;
+
+    strong {
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    small {
+      max-width: 260px;
+      color: var(--psd-muted);
+      font-size: 11.5px;
+      font-weight: 650;
+      line-height: 1.45;
+    }
+
+    em {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--psd-accent);
+      color: var(--psd-surface-raised);
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 850;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+    }
+  }
+
+  .psd-source-field__icon {
+    display: inline-grid;
+    width: 42px;
+    height: 42px;
+    place-items: center;
+    border: 1px solid var(--psd-border);
+    border-radius: 14px;
+    background: var(--psd-surface-raised);
+    color: var(--psd-accent);
+    box-shadow: var(--psd-shadow-soft);
+  }
+
+  .psd-source-field__preview-wrap {
+    min-height: 132px;
+    background:
+      linear-gradient(45deg, rgba(148, 163, 184, 0.12) 25%, transparent 25%),
+      linear-gradient(-45deg, rgba(148, 163, 184, 0.12) 25%, transparent 25%),
+      var(--psd-surface-raised);
+    background-size: 16px 16px;
+  }
+
+  .psd-source-field__preview {
+    display: block;
+    width: 100%;
+    max-height: 190px;
+    object-fit: contain;
+  }
+
+  .psd-source-field__meta,
+  .psd-source-field__actions {
+    padding: var(--psd-space-3);
+    border-top: 1px solid var(--psd-border);
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .psd-source-field__meta {
+    display: grid;
+    gap: var(--psd-space-1);
+
+    strong {
+      overflow: hidden;
+      color: var(--psd-text);
+      font-size: 13px;
+      font-weight: 850;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    small {
+      color: var(--psd-muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+  }
+
+  .psd-source-field__status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--psd-space-1);
+    color: var(--psd-success);
+    font-size: 10.5px;
+    font-weight: 850;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .psd-source-field__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--psd-space-2);
+
+    button {
+      display: inline-flex;
+      min-height: 32px;
+      align-items: center;
+      justify-content: center;
+      gap: var(--psd-space-1);
+      border: 1px solid var(--psd-border);
+      border-radius: var(--psd-radius-sm);
+      background: var(--psd-surface-raised);
+      color: var(--psd-text-secondary);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 800;
+
+      &:hover:not(:disabled) {
+        border-color: var(--psd-accent);
+        color: var(--psd-accent-strong);
+      }
+
+      &:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+    }
   }
 
   .psd-composer-brief {

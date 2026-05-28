@@ -718,7 +718,6 @@ const AIImagePsdGeneration = ({
     <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--workbench">
       <PsdWorkbenchView
         uiLanguage={uiLanguage}
-        language={language}
         prompt={prompt}
         defaultPrompt={defaultPsdPrompt}
         isComposerDisabled={isCreatingAnalysisTask || isQueuingLayerTasks}
