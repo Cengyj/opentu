@@ -17,9 +17,33 @@ export function PsdExportPanel({
   isDownloading,
   onDownload,
 }: PsdExportPanelProps) {
+  const exportState = isDownloading
+    ? 'busy'
+    : canDownload
+    ? 'ready'
+    : resultCount > 0
+    ? 'partial'
+    : 'waiting';
+  const stateLabel =
+    exportState === 'busy'
+      ? uiLanguage === 'zh'
+        ? '正在打包'
+        : 'Packaging'
+      : exportState === 'ready'
+      ? uiLanguage === 'zh'
+        ? '可下载'
+        : 'Ready'
+      : exportState === 'partial'
+      ? uiLanguage === 'zh'
+        ? '部分结果'
+        : 'Partial results'
+      : uiLanguage === 'zh'
+      ? '等待结果'
+      : 'Waiting';
+
   return (
     <section
-      className="psd-export-card"
+      className={`psd-export-card psd-export-card--${exportState}`}
       aria-label={
         uiLanguage === 'zh' ? 'PSD-ready 导出面板' : 'PSD-ready export panel'
       }
@@ -33,6 +57,14 @@ export function PsdExportPanel({
             ? '下载 PSD-ready 工作区'
             : 'Download PSD-ready workspace'}
         </h3>
+      </div>
+      <div className="psd-export-card__state" aria-live="polite">
+        <strong>{stateLabel}</strong>
+        <span>
+          {uiLanguage === 'zh'
+            ? `${resultCount} 个可打包结果 · .psd-ready-workspace.zip`
+            : `${resultCount} packageable results · .psd-ready-workspace.zip`}
+        </span>
       </div>
       <p>{getExportMessage(canDownload, uiLanguage)}</p>
       <div className="psd-export-card__assets">

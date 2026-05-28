@@ -7,6 +7,7 @@
     overflow: hidden;
     padding: var(--psd-space-3);
     border-color: var(--psd-border-strong);
+    border-left-width: 3px;
     background: linear-gradient(
         180deg,
         rgba(255, 122, 26, 0.045),
@@ -16,7 +17,9 @@
   }
 
   .psd-export-card__head {
-    display: grid;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
     gap: var(--psd-space-2);
   }
 
@@ -32,6 +35,34 @@
     color: var(--psd-muted);
     font-size: 11px;
     line-height: 1.5;
+  }
+
+  .psd-export-card__state {
+    display: grid;
+    gap: 2px;
+    padding: 7px var(--psd-space-2);
+    border: 1px solid var(--psd-border);
+    border-radius: var(--psd-radius-md);
+    background: var(--psd-surface-soft);
+
+    strong,
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    strong {
+      color: var(--psd-text);
+      font-size: 11.5px;
+      font-weight: 850;
+    }
+
+    span {
+      color: var(--psd-muted);
+      font-size: 10.5px;
+      font-weight: 700;
+    }
   }
 
   .psd-export-card__assets {
@@ -81,6 +112,11 @@
       box-shadow: 0 12px 24px var(--psd-accent-soft);
     }
 
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--psd-focus-ring), 0 8px 18px var(--psd-accent-soft);
+    }
+
     &:disabled {
       border: 1px solid var(--psd-control-disabled-border);
       background: linear-gradient(
@@ -120,6 +156,28 @@
       box-shadow: 0 10px 22px rgba(217, 130, 43, 0.16);
       cursor: progress;
     }
+  }
+
+  .psd-export-card--ready {
+    border-left-color: var(--psd-success);
+
+    .psd-export-card__state {
+      border-color: var(--psd-success-soft);
+      background: var(--psd-success-soft);
+    }
+  }
+
+  .psd-export-card--busy {
+    border-left-color: var(--psd-warning);
+
+    .psd-export-card__state {
+      border-color: var(--psd-control-loading-border);
+      background: var(--psd-control-loading-bg);
+    }
+  }
+
+  .psd-export-card--partial {
+    border-left-color: var(--psd-warning);
   }
 
   .psd-export-card dl {

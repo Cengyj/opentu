@@ -68,10 +68,17 @@
     background: var(--psd-danger-soft);
     color: var(--psd-danger);
     cursor: pointer;
+    white-space: nowrap;
 
     &:hover:not(:disabled) {
       border-color: var(--psd-danger);
       box-shadow: 0 6px 16px rgba(213, 73, 65, 0.12);
+    }
+
+    &:focus-visible {
+      outline: none;
+      border-color: var(--psd-danger);
+      box-shadow: 0 0 0 3px var(--psd-danger-soft);
     }
   }
 
