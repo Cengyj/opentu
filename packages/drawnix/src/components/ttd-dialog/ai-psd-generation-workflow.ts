@@ -67,7 +67,8 @@ export const PSD_WORKFLOW_STEPS = {
     },
     {
       title: 'gpt-5.5 reasoning analysis',
-      description: 'Identify real visual elements without a fixed layer template',
+      description:
+        'Identify real visual elements without a fixed layer template',
     },
     {
       title: 'Review layer plan',
@@ -94,6 +95,18 @@ function getTaskBatchTotal(task: Task): number {
   return typeof batchTotal === 'number' && Number.isFinite(batchTotal)
     ? batchTotal
     : 0;
+}
+
+function getTaskUpdatedAt(task: Task): number {
+  return task.updatedAt || task.createdAt || 0;
+}
+
+function getPsdLayerIdFromTask(task: Task): string | null {
+  const layerId = task.params?.psdPlan?.layerId;
+  if (typeof layerId !== 'string' || layerId === 'psd-ready-composite') {
+    return null;
+  }
+  return layerId;
 }
 
 export function getTaskResultUrls(task: Task | undefined): string[] {
@@ -453,7 +466,16 @@ export async function downloadPsdReadyWorkspacePackage(options: {
       };
     })
   );
-  const failedLayerEntries = (tasks || [])
+  const latestTaskByLayerId = new Map<string, Task>();
+  for (const candidate of tasks || []) {
+    const layerId = getPsdLayerIdFromTask(candidate);
+    if (!layerId) continue;
+    const current = latestTaskByLayerId.get(layerId);
+    if (!current || getTaskUpdatedAt(candidate) >= getTaskUpdatedAt(current)) {
+      latestTaskByLayerId.set(layerId, candidate);
+    }
+  }
+  const failedLayerEntries = Array.from(latestTaskByLayerId.values())
     .filter(
       (item) =>
         item.status === TaskStatus.FAILED ||
@@ -461,9 +483,8 @@ export async function downloadPsdReadyWorkspacePackage(options: {
     )
     .map((failedTask) => {
       const psdPlan = failedTask.params?.psdPlan;
-      const layerId =
-        typeof psdPlan?.layerId === 'string' ? psdPlan.layerId : null;
-      if (!layerId || layerId === 'psd-ready-composite') return null;
+      const layerId = getPsdLayerIdFromTask(failedTask);
+      if (!layerId) return null;
       const layerName =
         typeof psdPlan?.layerName === 'string'
           ? psdPlan.layerName
@@ -665,8 +686,12 @@ export function buildPsdTaskStats(
         : 'Same-canvas layer tasks queued';
     detail =
       uiLanguage === 'zh'
-        ? `已排队 ${pending || total} 个图片编辑任务，等待开始生成；若长时间无变化，请打开任务队列查看是否缺少密钥、额度或接口错误。`
-        : `${pending || total} image edit tasks are queued. If this does not change, open the task queue to check credentials, quota, or API errors.`;
+        ? `已排队 ${
+            pending || total
+          } 个图片编辑任务，等待开始生成；若长时间无变化，请打开任务队列查看是否缺少密钥、额度或接口错误。`
+        : `${
+            pending || total
+          } image edit tasks are queued. If this does not change, open the task queue to check credentials, quota, or API errors.`;
   }
 
   const countSummary =

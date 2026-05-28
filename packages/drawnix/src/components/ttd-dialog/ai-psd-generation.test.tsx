@@ -28,6 +28,7 @@ import {
   buildPsdLayerTaskStateMap,
   getRetryablePsdLayerIds,
 } from './psd-workbench/psd-layer-tasks';
+import { downloadPsdReadyWorkspacePackage } from './psd-workbench/psd-workspace-package';
 
 const mockState = vi.hoisted(() => ({
   referenceUploadProps: [] as Array<Record<string, unknown>>,
@@ -339,7 +340,9 @@ describe('buildLayerPlan', () => {
     expect(plan.layers[1].generationPrompt).toContain(
       '不要把文字合并进背景或主体层'
     );
-    expect(plan.layers[1].generationPrompt).toContain('只能出现在它所属的一个图层');
+    expect(plan.layers[1].generationPrompt).toContain(
+      '只能出现在它所属的一个图层'
+    );
   });
 
   it('builds IMAGE task plans from dynamic visual analysis without native PSD claims', () => {
@@ -418,18 +421,10 @@ describe('buildLayerPlan', () => {
       outputFormat: PSD_LAYER_IMAGE_TASK_CONTRACT.outputFormat,
       autoInsertToCanvas: false,
     });
-    expect(taskPlans[0].params.prompt).toContain(
-      '同画布硬性要求'
-    );
-    expect(taskPlans[0].params.prompt).toContain(
-      '原始坐标位置'
-    );
-    expect(taskPlans[0].params.prompt).toContain(
-      '真实透明背景的 PNG'
-    );
-    expect(taskPlans[1].params.prompt).toContain(
-      '文字图层要求'
-    );
+    expect(taskPlans[0].params.prompt).toContain('同画布硬性要求');
+    expect(taskPlans[0].params.prompt).toContain('原始坐标位置');
+    expect(taskPlans[0].params.prompt).toContain('真实透明背景的 PNG');
+    expect(taskPlans[1].params.prompt).toContain('文字图层要求');
     expect(taskPlans[1].params.prompt).toContain('互斥要求');
     expect(taskPlans[1].params.prompt).toContain('棋盘格');
     expect(`${taskPlans[0].taskType}`).not.toBe('psd');
@@ -478,7 +473,10 @@ describe('buildLayerPlan', () => {
     const draft = createPsdDraftFromPlan({
       plan,
       prompt: '品牌活动海报',
-      sourceImage: { url: 'data:image/png;base64,cG9zdGVy', name: 'poster.png' },
+      sourceImage: {
+        url: 'data:image/png;base64,cG9zdGVy',
+        name: 'poster.png',
+      },
       analysisTaskId: 'analysis-task',
     });
 
@@ -550,9 +548,7 @@ describe('buildLayerPlan', () => {
       status: 'processing',
       taskId: 'layer-task-3',
     });
-    expect(getRetryablePsdLayerIds(layerTaskStateMap)).toEqual([
-      'psd-layer-2',
-    ]);
+    expect(getRetryablePsdLayerIds(layerTaskStateMap)).toEqual(['psd-layer-2']);
   });
 
   it('builds one PSD-ready image edit task without GPT Image 2 unsupported params', () => {
@@ -686,14 +682,13 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.getByText('需要 1 张参考图')).toBeTruthy();
     expect(screen.getByText('等待分析简报')).toBeTruthy();
     expect(screen.getByText('分析图层结构')).toBeTruthy();
-    expect((screen.getByLabelText('PSD 图层提取简报') as HTMLTextAreaElement).value).toBe('');
+    expect(
+      (screen.getByLabelText('PSD 图层提取简报') as HTMLTextAreaElement).value
+    ).toBe('');
     expect(screen.queryByTestId('model-dropdown')).toBeNull();
     expect(screen.queryByTestId('parameters-dropdown')).toBeNull();
     const hiddenTuningCopyPattern = new RegExp(
-      [
-        '\u56fe\u5c42\u6570\u91cf',
-        '\u6a21\u578b\u53c2\u6570',
-      ].join('|')
+      ['\u56fe\u5c42\u6570\u91cf', '\u6a21\u578b\u53c2\u6570'].join('|')
     );
     expect(screen.queryByText(hiddenTuningCopyPattern)).toBeNull();
     expect(screen.queryByText('尚未生成图层计划')).toBeNull();
@@ -701,7 +696,9 @@ describe('AIImagePsdGeneration contract', () => {
     expect(
       mockState.referenceUploadProps[mockState.referenceUploadProps.length - 1]
     ).toMatchObject({ multiple: false, maxCount: 1 });
-    expect(screen.getByText(/导出始终是 \.psd-ready-workspace\.zip/)).toBeTruthy();
+    expect(
+      screen.getByText(/导出始终是 \.psd-ready-workspace\.zip/)
+    ).toBeTruthy();
   });
 
   it('reviews GPT-5.5 layer analysis before queuing editable layer assets', async () => {
@@ -728,7 +725,9 @@ describe('AIImagePsdGeneration contract', () => {
         psdLayerAnalysis: true,
       },
     });
-    expect(screen.getAllByText('gpt-5.5 正在分析图层').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('gpt-5.5 正在分析图层').length).toBeGreaterThan(
+      0
+    );
 
     mockState.tasks = [
       createMockPsdTask({
@@ -785,7 +784,9 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.getByText(/打开任务队列查看/)).toBeTruthy();
     expect(screen.getAllByText(/PSD.*工作区包/).length).toBeGreaterThan(0);
     expect(
-      mockState.createTask.mock.calls.slice(1).every((call) => call[1] === TaskType.IMAGE)
+      mockState.createTask.mock.calls
+        .slice(1)
+        .every((call) => call[1] === TaskType.IMAGE)
     ).toBe(true);
     expect(
       mockState.createTask.mock.calls
@@ -864,12 +865,9 @@ describe('AIImagePsdGeneration contract', () => {
           batchTotal: layerTaskCalls.length,
         },
         result: {
-          url: `data:image/png;base64,${[
-            'YmFja2dyb3VuZA==',
-            'aGVhZGxpbmU=',
-            'bWFw',
-            'Zm9vdGVy',
-          ][index]}`,
+          url: `data:image/png;base64,${
+            ['YmFja2dyb3VuZA==', 'aGVhZGxpbmU=', 'bWFw', 'Zm9vdGVy'][index]
+          }`,
           format: 'png',
           size: 100,
           width: 1024,
@@ -894,13 +892,13 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.getByText('分层结果叠放预览')).toBeTruthy();
     expect(screen.getByText('源图 / 叠放 / 图层目标')).toBeTruthy();
     expect(screen.getByRole('button', { name: /原图对照/ })).toBeTruthy();
-    expect(container.querySelectorAll('.psd-stage__layer-outline')).toHaveLength(
-      0
-    );
+    expect(
+      container.querySelectorAll('.psd-stage__layer-outline')
+    ).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: '显示边界' }));
-    expect(container.querySelectorAll('.psd-stage__layer-outline')).toHaveLength(
-      4
-    );
+    expect(
+      container.querySelectorAll('.psd-stage__layer-outline')
+    ).toHaveLength(4);
     expect(
       screen
         .getByRole('img', { name: '叠放图层：主标题与副标题' })
@@ -910,12 +908,12 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.getByText('源图预览')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '叠放' }));
     expect(screen.getByText('分层结果叠放预览')).toBeTruthy();
-    fireEvent.click(
-      screen.getByRole('button', { name: '查看图层：背景底图' })
-    );
+    fireEvent.click(screen.getByRole('button', { name: '查看图层：背景底图' }));
     expect(screen.getByText('查看图层：背景底图')).toBeTruthy();
     expect(
-      screen.getByRole('img', { name: 'PSD 图层结果：背景底图' }).getAttribute('src')
+      screen
+        .getByRole('img', { name: 'PSD 图层结果：背景底图' })
+        .getAttribute('src')
     ).toBe('data:image/png;base64,YmFja2dyb3VuZA==');
     fireEvent.click(
       screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
@@ -923,10 +921,9 @@ describe('AIImagePsdGeneration contract', () => {
     await waitFor(() => {
       expect(mockState.triggerBlobDownload).toHaveBeenCalledTimes(1);
     });
-    const downloadedBlob =
-      mockState.triggerBlobDownload.mock.calls[0]?.[0] as Blob;
-    const downloadedFilename =
-      mockState.triggerBlobDownload.mock.calls[0]?.[1];
+    const downloadedBlob = mockState.triggerBlobDownload.mock
+      .calls[0]?.[0] as Blob;
+    const downloadedFilename = mockState.triggerBlobDownload.mock.calls[0]?.[1];
     expect(downloadedFilename).toContain('.psd-ready-workspace.zip');
 
     const { default: JSZip } = await import('jszip');
@@ -1032,7 +1029,9 @@ describe('AIImagePsdGeneration contract', () => {
     expect(
       screen.getByRole('button', { name: '重试图层：背景底图' })
     ).toBeTruthy();
-    expect(screen.getByRole('button', { name: '重试全部失败图层' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '重试全部失败图层' })
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '重试图层：背景底图' }));
     await waitFor(() => {
@@ -1140,8 +1139,8 @@ describe('AIImagePsdGeneration contract', () => {
       expect(mockState.triggerBlobDownload).toHaveBeenCalledTimes(1);
     });
 
-    const downloadedBlob =
-      mockState.triggerBlobDownload.mock.calls[0]?.[0] as Blob;
+    const downloadedBlob = mockState.triggerBlobDownload.mock
+      .calls[0]?.[0] as Blob;
     const { default: JSZip } = await import('jszip');
     const zip = await JSZip.loadAsync(downloadedBlob);
     const manifestText = await zip.file('manifest.json')?.async('string');
@@ -1166,6 +1165,80 @@ describe('AIImagePsdGeneration contract', () => {
         status: TaskStatus.FAILED,
       }),
     ]);
+  });
+
+  it('omits stale failed layer metadata after a newer retry succeeds', async () => {
+    const plan = buildLayerPlanFromAnalysis(
+      parsePsdLayerAnalysisResponse(createMockAnalysisResponse()),
+      {
+        prompt: '品牌活动海报',
+        template: 'poster',
+        strategy: 'ai-plan',
+        language: 'zh',
+        textPolicy: {
+          preferEditableText: true,
+          avoidBakedText: true,
+        },
+        analysisModel: 'gpt-5.5',
+      }
+    );
+    const olderFailedTask = createMockPsdTask({
+      id: 'layer-task-old-failed',
+      status: TaskStatus.FAILED,
+      createdAt: 1000,
+      updatedAt: 1000,
+      params: {
+        psdPlan: {
+          layerId: 'psd-layer-2',
+          layerName: '主标题与副标题',
+        },
+      },
+      error: { code: 'API_ERROR', message: 'quota exceeded' },
+    });
+    const newerSuccessfulRetry = createMockPsdTask({
+      id: 'layer-task-new-ready',
+      status: TaskStatus.COMPLETED,
+      createdAt: 2000,
+      updatedAt: 2000,
+      params: {
+        prompt: 'retry layer',
+        model: 'gpt-image-2',
+        psdPlan: {
+          layerId: 'psd-layer-2',
+          layerName: '主标题与副标题',
+          layerType: 'text',
+        },
+      },
+      result: {
+        url: 'data:image/png;base64,cmV0cnk=',
+        format: 'png',
+        size: 100,
+      },
+    });
+
+    await downloadPsdReadyWorkspacePackage({
+      task: newerSuccessfulRetry,
+      tasks: [olderFailedTask, newerSuccessfulRetry],
+      plan,
+      prompt: '品牌活动海报',
+      referenceImages: [],
+      uiLanguage: 'zh',
+    });
+
+    const downloadedBlob = mockState.triggerBlobDownload.mock
+      .calls[0]?.[0] as Blob;
+    const { default: JSZip } = await import('jszip');
+    const zip = await JSZip.loadAsync(downloadedBlob);
+    const manifestText = await zip.file('manifest.json')?.async('string');
+    const manifest = JSON.parse(manifestText || '{}');
+
+    expect(manifest.assets.generated).toEqual([
+      expect.objectContaining({
+        taskId: 'layer-task-new-ready',
+        layerId: 'psd-layer-2',
+      }),
+    ]);
+    expect(manifest.assets.failedLayers).toEqual([]);
   });
 });
 

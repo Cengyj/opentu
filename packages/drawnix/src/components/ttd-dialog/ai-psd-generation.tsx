@@ -83,6 +83,10 @@ const EMPTY_KNOWLEDGE_CONTEXT_REFS: KnowledgeContextRef[] = [];
 
 export { buildLayerPlan };
 
+function getTaskUpdatedAt(task: Task): number {
+  return task.updatedAt || task.createdAt || 0;
+}
+
 const AIImagePsdGeneration = ({
   initialPrompt = '',
   initialImages = EMPTY_REFERENCE_IMAGES,
@@ -507,10 +511,16 @@ const AIImagePsdGeneration = ({
     () => (plan ? buildPsdLayerTaskStateMap(plan.layers, psdTasks) : {}),
     [plan, psdTasks]
   );
-  const retryablePsdLayerIds = useMemo(
-    () => getRetryablePsdLayerIds(layerTaskStateMap),
-    [layerTaskStateMap]
-  );
+  const retryablePsdLayerIds = useMemo(() => {
+    const visibleLayerIds = new Set(
+      (plan?.layers || [])
+        .filter((layer) => layer.visible && layer.type !== 'adjustment')
+        .map((layer) => layer.id)
+    );
+    return getRetryablePsdLayerIds(layerTaskStateMap).filter((layerId) =>
+      visibleLayerIds.has(layerId)
+    );
+  }, [layerTaskStateMap, plan?.layers]);
   const canGenerateLayerAssets = useMemo(
     () =>
       Boolean(
@@ -556,16 +566,26 @@ const AIImagePsdGeneration = ({
     return getTaskResultUrls(compositeTask)[0];
   }, [completedPsdTasks]);
   const layerPreviewUrls = useMemo(() => {
-    const entries: Record<string, string[]> = {};
+    const latestEntries: Record<string, { urls: string[]; updatedAt: number }> =
+      {};
     for (const task of completedPsdTasks) {
       const layerId = task.params?.psdPlan?.layerId;
       if (!layerId || layerId === 'psd-ready-composite') continue;
       const urls = getTaskResultUrls(task);
       if (urls.length > 0) {
-        entries[layerId] = urls;
+        const updatedAt = getTaskUpdatedAt(task);
+        const current = latestEntries[layerId];
+        if (!current || updatedAt >= current.updatedAt) {
+          latestEntries[layerId] = { urls, updatedAt };
+        }
       }
     }
-    return entries;
+    return Object.fromEntries(
+      Object.entries(latestEntries).map(([layerId, entry]) => [
+        layerId,
+        entry.urls,
+      ])
+    );
   }, [completedPsdTasks]);
   const [displayLayerPreviewUrls, setDisplayLayerPreviewUrls] = useState<
     Record<string, string[]>
@@ -698,8 +718,6 @@ const AIImagePsdGeneration = ({
     uiLanguage,
     uploadedImages,
   ]);
-
-
 
   return (
     <div className="ai-psd-generation-container ai-image-generation-container ai-psd-generation-container--workbench">

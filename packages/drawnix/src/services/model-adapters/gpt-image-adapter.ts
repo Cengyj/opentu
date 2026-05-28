@@ -37,10 +37,7 @@ async function loadImageUrlUtils() {
   return import('@aitu/utils');
 }
 
-type GetFileExtension = (
-  url: string,
-  mimeType?: string | undefined
-) => string;
+type GetFileExtension = (url: string, mimeType?: string | undefined) => string;
 
 function sanitizeBase64Payload(base64: string): string {
   return base64.trim().replace(/\s+/g, '');
@@ -350,8 +347,16 @@ async function imageInputToBlob(
   };
 }
 
+function getFormDataBlobConstructor(): typeof Blob {
+  if (typeof window !== 'undefined' && typeof window.Blob === 'function') {
+    return window.Blob;
+  }
+  return Blob;
+}
+
 async function normalizeFormDataBlob(blob: unknown): Promise<Blob> {
-  if (blob instanceof Blob) {
+  const BlobConstructor = getFormDataBlobConstructor();
+  if (blob instanceof BlobConstructor) {
     return blob;
   }
 
@@ -363,7 +368,7 @@ async function normalizeFormDataBlob(blob: unknown): Promise<Blob> {
     throw new Error('GPT Image 编辑图片读取结果不是有效 Blob');
   }
 
-  return new Blob([await blobLike.arrayBuffer()], {
+  return new BlobConstructor([await blobLike.arrayBuffer()], {
     type: blobLike.type || 'application/octet-stream',
   });
 }
