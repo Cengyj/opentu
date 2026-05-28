@@ -1099,7 +1099,7 @@ describe('AIImagePsdGeneration contract', () => {
       /\.psd-workbench__workspace-grid\s*\{[\s\S]*?grid-template-columns:[\s\S]*?minmax\(232px,\s*0\.54fr\)[\s\S]*?minmax\(420px,\s*2\.24fr\)[\s\S]*?minmax\(292px,\s*0\.72fr\);[\s\S]*?grid-template-areas:\s*'brief canvas plan';[\s\S]*?min-height:\s*0;/
     );
     expect(layoutScss).toMatch(
-      /\.psd-workbench__center-stage\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\);[\s\S]*?var\(--psd-stage-bg\);/
+      /\.psd-workbench__center-stage\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\);[\s\S]*?var\(--psd-stage-bg\)/
     );
     expect(layoutScss).toMatch(
       /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1\.1fr\) minmax\(254px,\s*0\.7fr\);[\s\S]*?overflow:\s*hidden;/
