@@ -63,7 +63,10 @@ export function PsdWorkbenchShell({
             uiLanguage === 'zh' ? 'PSD 连续画布' : 'PSD continuous canvas'
           }
         >
-          <div className="psd-workbench__rail-marker psd-workbench__rail-marker--canvas" aria-hidden="true">
+          <div
+            className="psd-workbench__rail-marker psd-workbench__rail-marker--canvas"
+            aria-hidden="true"
+          >
             {labels.canvas}
           </div>
           {canvas}
@@ -82,9 +85,7 @@ export function PsdWorkbenchShell({
           </div>
           <section
             className="psd-workbench__plan-column"
-            aria-label={
-              uiLanguage === 'zh' ? 'PSD 图层计划' : 'PSD layer plan'
-            }
+            aria-label={uiLanguage === 'zh' ? 'PSD 图层计划' : 'PSD layer plan'}
           >
             {plan}
           </section>

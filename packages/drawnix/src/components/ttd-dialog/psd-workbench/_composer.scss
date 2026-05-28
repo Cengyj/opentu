@@ -605,11 +605,7 @@
 
     &:disabled {
       border-color: var(--psd-control-disabled-border);
-      background: linear-gradient(
-        180deg,
-        #fafbfc,
-        var(--psd-surface-soft)
-      );
+      background: linear-gradient(180deg, #fafbfc, var(--psd-surface-soft));
       color: var(--psd-control-disabled-text);
       cursor: not-allowed;
       box-shadow: var(--psd-control-disabled-shadow);

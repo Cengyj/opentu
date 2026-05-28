@@ -939,42 +939,42 @@ describe('AIImagePsdGeneration contract', () => {
       root?.classList.contains('ai-psd-generation-container--workbench')
     ).toBe(true);
     expect(workbench).toBeTruthy();
-    expect(workbench?.querySelectorAll('.psd-workbench__workspace-grid')).toHaveLength(
-      1
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__left-rail')).toHaveLength(
-      1
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__center-stage')).toHaveLength(
-      1
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__right-rail')).toHaveLength(
-      1
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__main-column')).toHaveLength(
-      0
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__side-column')).toHaveLength(
-      0
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__region--header')).toHaveLength(
-      1
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__region--brief')).toHaveLength(
-      1
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__region--canvas')).toHaveLength(
-      1
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__region--plan')).toHaveLength(
-      1
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__operations')).toHaveLength(
-      1
-    );
-    expect(workbench?.querySelectorAll('.psd-workbench__rail-marker')).toHaveLength(
-      3
-    );
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__workspace-grid')
+    ).toHaveLength(1);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__left-rail')
+    ).toHaveLength(1);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__center-stage')
+    ).toHaveLength(1);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__right-rail')
+    ).toHaveLength(1);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__main-column')
+    ).toHaveLength(0);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__side-column')
+    ).toHaveLength(0);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__region--header')
+    ).toHaveLength(1);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__region--brief')
+    ).toHaveLength(1);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__region--canvas')
+    ).toHaveLength(1);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__region--plan')
+    ).toHaveLength(1);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__operations')
+    ).toHaveLength(1);
+    expect(
+      workbench?.querySelectorAll('.psd-workbench__rail-marker')
+    ).toHaveLength(3);
     expect(screen.getByText('01 简报 / 源图')).toBeTruthy();
     expect(screen.getByText('02 主画布工作台')).toBeTruthy();
     expect(screen.getByText('03 图层 / 状态 / 导出')).toBeTruthy();
@@ -1184,9 +1184,13 @@ describe('AIImagePsdGeneration contract', () => {
 
     expect(sourceInput).toBeTruthy();
     expect(screen.getByText('拖入、粘贴或选择一张源图')).toBeTruthy();
-    expect(screen.getByText('用于 CHAT 图层分析；这里只保留 1 张 PSD 分层参考图。')).toBeTruthy();
+    expect(
+      screen.getByText('用于 CHAT 图层分析；这里只保留 1 张 PSD 分层参考图。')
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: /载入源图/ })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '从素材库选择源图' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '从素材库选择源图' })
+    ).toBeTruthy();
     expect(screen.queryByTestId('reference-upload')).toBeNull();
 
     const uploadedFile = new File(['uploaded'], 'uploaded-source.png', {
@@ -1197,9 +1201,13 @@ describe('AIImagePsdGeneration contract', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getAllByText('uploaded-source.png').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('uploaded-source.png').length).toBeGreaterThan(
+        0
+      );
     });
-    expect(screen.getByRole('img', { name: 'uploaded-source.png' })).toBeTruthy();
+    expect(
+      screen.getByRole('img', { name: 'uploaded-source.png' })
+    ).toBeTruthy();
     expect(mockState.addAsset).toHaveBeenLastCalledWith(
       uploadedFile,
       AssetType.IMAGE,
@@ -1214,9 +1222,13 @@ describe('AIImagePsdGeneration contract', () => {
     fireEvent.drop(uploader, { dataTransfer: { files: [droppedFile] } });
 
     await waitFor(() => {
-      expect(screen.getAllByText('dropped-source.png').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('dropped-source.png').length).toBeGreaterThan(
+        0
+      );
     });
-    expect(screen.getByRole('img', { name: 'dropped-source.png' })).toBeTruthy();
+    expect(
+      screen.getByRole('img', { name: 'dropped-source.png' })
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: '移除源图' }));
     const pastedFile = new File(['pasted'], 'pasted-source.png', {
@@ -1225,7 +1237,9 @@ describe('AIImagePsdGeneration contract', () => {
     fireEvent.paste(uploader, { clipboardData: { files: [pastedFile] } });
 
     await waitFor(() => {
-      expect(screen.getAllByText('pasted-source.png').length).toBeGreaterThan(0);
+      expect(screen.getAllByText('pasted-source.png').length).toBeGreaterThan(
+        0
+      );
     });
     expect(screen.getByRole('img', { name: 'pasted-source.png' })).toBeTruthy();
     expect(screen.getByLabelText('PSD 图层提取简报')).toBeTruthy();

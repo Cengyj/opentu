@@ -66,7 +66,11 @@
         var(--psd-rail-bg) 74%,
         var(--psd-rail-bg) 100%
       ),
-      radial-gradient(circle at 48% 22%, rgba(255, 122, 26, 0.18), transparent 34%),
+      radial-gradient(
+        circle at 48% 22%,
+        rgba(255, 122, 26, 0.18),
+        transparent 34%
+      ),
       rgba(255, 255, 255, 0.84);
     box-shadow: var(--psd-shadow-panel);
   }
