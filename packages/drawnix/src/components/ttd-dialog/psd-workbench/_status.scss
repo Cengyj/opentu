@@ -45,12 +45,33 @@
 
   .psd-generation-status--success {
     border-left-color: var(--psd-success);
+    background: linear-gradient(
+      90deg,
+      var(--psd-success-soft),
+      var(--psd-surface-raised)
+    );
   }
   .psd-generation-status--warning {
     border-left-color: var(--psd-warning);
+    background: linear-gradient(
+      90deg,
+      var(--psd-warning-soft),
+      var(--psd-surface-raised)
+    );
   }
   .psd-generation-status--error {
     border-left-color: var(--psd-danger);
+    background: linear-gradient(
+      90deg,
+      var(--psd-danger-soft),
+      var(--psd-surface-raised)
+    );
+  }
+  .psd-generation-status--active {
+    border-left-color: var(--psd-accent);
+  }
+  .psd-generation-status--queued {
+    border-left-color: var(--psd-border-strong);
   }
   .psd-generation-status--success .psd-generation-status__progress span {
     background: var(--psd-success);
