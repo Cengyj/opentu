@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import React from 'react';
 import {
   cleanup,
@@ -1011,8 +1011,12 @@ describe('AIImagePsdGeneration contract', () => {
   });
 
   it('locks the desktop PSD workbench to one no-page-scroll viewport shell', () => {
+    const layoutScssPath =
+      'packages/drawnix/src/components/ttd-dialog/psd-workbench/_layout.scss';
+    const packageCwdLayoutScssPath =
+      'src/components/ttd-dialog/psd-workbench/_layout.scss';
     const layoutScss = readFileSync(
-      'packages/drawnix/src/components/ttd-dialog/psd-workbench/_layout.scss',
+      existsSync(layoutScssPath) ? layoutScssPath : packageCwdLayoutScssPath,
       'utf8'
     );
 
