@@ -861,8 +861,10 @@ describe('AIImagePsdGeneration contract', () => {
   it('renders an Opentu PSD workbench composer without tuning controls', () => {
     render(<AIImagePsdGeneration />);
 
-    expect(screen.getByText('图层任务简报')).toBeTruthy();
-    expect(screen.getByText(/同一个工作区完成源图、拆层目标/)).toBeTruthy();
+    expect(screen.getByText('PSD 分层任务简报')).toBeTruthy();
+    expect(
+      screen.getByText(/像制作任务单一样管理源图、拆层目标、约束和主操作/)
+    ).toBeTruthy();
     expect(screen.getByLabelText('PSD 分层任务简报')).toBeTruthy();
     expect(screen.getByLabelText('PSD 连续画布')).toBeTruthy();
     expect(screen.getByLabelText('PSD 图层计划')).toBeTruthy();
@@ -885,7 +887,10 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.queryByText('尚未生成图层计划')).toBeNull();
     expect(screen.queryByText('PSD 文件预览')).toBeNull();
     expect(screen.getByLabelText('PSD 源图上传区')).toBeTruthy();
-    expect(screen.getByText('拖入或选择一张源图')).toBeTruthy();
+    expect(screen.getByText('建立 PSD 源图上下文')).toBeTruthy();
+    expect(screen.getByText('上传、拖拽、粘贴，或从素材库/媒体库导入一张分层参考图。')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '本地载入' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '从素材库导入' })).toBeTruthy();
     expect(screen.queryByTestId('reference-upload')).toBeNull();
     expect(
       screen.getByText(/导出始终是 \.psd-ready-workspace\.zip/)
@@ -901,11 +906,14 @@ describe('AIImagePsdGeneration contract', () => {
       '.psd-source-field__input'
     ) as HTMLInputElement;
 
-    fireEvent.click(screen.getByRole('button', { name: '从素材库选择' }));
+    fireEvent.click(screen.getByRole('button', { name: '从素材库导入' }));
     fireEvent.click(screen.getByTestId('mock-media-library-select'));
     await waitFor(() => {
-      expect(screen.getByText('library-poster.png')).toBeTruthy();
+      expect(
+        screen.getByRole('img', { name: 'library-poster.png' })
+      ).toBeTruthy();
     });
+    expect(screen.getByText('本地源图')).toBeTruthy();
     expect(screen.getByRole('button', { name: '分析图层结构' })).toHaveProperty(
       'disabled',
       false
@@ -917,7 +925,9 @@ describe('AIImagePsdGeneration contract', () => {
       },
     });
     await waitFor(() => {
-      expect(screen.getByText('uploaded-poster.png')).toBeTruthy();
+      expect(
+        screen.getByRole('img', { name: 'uploaded-poster.png' })
+      ).toBeTruthy();
     });
 
     fireEvent.drop(sourceDropZone, {
@@ -926,7 +936,9 @@ describe('AIImagePsdGeneration contract', () => {
       },
     });
     await waitFor(() => {
-      expect(screen.getByText('dropped-poster.png')).toBeTruthy();
+      expect(
+        screen.getByRole('img', { name: 'dropped-poster.png' })
+      ).toBeTruthy();
     });
 
     fireEvent.paste(sourceDropZone, {
@@ -935,7 +947,9 @@ describe('AIImagePsdGeneration contract', () => {
       },
     });
     await waitFor(() => {
-      expect(screen.getByText('pasted-poster.png')).toBeTruthy();
+      expect(
+        screen.getByRole('img', { name: 'pasted-poster.png' })
+      ).toBeTruthy();
     });
   });
 

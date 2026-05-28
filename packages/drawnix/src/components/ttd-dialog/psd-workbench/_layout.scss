@@ -2,7 +2,12 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: var(--psd-bg);
+  background: radial-gradient(
+      circle at 18% 0%,
+      rgba(255, 122, 26, 0.08),
+      transparent 30%
+    ),
+    linear-gradient(180deg, #fff, var(--psd-bg));
   color: var(--psd-text);
   font-family: var(--psd-font);
 
@@ -17,6 +22,19 @@
     font-family: inherit;
   }
 
+  button {
+    transition: background var(--psd-transition),
+      border-color var(--psd-transition), box-shadow var(--psd-transition),
+      color var(--psd-transition), opacity var(--psd-transition),
+      transform var(--psd-transition);
+  }
+
+  button:disabled,
+  input:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+  }
+
   .psd-workbench {
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
@@ -29,15 +47,20 @@
   .psd-workbench__workspace-grid {
     display: grid;
     grid-template-areas:
-      'brief canvas plan'
-      'brief canvas operations';
-    grid-template-columns: minmax(292px, 320px) minmax(460px, 1fr) minmax(
-        340px,
-        420px
+      'brief canvas operations'
+      'brief plan operations';
+    grid-template-columns: minmax(300px, 350px) minmax(520px, 1fr) minmax(
+        300px,
+        360px
       );
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr) minmax(244px, 34%);
     gap: var(--psd-space-3);
     min-height: 0;
+    padding: var(--psd-space-2);
+    border: 1px solid var(--psd-border);
+    border-radius: calc(var(--psd-radius-xl) + 4px);
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: var(--psd-shadow-panel);
   }
 
   .psd-workbench__brief-column,
@@ -67,8 +90,8 @@
     grid-area: operations;
     display: grid;
     gap: var(--psd-space-3);
-    grid-template-columns: minmax(0, 1fr);
-    align-content: start;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-content: stretch;
   }
 
   .psd-workbench__composer-panel,
@@ -93,23 +116,24 @@
 
   .psd-workbench__preview {
     display: grid;
-    gap: var(--psd-space-3);
+    gap: var(--psd-space-2);
     grid-template-rows: auto minmax(0, 1fr) auto;
     min-width: 0;
   }
 
-  @media (max-width: 1280px) {
+  @media (max-width: 1320px) {
     .psd-workbench__workspace-grid {
       grid-template-areas:
         'brief canvas'
-        'plan plan'
+        'brief plan'
         'operations operations';
-      grid-template-columns: minmax(286px, 320px) minmax(420px, 1fr);
-      grid-template-rows: minmax(460px, 1fr) minmax(280px, 36%) auto;
+      grid-template-columns: minmax(286px, 330px) minmax(420px, 1fr);
+      grid-template-rows: minmax(440px, 1fr) minmax(250px, 34%) auto;
     }
 
     .psd-workbench__operations {
       grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: auto;
       align-items: stretch;
     }
   }
@@ -132,6 +156,10 @@
       grid-template-rows: auto minmax(420px, 1fr) auto auto;
       gap: var(--psd-space-2);
       min-height: initial;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
     }
 
     .psd-workbench__composer-panel,

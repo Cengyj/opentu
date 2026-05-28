@@ -14,9 +14,6 @@ import {
   type Asset,
 } from '../../../types/asset.types';
 import type { ReferenceImage } from '../shared';
-import { MediaLibraryModal } from '../../media-library/MediaLibraryModal';
-import type { Asset } from '../../../types/asset.types';
-import { AssetType, SelectionMode } from '../../../types/asset.types';
 
 interface PsdSourceImageFieldProps {
   uiLanguage: 'zh' | 'en';
@@ -49,18 +46,8 @@ function fileToReferenceImage(file: File): Promise<ReferenceImage> {
   });
 }
 
-function blobToReferenceImage(blob: Blob, name: string): Promise<ReferenceImage> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      resolve({
-        url: reader.result as string,
-        name,
-      });
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+function isLibraryAssetUrl(url: string): boolean {
+  return !url.startsWith('data:') && !url.startsWith('blob:');
 }
 
 export function PsdSourceImageField({
@@ -75,53 +62,51 @@ export function PsdSourceImageField({
   const [showMediaLibrary, setShowMediaLibrary] = useState(false);
   const sourceImage = images[0] ?? null;
 
-  const labels = uiLanguage === 'zh'
-    ? {
-        invalidFile: '请上传图片文件',
-        fileTooLarge: '源图不能超过 25MB',
-        loadFailed: '源图读取失败',
-        pick: '载入源图',
-        pickFromLibrary: '从素材库选择',
-        replaceFromLibrary: '素材库替换',
-        replace: '替换源图',
-        remove: '移除源图',
-        drop: '松开以载入 PSD 源图',
-        emptyTitle: '拖入或选择一张源图',
-        emptyHint: '可上传、拖拽、粘贴，或从素材库/媒体库导入；这里只保留 1 张 PSD 分层参考图。',
-        loaded: '源图已载入',
-        localOnly: '本地源图',
-        libraryOnly: '素材库源图',
-        librarySelectText: '作为 PSD 源图',
-      }
-    : {
-        invalidFile: 'Please upload an image file',
-        fileTooLarge: 'Source image must be under 25MB',
-        loadFailed: 'Failed to read source image',
-        pick: 'Load source',
-        pickFromLibrary: 'Choose from library',
-        replaceFromLibrary: 'Replace from library',
-        replace: 'Replace source',
-        remove: 'Remove source',
-        drop: 'Drop to load PSD source',
-        emptyTitle: 'Drop or choose one source image',
-        emptyHint: 'Upload, drop, paste, or import from the media library; this brief keeps one PSD layering reference.',
-        loaded: 'Source loaded',
-        localOnly: 'Local source',
-        libraryOnly: 'Library source',
-        librarySelectText: 'Use as PSD source',
-      };
+  const labels =
+    uiLanguage === 'zh'
+      ? {
+          invalidFile: '请上传图片文件',
+          fileTooLarge: '源图不能超过 25MB',
+          loadFailed: '源图读取失败',
+          pick: '本地载入',
+          pickFromLibrary: '从素材库导入',
+          replaceFromLibrary: '素材库替换',
+          replace: '替换源图',
+          remove: '移除源图',
+          drop: '松开以载入 PSD 源图',
+          emptyTitle: '建立 PSD 源图上下文',
+          emptyHint: '上传、拖拽、粘贴，或从素材库/媒体库导入一张分层参考图。',
+          loaded: '源图已载入',
+          localOnly: '本地源图',
+          libraryOnly: '素材库源图',
+          librarySelectText: '作为 PSD 源图',
+        }
+      : {
+          invalidFile: 'Please upload an image file',
+          fileTooLarge: 'Source image must be under 25MB',
+          loadFailed: 'Failed to read source image',
+          pick: 'Load local',
+          pickFromLibrary: 'Import from library',
+          replaceFromLibrary: 'Replace from library',
+          replace: 'Replace source',
+          remove: 'Remove source',
+          drop: 'Drop to load PSD source',
+          emptyTitle: 'Build the PSD source context',
+          emptyHint:
+            'Upload, drop, paste, or import one layering reference from the media library.',
+          loaded: 'Source loaded',
+          localOnly: 'Local source',
+          libraryOnly: 'Library source',
+          librarySelectText: 'Use as PSD source',
+        };
 
   const openFilePicker = useCallback(() => {
-    if (!disabled) {
-      fileInputRef.current?.click();
-    }
+    if (!disabled) fileInputRef.current?.click();
   }, [disabled]);
 
   const openMediaLibrary = useCallback(() => {
-    if (!disabled && !isImportingLibraryImage) {
-      setIsMediaLibraryOpen(true);
-    }
-  }, [disabled, isImportingLibraryImage]);
+    if (!disabled) setShowMediaLibrary(true);
+  }, [disabled]);
 
   const handleFile = useCallback(
     async (file: File | undefined) => {
@@ -139,18 +124,22 @@ export function PsdSourceImageField({
         onImagesChange([image]);
         onError?.(null);
       } catch (error) {
-        console.error('[PsdSourceImageField] Failed to read source image:', error);
+        console.error(
+          '[PsdSourceImageField] Failed to read source image:',
+          error
+        );
         onError?.(labels.loadFailed);
       }
     },
-    [disabled, labels.fileTooLarge, labels.invalidFile, labels.loadFailed, onError, onImagesChange]
+    [
+      disabled,
+      labels.fileTooLarge,
+      labels.invalidFile,
+      labels.loadFailed,
+      onError,
+      onImagesChange,
+    ]
   );
-
-  const openMediaLibrary = useCallback(() => {
-    if (!disabled) {
-      setShowMediaLibrary(true);
-    }
-  }, [disabled]);
 
   const handleMediaLibrarySelect = useCallback(
     (asset: Asset) => {
@@ -206,7 +195,9 @@ export function PsdSourceImageField({
   return (
     <>
       <div
-        className={`psd-source-field${isDragging ? ' psd-source-field--dragging' : ''}${disabled ? ' psd-source-field--disabled' : ''}`}
+        className={`psd-source-field${
+          isDragging ? ' psd-source-field--dragging' : ''
+        }${disabled ? ' psd-source-field--disabled' : ''}`}
         onDragEnter={(event) => {
           event.preventDefault();
           if (!disabled) setIsDragging(true);
@@ -216,7 +207,9 @@ export function PsdSourceImageField({
         onDrop={handleDrop}
         onPaste={handlePaste}
         tabIndex={disabled ? -1 : 0}
-        aria-label={uiLanguage === 'zh' ? 'PSD 源图上传区' : 'PSD source image uploader'}
+        aria-label={
+          uiLanguage === 'zh' ? 'PSD 源图上传区' : 'PSD source image uploader'
+        }
       >
         <input
           ref={fileInputRef}
@@ -230,27 +223,45 @@ export function PsdSourceImageField({
         {sourceImage ? (
           <>
             <div className="psd-source-field__preview-wrap">
-              <img src={sourceImage.url} alt={sourceImage.name} className="psd-source-field__preview" />
+              <img
+                src={sourceImage.url}
+                alt={sourceImage.name}
+                className="psd-source-field__preview"
+              />
             </div>
             <div className="psd-source-field__meta">
-              <span className="psd-source-field__status"><FileImage size={13} /> {labels.loaded}</span>
+              <span className="psd-source-field__status">
+                <FileImage size={13} /> {labels.loaded}
+              </span>
               <strong title={sourceImage.name}>{sourceImage.name}</strong>
               <small>
                 {sourceImage.file
                   ? formatFileSize(sourceImage.file.size)
-                  : sourceImage.url.startsWith('/asset-library/')
+                  : isLibraryAssetUrl(sourceImage.url)
                   ? labels.libraryOnly
                   : labels.localOnly}
               </small>
             </div>
             <div className="psd-source-field__actions">
-              <button type="button" onClick={openFilePicker} disabled={disabled}>
+              <button
+                type="button"
+                onClick={openFilePicker}
+                disabled={disabled}
+              >
                 <Replace size={13} /> {labels.replace}
               </button>
-              <button type="button" onClick={openMediaLibrary} disabled={disabled}>
+              <button
+                type="button"
+                onClick={openMediaLibrary}
+                disabled={disabled}
+              >
                 <FolderOpen size={13} /> {labels.replaceFromLibrary}
               </button>
-              <button type="button" onClick={() => onImagesChange([])} disabled={disabled}>
+              <button
+                type="button"
+                onClick={() => onImagesChange([])}
+                disabled={disabled}
+              >
                 <X size={13} /> {labels.remove}
               </button>
             </div>
@@ -263,10 +274,18 @@ export function PsdSourceImageField({
             <strong>{isDragging ? labels.drop : labels.emptyTitle}</strong>
             <small>{labels.emptyHint}</small>
             <div className="psd-source-field__empty-actions">
-              <button type="button" onClick={openFilePicker} disabled={disabled}>
+              <button
+                type="button"
+                onClick={openFilePicker}
+                disabled={disabled}
+              >
                 <ImagePlus size={13} /> {labels.pick}
               </button>
-              <button type="button" onClick={openMediaLibrary} disabled={disabled}>
+              <button
+                type="button"
+                onClick={openMediaLibrary}
+                disabled={disabled}
+              >
                 <FolderOpen size={13} /> {labels.pickFromLibrary}
               </button>
             </div>

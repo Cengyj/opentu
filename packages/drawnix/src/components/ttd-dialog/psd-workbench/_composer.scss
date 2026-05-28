@@ -6,6 +6,13 @@
     padding: var(--psd-space-4);
     border-radius: var(--psd-radius-xl);
     overflow-y: auto;
+    border-left: 4px solid var(--psd-accent);
+    background: linear-gradient(
+        180deg,
+        rgba(255, 122, 26, 0.055),
+        transparent 148px
+      ),
+      var(--psd-surface-raised);
   }
 
   .psd-composer-identity {
@@ -17,7 +24,7 @@
     h2 {
       margin: 0;
       color: var(--psd-text);
-      font-size: 22px;
+      font-size: 19px;
       font-weight: 850;
       letter-spacing: -0.03em;
     }
@@ -57,7 +64,7 @@
   .psd-composer-action {
     border: 1px solid var(--psd-border);
     border-radius: var(--psd-radius-md);
-    background: var(--psd-surface);
+    background: var(--psd-surface-raised);
   }
 
   .psd-readiness-board__item {
@@ -165,12 +172,12 @@
     display: grid;
     min-height: 132px;
     overflow: hidden;
-    border: 1px dashed var(--psd-border-strong);
+    border: 1px solid var(--psd-border-strong);
     border-radius: var(--psd-radius-lg);
     background: linear-gradient(
         135deg,
-        rgba(243, 156, 18, 0.08),
-        transparent 42%
+        rgba(255, 122, 26, 0.08),
+        transparent 44%
       ),
       var(--psd-surface-soft);
     transition: border-color var(--psd-transition),
