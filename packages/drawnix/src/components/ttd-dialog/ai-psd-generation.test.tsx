@@ -888,11 +888,20 @@ describe('AIImagePsdGeneration contract', () => {
     expect(workbench?.querySelectorAll('.psd-workbench__workspace-grid')).toHaveLength(
       1
     );
-    expect(workbench?.querySelectorAll('.psd-workbench__main-column')).toHaveLength(
+    expect(workbench?.querySelectorAll('.psd-workbench__left-rail')).toHaveLength(
       1
     );
-    expect(workbench?.querySelectorAll('.psd-workbench__side-column')).toHaveLength(
+    expect(workbench?.querySelectorAll('.psd-workbench__center-stage')).toHaveLength(
       1
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__right-rail')).toHaveLength(
+      1
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__main-column')).toHaveLength(
+      0
+    );
+    expect(workbench?.querySelectorAll('.psd-workbench__side-column')).toHaveLength(
+      0
     );
     expect(workbench?.querySelectorAll('.psd-workbench__region--header')).toHaveLength(
       1
@@ -917,6 +926,7 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.getByLabelText('PSD 分层任务简报')).toBeTruthy();
     expect(screen.getByLabelText('PSD 连续画布')).toBeTruthy();
     expect(screen.getByLabelText('PSD 图层计划')).toBeTruthy();
+    expect(screen.getByLabelText('PSD 图层计划、状态与导出')).toBeTruthy();
     expect(screen.getByLabelText('PSD 检查器、生成状态与导出')).toBeTruthy();
     expect(screen.getByLabelText('PSD 工作流阶段')).toBeTruthy();
     expect(screen.getByText('画布预览')).toBeTruthy();
@@ -958,11 +968,16 @@ describe('AIImagePsdGeneration contract', () => {
       /\.psd-workbench\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\);[\s\S]*?height:\s*100%;/
     );
     expect(layoutScss).toMatch(
-      /\.psd-workbench__workspace-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1\.35fr\) minmax\(360px,\s*0\.85fr\);[\s\S]*?min-height:\s*0;/
+      /\.psd-workbench__workspace-grid\s*\{[\s\S]*?grid-template-columns:[\s\S]*?minmax\(286px,\s*0\.72fr\)[\s\S]*?minmax\(440px,\s*1\.68fr\)[\s\S]*?minmax\(344px,\s*0\.86fr\);[\s\S]*?grid-template-areas:\s*'brief canvas plan';[\s\S]*?min-height:\s*0;/
+    );
+    expect(layoutScss).toMatch(
+      /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1\.12fr\) minmax\(292px,\s*0\.88fr\);[\s\S]*?overflow:\s*hidden;/
     );
     expect(layoutScss).toMatch(
       /\.psd-workbench__operations\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;/
     );
+    expect(layoutScss).not.toContain('psd-workbench__main-column');
+    expect(layoutScss).not.toContain('psd-workbench__side-column');
   });
 
   it('loads the PSD source image from the media library as well as local upload paths', async () => {

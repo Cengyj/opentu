@@ -3,12 +3,7 @@
   max-height: 100%;
   min-height: 0;
   overflow: hidden;
-  background: radial-gradient(
-      circle at 18% 0%,
-      rgba(255, 122, 26, 0.08),
-      transparent 30%
-    ),
-    linear-gradient(180deg, #fff, var(--psd-bg));
+  background: linear-gradient(180deg, #fff, var(--psd-bg));
   color: var(--psd-text);
   font-family: var(--psd-font);
 
@@ -50,7 +45,11 @@
 
   .psd-workbench__workspace-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.85fr);
+    grid-template-columns:
+      minmax(286px, 0.72fr)
+      minmax(440px, 1.68fr)
+      minmax(344px, 0.86fr);
+    grid-template-areas: 'brief canvas plan';
     gap: var(--psd-space-3);
     height: 100%;
     min-height: 0;
@@ -58,47 +57,48 @@
     padding: var(--psd-space-2);
     border: 1px solid var(--psd-border);
     border-radius: calc(var(--psd-radius-xl) + 4px);
-    background: rgba(255, 255, 255, 0.72);
+    background: linear-gradient(
+        90deg,
+        rgba(255, 122, 26, 0.055),
+        transparent 22%,
+        transparent 78%,
+        rgba(31, 35, 41, 0.03)
+      ),
+      rgba(255, 255, 255, 0.78);
     box-shadow: var(--psd-shadow-panel);
   }
 
-  .psd-workbench__main-column,
-  .psd-workbench__side-column,
-  .psd-workbench__brief-column,
-  .psd-workbench__canvas-column,
+  .psd-workbench__left-rail,
+  .psd-workbench__center-stage,
+  .psd-workbench__right-rail,
   .psd-workbench__plan-column,
   .psd-workbench__operations {
     min-width: 0;
     min-height: 0;
   }
 
-  .psd-workbench__main-column,
-  .psd-workbench__side-column {
+  .psd-workbench__left-rail {
+    grid-area: brief;
     display: grid;
-    gap: var(--psd-space-3);
-  }
-
-  .psd-workbench__main-column {
-    grid-template-rows: minmax(168px, 0.4fr) minmax(0, 1fr);
-  }
-
-  .psd-workbench__side-column {
-    grid-template-rows: minmax(0, 1.05fr) minmax(0, 0.95fr);
-  }
-
-  .psd-workbench__brief-column {
-    min-height: 0;
     overflow: hidden;
   }
 
-  .psd-workbench__canvas-column {
+  .psd-workbench__center-stage {
+    grid-area: canvas;
     display: grid;
+    overflow: hidden;
+  }
+
+  .psd-workbench__right-rail {
+    grid-area: plan;
+    display: grid;
+    grid-template-rows: minmax(0, 1.12fr) minmax(292px, 0.88fr);
+    gap: var(--psd-space-3);
     overflow: hidden;
   }
 
   .psd-workbench__plan-column {
     display: grid;
-    min-height: 0;
     overflow: hidden;
   }
 
@@ -137,30 +137,20 @@
     min-width: 0;
   }
 
-  @media (max-width: 900px) {
-    .psd-workbench {
-      overflow-y: auto;
-    }
-
+  @media (max-width: 1220px) {
     .psd-workbench__workspace-grid {
-      grid-template-columns: 1fr;
-      height: auto;
-      overflow: visible;
+      grid-template-columns:
+        minmax(260px, 0.76fr)
+        minmax(360px, 1.45fr)
+        minmax(316px, 0.9fr);
     }
 
-    .psd-workbench__main-column,
-    .psd-workbench__side-column {
-      grid-template-rows: auto;
-    }
-
-    .psd-workbench__operations {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      grid-template-rows: auto;
-      align-items: stretch;
+    .psd-workbench__right-rail {
+      grid-template-rows: minmax(0, 1fr) minmax(268px, 0.86fr);
     }
   }
 
-  @media (max-width: 900px) {
+  @media (max-width: 980px) {
     .psd-workbench {
       grid-template-rows: auto auto;
       padding: var(--psd-space-2);
@@ -170,32 +160,35 @@
 
     .psd-workbench__workspace-grid {
       grid-template-columns: 1fr;
+      grid-template-areas:
+        'brief'
+        'canvas'
+        'plan';
       gap: var(--psd-space-2);
+      height: auto;
       min-height: initial;
+      overflow: visible;
       padding: 0;
       border: 0;
       background: transparent;
       box-shadow: none;
     }
 
-    .psd-workbench__main-column,
-    .psd-workbench__side-column {
-      gap: var(--psd-space-2);
-    }
-
-    .psd-workbench__main-column,
-    .psd-workbench__side-column {
-      gap: var(--psd-space-2);
-    }
-
-    .psd-workbench__composer-panel,
-    .psd-workbench__preview,
-    .psd-layer-workspace {
+    .psd-workbench__left-rail,
+    .psd-workbench__center-stage,
+    .psd-workbench__right-rail {
       min-height: 360px;
+    }
+
+    .psd-workbench__right-rail {
+      grid-template-rows: auto auto;
+      gap: var(--psd-space-2);
+      overflow: visible;
     }
 
     .psd-workbench__operations {
       grid-template-columns: 1fr;
+      grid-template-rows: auto;
     }
   }
 }
