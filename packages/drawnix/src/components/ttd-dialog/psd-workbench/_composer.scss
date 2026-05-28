@@ -280,8 +280,17 @@
       line-height: 1.45;
     }
 
+  }
+
+  .psd-source-field__empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--psd-space-2);
+
     button {
       display: inline-flex;
+      min-height: 30px;
       align-items: center;
       justify-content: center;
       gap: var(--psd-space-1);
@@ -294,52 +303,21 @@
       font-size: 11px;
       font-weight: 850;
 
+      &:nth-child(2) {
+        border-color: var(--psd-border);
+        background: var(--psd-surface-raised);
+        color: var(--psd-accent-strong);
+      }
+
       &:hover:not(:disabled) {
         border-color: var(--psd-accent-strong);
-        background: var(--psd-accent-strong);
+        box-shadow: 0 6px 16px var(--psd-accent-soft);
       }
 
       &:disabled {
         cursor: not-allowed;
         opacity: 0.55;
       }
-    }
-  }
-
-  .psd-source-field__empty-actions {
-    display: inline-flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--psd-space-2);
-
-    button:nth-child(2) {
-      background: var(--psd-surface-raised);
-      color: var(--psd-accent-strong);
-    }
-  }
-
-  .psd-source-field__library {
-    display: inline-flex;
-    min-height: 34px;
-    align-items: center;
-    justify-content: center;
-    gap: var(--psd-space-1);
-    border: 1px solid var(--psd-border);
-    border-radius: var(--psd-radius-sm);
-    background: var(--psd-surface-raised);
-    color: var(--psd-accent-strong);
-    cursor: pointer;
-    font-size: 11px;
-    font-weight: 850;
-
-    &:hover:not(:disabled) {
-      border-color: var(--psd-accent);
-      box-shadow: 0 0 0 3px var(--psd-accent-soft);
-    }
-
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.55;
     }
   }
 
@@ -414,7 +392,7 @@
 
   .psd-source-field__actions {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
     gap: var(--psd-space-2);
 
     button {
@@ -524,6 +502,10 @@
       color: var(--td-text-color-disabled, var(--psd-muted));
       cursor: not-allowed;
       box-shadow: none;
+    }
+
+    &--busy svg {
+      animation: psd-spin 0.85s linear infinite;
     }
   }
 }

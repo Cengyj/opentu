@@ -31,32 +31,38 @@ export function PsdWorkbenchShell({
       </div>
 
       <div className="psd-workbench__workspace-grid">
-        <section
-          className="psd-workbench__region psd-workbench__region--brief psd-workbench__brief-column"
-          aria-label={
-            uiLanguage === 'zh' ? 'PSD 分层任务简报' : 'PSD layer task brief'
-          }
-        >
-          {brief}
-        </section>
+        <div className="psd-workbench__main-column">
+          <section
+            className="psd-workbench__region psd-workbench__region--brief psd-workbench__brief-column"
+            aria-label={
+              uiLanguage === 'zh' ? 'PSD 分层任务简报' : 'PSD layer task brief'
+            }
+          >
+            {brief}
+          </section>
 
-        <section
-          className="psd-workbench__region psd-workbench__region--canvas psd-workbench__canvas-column"
-          aria-label={
-            uiLanguage === 'zh' ? 'PSD 连续画布' : 'PSD continuous canvas'
-          }
-        >
-          {canvas}
-        </section>
+          <section
+            className="psd-workbench__region psd-workbench__region--canvas psd-workbench__canvas-column"
+            aria-label={
+              uiLanguage === 'zh' ? 'PSD 连续画布' : 'PSD continuous canvas'
+            }
+          >
+            {canvas}
+          </section>
+        </div>
 
-        <section
-          className="psd-workbench__region psd-workbench__region--plan psd-workbench__plan-column"
-          aria-label={uiLanguage === 'zh' ? 'PSD 图层计划' : 'PSD layer plan'}
-        >
-          {plan}
-        </section>
+        <div className="psd-workbench__side-column">
+          <section
+            className="psd-workbench__region psd-workbench__region--plan psd-workbench__plan-column"
+            aria-label={
+              uiLanguage === 'zh' ? 'PSD 图层计划' : 'PSD layer plan'
+            }
+          >
+            {plan}
+          </section>
 
-        {operations}
+          {operations}
+        </div>
       </div>
     </div>
   );

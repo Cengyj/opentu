@@ -45,9 +45,7 @@ export function PsdExportPanel({
       </div>
       <button
         type="button"
-        className={`psd-export-card__button${
-          isDownloading ? ' psd-export-card__button--busy' : ''
-        }`}
+        className={`psd-export-card__button${isDownloading ? ' psd-export-card__button--busy' : ''}`}
         disabled={!canDownload || isDownloading}
         onClick={onDownload}
         aria-busy={isDownloading}

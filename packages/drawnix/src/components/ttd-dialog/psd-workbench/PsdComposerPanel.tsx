@@ -174,9 +174,11 @@ export function PsdComposerPanel({
         <span>{primaryActionEyebrow}</span>
         <button
           type="button"
-          className="psd-composer-primary"
+          className={`psd-composer-primary${isPrimaryActionBusy ? ' psd-composer-primary--busy' : ''}`}
           disabled={!canRunPrimaryAction || isPrimaryActionBusy}
           onClick={onPrimaryAction}
+          aria-busy={isPrimaryActionBusy}
+          aria-disabled={!canRunPrimaryAction || isPrimaryActionBusy}
         >
           {isPrimaryActionBusy ? <RefreshCw size={15} /> : <Play size={15} />}
           {primaryActionLabel}

@@ -46,14 +46,7 @@
 
   .psd-workbench__workspace-grid {
     display: grid;
-    grid-template-areas:
-      'brief canvas operations'
-      'brief plan operations';
-    grid-template-columns: minmax(300px, 350px) minmax(520px, 1fr) minmax(
-        300px,
-        360px
-      );
-    grid-template-rows: minmax(0, 1fr) minmax(244px, 34%);
+    grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.85fr);
     gap: var(--psd-space-3);
     min-height: 0;
     padding: var(--psd-space-2);
@@ -63,6 +56,8 @@
     box-shadow: var(--psd-shadow-panel);
   }
 
+  .psd-workbench__main-column,
+  .psd-workbench__side-column,
   .psd-workbench__brief-column,
   .psd-workbench__canvas-column,
   .psd-workbench__plan-column,
@@ -71,23 +66,34 @@
     min-height: 0;
   }
 
+  .psd-workbench__main-column,
+  .psd-workbench__side-column {
+    display: grid;
+    gap: var(--psd-space-3);
+  }
+
+  .psd-workbench__main-column {
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .psd-workbench__side-column {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
   .psd-workbench__brief-column {
-    grid-area: brief;
+    min-height: 0;
   }
 
   .psd-workbench__canvas-column {
-    grid-area: canvas;
     display: grid;
   }
 
   .psd-workbench__plan-column {
-    grid-area: plan;
     display: grid;
     min-height: 0;
   }
 
   .psd-workbench__operations {
-    grid-area: operations;
     display: grid;
     gap: var(--psd-space-3);
     grid-template-rows: auto minmax(0, 1fr) auto;
@@ -123,12 +129,12 @@
 
   @media (max-width: 1320px) {
     .psd-workbench__workspace-grid {
-      grid-template-areas:
-        'brief canvas'
-        'brief plan'
-        'operations operations';
-      grid-template-columns: minmax(286px, 330px) minmax(420px, 1fr);
-      grid-template-rows: minmax(440px, 1fr) minmax(250px, 34%) auto;
+      grid-template-columns: 1fr;
+    }
+
+    .psd-workbench__main-column,
+    .psd-workbench__side-column {
+      grid-template-rows: auto;
     }
 
     .psd-workbench__operations {
@@ -147,19 +153,18 @@
     }
 
     .psd-workbench__workspace-grid {
-      grid-template-areas:
-        'brief'
-        'canvas'
-        'plan'
-        'operations';
       grid-template-columns: 1fr;
-      grid-template-rows: auto minmax(420px, 1fr) auto auto;
       gap: var(--psd-space-2);
       min-height: initial;
       padding: 0;
       border: 0;
       background: transparent;
       box-shadow: none;
+    }
+
+    .psd-workbench__main-column,
+    .psd-workbench__side-column {
+      gap: var(--psd-space-2);
     }
 
     .psd-workbench__composer-panel,
