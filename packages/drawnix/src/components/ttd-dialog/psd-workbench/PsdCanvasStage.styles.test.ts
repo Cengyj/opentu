@@ -20,6 +20,28 @@ function readWorkbenchStyle(fileName: string) {
   return readFileSync(filePath, 'utf8');
 }
 
+function readSelectorBlock(source: string, selector: string) {
+  const selectorIndex = source.indexOf(selector);
+  if (selectorIndex < 0) {
+    throw new Error(`Unable to find ${selector}`);
+  }
+  const blockStart = source.indexOf('{', selectorIndex);
+  if (blockStart < 0) {
+    throw new Error(`Unable to find block for ${selector}`);
+  }
+
+  let depth = 0;
+  for (let index = blockStart; index < source.length; index += 1) {
+    if (source[index] === '{') depth += 1;
+    if (source[index] === '}') depth -= 1;
+    if (depth === 0) {
+      return source.slice(blockStart + 1, index);
+    }
+  }
+
+  throw new Error(`Unclosed block for ${selector}`);
+}
+
 const tokenStyles = readWorkbenchStyle('_tokens.scss');
 const canvasStyles = readWorkbenchStyle('_canvas.scss');
 
@@ -85,18 +107,19 @@ describe('PSD canvas stage style contract', () => {
   });
 
   it('keeps the preview viewport in normal grid flow so artboard images keep visible space', () => {
+    const stageContentBlock = readSelectorBlock(
+      canvasStyles,
+      '.psd-stage__content'
+    );
+
     expect(canvasStyles).toMatch(
       /\.psd-stage-shell\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1fr\) auto;/
     );
-    expect(canvasStyles).toMatch(
-      /\.psd-stage__content\s*\{[\s\S]*?position:\s*relative;[\s\S]*?min-height:\s*0;[\s\S]*?padding:\s*34px 26px;/
-    );
-    expect(canvasStyles).not.toMatch(
-      /\.psd-stage__content\s*\{[\s\S]*?position:\s*absolute;/
-    );
-    expect(canvasStyles).not.toMatch(
-      /\.psd-stage__content\s*\{[\s\S]*?inset:\s*34px 26px 118px;/
-    );
+    expect(stageContentBlock).toContain('position: relative;');
+    expect(stageContentBlock).toContain('min-height: 0;');
+    expect(stageContentBlock).toContain('padding: 34px 26px;');
+    expect(stageContentBlock).not.toContain('position: absolute;');
+    expect(stageContentBlock).not.toContain('inset: 34px 26px 118px;');
     expect(canvasStyles).toMatch(
       /\.psd-stage__artboard-image,[\s\S]*?\.psd-stage__stack-layer,[\s\S]*?\.psd-stage__stack-underlay\s*\{[\s\S]*?display:\s*block;[\s\S]*?width:\s*100%;[\s\S]*?height:\s*100%;[\s\S]*?object-fit:\s*contain;/
     );
