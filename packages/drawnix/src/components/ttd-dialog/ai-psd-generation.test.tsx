@@ -668,6 +668,34 @@ describe('buildLayerPlan', () => {
       taskId: 'layer-task-from-params',
       resultUrls: ['data:image/png;base64,aGVhZGxpbmU='],
     });
+    expect(
+      getFailedPsdLayerEntries(
+        [
+          {
+            ...createMockPsdTask({
+              id: 'failed-task-from-params',
+              status: TaskStatus.FAILED,
+              params: {
+                psdPlan: {
+                  layerId: 'psd-layer-2',
+                  layerName: '主标题与副标题',
+                },
+              },
+              error: { code: 'API_ERROR', message: 'layer failed' },
+            }),
+            layerId: 'psd-layer-1',
+          } as Task & { layerId: string },
+        ],
+        plan.layers
+      )
+    ).toEqual([
+      expect.objectContaining({
+        layerId: 'psd-layer-2',
+        layerName: '主标题与副标题',
+        taskId: 'failed-task-from-params',
+        error: 'layer failed',
+      }),
+    ]);
   });
 
   it('builds one PSD-ready image edit task without GPT Image 2 unsupported params', () => {
