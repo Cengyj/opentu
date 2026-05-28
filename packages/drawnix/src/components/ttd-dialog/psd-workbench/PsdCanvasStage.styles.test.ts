@@ -50,6 +50,9 @@ describe('PSD canvas stage style contract', () => {
     expect(tokenStyles).toContain('--psd-stage-bg:');
     expect(tokenStyles).toContain('--psd-stage-bg-soft:');
     expect(tokenStyles).toContain('--psd-stage-grid:');
+    expect(tokenStyles).not.toMatch(/--psd-stage-bg(?:-soft)?:\s*#[12][0-9a-f]{5}\b/i);
+    expect(tokenStyles).not.toContain('#20242c');
+    expect(tokenStyles).not.toContain('#2b303a');
 
     expect(canvasStyles).toContain('linear-gradient(180deg, var(--psd-stage-bg-soft), var(--psd-stage-bg))');
     expect(canvasStyles).toContain('var(--psd-stage-grid)');
