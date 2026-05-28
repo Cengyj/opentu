@@ -1,7 +1,44 @@
-import { APP_DB_STORES, getAppDB } from '../app-database';
 import type { PsdHistoryEntry, PsdHistoryStatus } from './psd-history-types';
 
 const MAX_ENTRIES = 50;
+
+// 独立数据库，与共享的 aitu-app 完全解耦：仅本服务打开，永不被其它无版本连接
+// 阻塞升级，保证 store 一定创建、历史一定可读写（修复历史记录读不到的问题）。
+const DB_NAME = 'aitu-psd-history';
+const DB_VERSION = 1;
+const STORE = 'entries';
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function openHistoryDB(): Promise<IDBDatabase> {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE)) {
+        const store = db.createObjectStore(STORE, { keyPath: 'id' });
+        store.createIndex('updatedAt', 'updatedAt', { unique: false });
+      }
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
+    request.onerror = () => {
+      dbPromise = null;
+      reject(request.error);
+    };
+    request.onblocked = () => {
+      console.warn('[PsdHistory] open blocked by another connection');
+    };
+  });
+  return dbPromise;
+}
 
 /**
  * 由各图层任务态派生会话整体状态。upsert 与历史列表 live 合并共用，避免逻辑漂移。
@@ -26,18 +63,18 @@ export function derivePsdHistoryStatus(
 }
 
 /**
- * PSD 会话历史存储。直接读写主库 `aitu-app` 的 `psd_history` store，不经 SW。
- * 旁路化：所有失败静默，绝不影响主生成流程。
+ * PSD 会话历史存储。使用独立数据库 `aitu-psd-history`（store `entries`），不经 SW、
+ * 不依赖共享 aitu-app 的版本升级。旁路化：所有失败静默，绝不影响主生成流程。
  */
 class PsdHistoryService {
   private async withStore<T>(
     mode: IDBTransactionMode,
     run: (store: IDBObjectStore) => IDBRequest<T>
   ): Promise<T> {
-    const db = await getAppDB();
+    const db = await openHistoryDB();
     return new Promise<T>((resolve, reject) => {
-      const tx = db.transaction(APP_DB_STORES.PSD_HISTORY, mode);
-      const request = run(tx.objectStore(APP_DB_STORES.PSD_HISTORY));
+      const tx = db.transaction(STORE, mode);
+      const request = run(tx.objectStore(STORE));
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });

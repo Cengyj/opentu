@@ -704,56 +704,58 @@ const AIImagePsdGeneration = ({
       ? displayLayerPreviewUrls
       : layerPreviewUrls;
 
-  // 把当前 PSD 会话（含进行中）快照进 PSD 历史，去抖避免频繁写入。
+  // 把当前 PSD 会话（含进行中）快照进 PSD 历史。
   const sourceImageUrl = uploadedImages[0]?.url;
   const sourceImageName = uploadedImages[0]?.name;
-  useEffect(() => {
+  // 稳定的写入器：每次渲染重绑最新闭包（用 ref 持有，不触发 effect 重跑）。
+  const persistSessionSnapshotRef = useRef<(() => void) | null>(null);
+  persistSessionSnapshotRef.current = () => {
     if (!plan) return;
     if (!currentSessionIdRef.current) {
       currentSessionIdRef.current = `${plan.planId}-${Date.now()}`;
     }
-    const sessionId = currentSessionIdRef.current;
-    const timer = setTimeout(() => {
-      const states = Object.values(layerTaskStateMap);
-      const hasTasks =
-        psdTaskIds.length > 0 ||
-        states.some(
-          (state) => state.status !== 'planned' && state.status !== 'skipped'
-        );
-      const status = derivePsdHistoryStatus(states, hasTasks);
-      const layerResults: Record<string, string[]> = {};
-      for (const [layerId, state] of Object.entries(layerTaskStateMap)) {
-        if (state.status === 'ready' && state.resultUrls.length > 0) {
-          layerResults[layerId] = state.resultUrls;
-        }
+    const states = Object.values(layerTaskStateMap);
+    const hasTasks =
+      psdTaskIds.length > 0 ||
+      states.some(
+        (state) => state.status !== 'planned' && state.status !== 'skipped'
+      );
+    const status = derivePsdHistoryStatus(states, hasTasks);
+    const layerResults: Record<string, string[]> = {};
+    for (const [layerId, state] of Object.entries(layerTaskStateMap)) {
+      if (state.status === 'ready' && state.resultUrls.length > 0) {
+        layerResults[layerId] = state.resultUrls;
       }
-      void psdHistoryService.upsertEntry({
-        id: sessionId,
-        status,
-        title: (prompt.trim() || plan.title || 'PSD').slice(0, 24),
-        prompt,
-        sourceImage: sourceImageUrl
-          ? { url: sourceImageUrl, name: sourceImageName }
-          : null,
-        plan,
-        planId: plan.planId,
-        psdBatchId,
-        analysisTaskId,
-        taskIds: psdTaskIds,
-        layerResults,
-      });
-    }, 800);
+    }
+    void psdHistoryService.upsertEntry({
+      id: currentSessionIdRef.current,
+      status,
+      title: (prompt.trim() || plan.title || 'PSD').slice(0, 24),
+      prompt,
+      sourceImage: sourceImageUrl
+        ? { url: sourceImageUrl, name: sourceImageName }
+        : null,
+      plan,
+      planId: plan.planId,
+      psdBatchId,
+      analysisTaskId,
+      taskIds: psdTaskIds,
+      layerResults,
+    });
+  };
+
+  // 立即落库：会话出现（计划就绪）或进入生成（批次产生）时马上写入，
+  // 即使用户随后立刻切走/卸载组件，历史也已持久化。
+  useEffect(() => {
+    if (plan) persistSessionSnapshotRef.current?.();
+  }, [plan, psdBatchId]);
+
+  // 去抖更新：任务状态/结果推进时刷新快照（避免高频写入）。
+  useEffect(() => {
+    if (!plan) return undefined;
+    const timer = setTimeout(() => persistSessionSnapshotRef.current?.(), 500);
     return () => clearTimeout(timer);
-  }, [
-    plan,
-    psdBatchId,
-    analysisTaskId,
-    layerTaskStateMap,
-    prompt,
-    sourceImageUrl,
-    sourceImageName,
-    psdTaskIds,
-  ]);
+  }, [plan, layerTaskStateMap]);
 
   // 勾选「分析后自动生成图层」时，分析完成且计划就绪后自动触发一次素材生成。
   // ref 守卫确保每个会话只自动触发一次；恢复历史会话已预置为 true 不会触发。

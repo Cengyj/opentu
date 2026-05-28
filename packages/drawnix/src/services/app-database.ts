@@ -8,7 +8,9 @@
  * - tasks: 任务状态和结果
  * - workflows: 工作流状态
  * - config: API 配置
- * - psd_history: PSD 工作台会话历史（与素材库解耦）
+ *
+ * 注：PSD 会话历史已迁出到独立数据库 `aitu-psd-history`（见 psd-history-service），
+ * 不再放在本库；DB_VERSION 仍保持 2（已发布，无法降级，升级为 no-op）。
  */
 
 const DB_NAME = 'aitu-app';
@@ -19,7 +21,6 @@ export const APP_DB_STORES = {
   TASKS: 'tasks',
   WORKFLOWS: 'workflows',
   CONFIG: 'config',
-  PSD_HISTORY: 'psd_history',
 } as const;
 
 let dbInstance: IDBDatabase | null = null;
@@ -103,18 +104,6 @@ export async function getAppDB(): Promise<IDBDatabase> {
       // config store
       if (!db.objectStoreNames.contains(APP_DB_STORES.CONFIG)) {
         db.createObjectStore(APP_DB_STORES.CONFIG, { keyPath: 'key' });
-      }
-
-      // psd_history store (PSD 会话历史，独立于素材库)
-      if (!db.objectStoreNames.contains(APP_DB_STORES.PSD_HISTORY)) {
-        const psdHistoryStore = db.createObjectStore(
-          APP_DB_STORES.PSD_HISTORY,
-          { keyPath: 'id' }
-        );
-        psdHistoryStore.createIndex('updatedAt', 'updatedAt', {
-          unique: false,
-        });
-        psdHistoryStore.createIndex('status', 'status', { unique: false });
       }
     };
   });
