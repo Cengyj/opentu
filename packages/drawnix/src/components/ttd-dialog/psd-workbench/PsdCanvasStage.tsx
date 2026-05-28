@@ -219,7 +219,10 @@ export function PsdCanvasStage({
   const generatedStackLayerCount = visibleStackItems.filter((item) => item.previewUrl).length;
   const hiddenLayerCount = layerStackItems.filter((item) => item.isHidden).length;
   const visibleLayerCount = visibleLayers.length;
-  const shouldShowLayerGuides = !isLayerPreview && visibleLayers.length > 0 && (!hasLayerResults || showLayerGuides);
+  const shouldShowLayerGuides =
+    !isLayerPreview &&
+    visibleLayers.length > 0 &&
+    (showLayerGuides || (shouldRenderCompositeStack && !hasLayerResults));
   const activePreviewUrl = isLayerPreview
     ? selectedLayerPreviewUrl
     : shouldRenderCompositeStack

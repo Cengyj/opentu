@@ -64,6 +64,17 @@ function renderStage(
 }
 
 describe('PsdCanvasStage image visibility', () => {
+  it('does not cover the source preview with automatic layer guide overlays during review', () => {
+    const { container } = renderStage();
+
+    expect(screen.getByText('Source preview')).toBeTruthy();
+    expect(
+      screen.getByRole('img', { name: 'Uploaded source image' })
+        .getAttribute('src')
+    ).toBe(SOURCE_URL);
+    expect(container.querySelector('.psd-stage__layer-outline')).toBeNull();
+  });
+
   it('keeps the original source and composite preview images visible as real artboard images', () => {
     const { container } = renderStage({ previewUrl: COMPOSITE_URL });
 
