@@ -30,6 +30,7 @@ import {
   getFailedPsdLayerEntries,
   getRetryablePsdLayerIds,
 } from './psd-workbench/psd-layer-tasks';
+import { buildPsdTaskStats } from './ai-psd-generation-workflow';
 import { downloadPsdReadyWorkspacePackage } from './psd-workbench/psd-workspace-package';
 
 const mockState = vi.hoisted(() => ({
