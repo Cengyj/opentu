@@ -26,6 +26,7 @@ import {
 } from './psd-workbench/psd-types';
 import {
   buildPsdLayerTaskStateMap,
+  getFailedPsdLayerEntries,
   getRetryablePsdLayerIds,
 } from './psd-workbench/psd-layer-tasks';
 
@@ -510,6 +511,8 @@ describe('buildLayerPlan', () => {
       createMockPsdTask({
         id: 'layer-task-1',
         status: TaskStatus.COMPLETED,
+        createdAt: 100,
+        updatedAt: 100,
         params: {
           psdPlan: { layerId: 'psd-layer-1', layerName: '背景底图' },
         },
@@ -518,6 +521,16 @@ describe('buildLayerPlan', () => {
           format: 'png',
           size: 100,
         },
+      }),
+      createMockPsdTask({
+        id: 'layer-task-1-retry',
+        status: TaskStatus.FAILED,
+        createdAt: 200,
+        updatedAt: 200,
+        params: {
+          psdPlan: { layerId: 'psd-layer-1', layerName: '背景底图' },
+        },
+        error: { code: 'API_ERROR', message: 'retry failed' },
       }),
       createMockPsdTask({
         id: 'layer-task-2',
@@ -537,9 +550,10 @@ describe('buildLayerPlan', () => {
     ]);
 
     expect(layerTaskStateMap['psd-layer-1']).toMatchObject({
-      status: 'ready',
-      taskId: 'layer-task-1',
-      resultUrls: ['data:image/png;base64,YmFja2dyb3VuZA=='],
+      status: 'failed',
+      taskId: 'layer-task-1-retry',
+      resultUrls: [],
+      error: 'retry failed',
     });
     expect(layerTaskStateMap['psd-layer-2']).toMatchObject({
       status: 'failed',
@@ -551,7 +565,48 @@ describe('buildLayerPlan', () => {
       taskId: 'layer-task-3',
     });
     expect(getRetryablePsdLayerIds(layerTaskStateMap)).toEqual([
+      'psd-layer-1',
       'psd-layer-2',
+    ]);
+    expect(
+      getFailedPsdLayerEntries(
+        [
+          createMockPsdTask({
+            id: 'old-failed-layer-2',
+            status: TaskStatus.FAILED,
+            createdAt: 100,
+            updatedAt: 100,
+            params: {
+              psdPlan: {
+                layerId: 'psd-layer-2',
+                layerName: '主标题与副标题',
+              },
+            },
+            error: { code: 'OLD_ERROR', message: 'old failure' },
+          }),
+          createMockPsdTask({
+            id: 'new-failed-layer-2',
+            status: TaskStatus.CANCELLED,
+            createdAt: 200,
+            updatedAt: 200,
+            params: {
+              psdPlan: {
+                layerId: 'psd-layer-2',
+                layerName: '主标题与副标题',
+              },
+            },
+            error: { code: 'USER_CANCELLED', message: 'new cancellation' },
+          }),
+        ],
+        plan.layers
+      )
+    ).toEqual([
+      expect.objectContaining({
+        layerId: 'psd-layer-2',
+        taskId: 'new-failed-layer-2',
+        status: TaskStatus.CANCELLED,
+        error: 'new cancellation',
+      }),
     ]);
   });
 
@@ -755,6 +810,22 @@ describe('AIImagePsdGeneration contract', () => {
       target: { value: '只提取标题像素，不包含地图' },
     });
     expect(screen.getByDisplayValue('主视觉标题')).toBeTruthy();
+    fireEvent.click(
+      screen.getAllByRole('button', { name: '隐藏图层：主视觉标题' })[1]
+    );
+    expect((
+      screen.getByRole('checkbox', {
+        name: '参与生成与导出：主视觉标题',
+      }) as HTMLInputElement
+    ).checked).toBe(false);
+    fireEvent.click(
+      screen.getAllByRole('button', { name: '显示图层：主视觉标题' })[1]
+    );
+    expect((
+      screen.getByRole('checkbox', {
+        name: '参与生成与导出：主视觉标题',
+      }) as HTMLInputElement
+    ).checked).toBe(true);
 
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
 
@@ -1073,10 +1144,12 @@ describe('AIImagePsdGeneration contract', () => {
 
     const layerTaskCalls = mockState.createTask.mock.calls.slice(1);
     const createdBatchId = layerTaskCalls[0]?.[0]?.batchId;
-    mockState.tasks = layerTaskCalls.map((call, index) =>
+    const currentLayerTasks = layerTaskCalls.map((call, index) =>
       createMockPsdTask({
         id: `layer-task-${index + 1}`,
         status: index === 0 ? TaskStatus.COMPLETED : TaskStatus.FAILED,
+        createdAt: 200 + index,
+        updatedAt: 200 + index,
         params: {
           ...call[0],
           batchId: createdBatchId,
@@ -1099,6 +1172,41 @@ describe('AIImagePsdGeneration contract', () => {
             : { code: 'API_ERROR', message: 'quota exceeded' },
       })
     );
+    mockState.tasks = [
+      createMockPsdTask({
+        id: 'old-layer-task-1',
+        status: TaskStatus.COMPLETED,
+        createdAt: 100,
+        updatedAt: 100,
+        params: {
+          ...layerTaskCalls[0]?.[0],
+          batchId: createdBatchId,
+          batchIndex: 1,
+          batchTotal: layerTaskCalls.length,
+        },
+        result: {
+          url: 'data:image/png;base64,b2xkLWJhY2tncm91bmQ=',
+          format: 'png',
+          size: 100,
+          width: 1024,
+          height: 1024,
+        },
+      }),
+      createMockPsdTask({
+        id: 'old-layer-task-2',
+        status: TaskStatus.FAILED,
+        createdAt: 100,
+        updatedAt: 100,
+        params: {
+          ...layerTaskCalls[1]?.[0],
+          batchId: createdBatchId,
+          batchIndex: 2,
+          batchTotal: layerTaskCalls.length,
+        },
+        error: { code: 'OLD_ERROR', message: 'old quota exceeded' },
+      }),
+      ...currentLayerTasks,
+    ];
     rerender(
       <AIImagePsdGeneration
         initialPrompt="品牌活动海报"

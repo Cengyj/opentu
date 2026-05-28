@@ -28,6 +28,15 @@ function getTaskUpdatedAt(task: Task): number {
   return task.updatedAt || task.createdAt || 0;
 }
 
+function isNewerPsdTask(candidate: Task, current: Task): boolean {
+  const candidateUpdatedAt = getTaskUpdatedAt(candidate);
+  const currentUpdatedAt = getTaskUpdatedAt(current);
+  if (candidateUpdatedAt !== currentUpdatedAt) {
+    return candidateUpdatedAt > currentUpdatedAt;
+  }
+  return candidate.id.localeCompare(current.id) >= 0;
+}
+
 function getTaskError(task: Task): string | null {
   return task.error?.message || task.error?.code || null;
 }
@@ -86,7 +95,7 @@ export function buildPsdLayerTaskStateMap(
     const layerId = getTaskLayerId(task);
     if (!layerId) continue;
     const current = latestTaskByLayerId.get(layerId);
-    if (!current || getTaskUpdatedAt(task) >= getTaskUpdatedAt(current)) {
+    if (!current || isNewerPsdTask(task, current)) {
       latestTaskByLayerId.set(layerId, task);
     }
   }
@@ -142,7 +151,18 @@ export function getFailedPsdLayerEntries(
   layers: PsdLayerPlan[]
 ) {
   const layerById = new Map(layers.map((layer) => [layer.id, layer]));
-  return tasks
+  const latestTaskByLayerId = new Map<string, Task>();
+
+  for (const task of tasks) {
+    const layerId = getTaskLayerId(task);
+    if (!layerId) continue;
+    const current = latestTaskByLayerId.get(layerId);
+    if (!current || isNewerPsdTask(task, current)) {
+      latestTaskByLayerId.set(layerId, task);
+    }
+  }
+
+  return Array.from(latestTaskByLayerId.values())
     .filter(
       (task) =>
         task.status === TaskStatus.FAILED ||
