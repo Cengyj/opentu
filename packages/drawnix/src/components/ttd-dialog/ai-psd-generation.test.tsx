@@ -9,7 +9,7 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AssetType } from '../../types/asset.types';
+import { AssetSource, AssetType } from '../../types/asset.types';
 import { TaskStatus, TaskType, type Task } from '../../types/task.types';
 import AIImagePsdGeneration, { buildLayerPlan } from './ai-psd-generation';
 import {
@@ -1070,6 +1070,63 @@ describe('AIImagePsdGeneration contract', () => {
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+
+  it('preserves local upload, drag, paste, preview, and brief controls in the PSD source desk', async () => {
+    const { container } = render(<AIImagePsdGeneration />);
+    const sourceInput = container.querySelector(
+      '.psd-source-field__input'
+    ) as HTMLInputElement | null;
+    const uploader = screen.getByLabelText('PSD 源图上传区');
+
+    expect(sourceInput).toBeTruthy();
+    expect(screen.getByText('拖入、粘贴或选择一张源图')).toBeTruthy();
+    expect(screen.getByText('用于 CHAT 图层分析；这里只保留 1 张 PSD 分层参考图。')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /载入源图/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '从素材库选择源图' })).toBeTruthy();
+    expect(screen.queryByTestId('reference-upload')).toBeNull();
+
+    const uploadedFile = new File(['uploaded'], 'uploaded-source.png', {
+      type: 'image/png',
+    });
+    fireEvent.change(sourceInput as HTMLInputElement, {
+      target: { files: [uploadedFile] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText('uploaded-source.png').length).toBeGreaterThan(0);
+    });
+    expect(screen.getByRole('img', { name: 'uploaded-source.png' })).toBeTruthy();
+    expect(mockState.addAsset).toHaveBeenLastCalledWith(
+      uploadedFile,
+      AssetType.IMAGE,
+      AssetSource.LOCAL,
+      'uploaded-source.png'
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '移除源图' }));
+    const droppedFile = new File(['dropped'], 'dropped-source.png', {
+      type: 'image/png',
+    });
+    fireEvent.drop(uploader, { dataTransfer: { files: [droppedFile] } });
+
+    await waitFor(() => {
+      expect(screen.getAllByText('dropped-source.png').length).toBeGreaterThan(0);
+    });
+    expect(screen.getByRole('img', { name: 'dropped-source.png' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: '移除源图' }));
+    const pastedFile = new File(['pasted'], 'pasted-source.png', {
+      type: 'image/png',
+    });
+    fireEvent.paste(uploader, { clipboardData: { files: [pastedFile] } });
+
+    await waitFor(() => {
+      expect(screen.getAllByText('pasted-source.png').length).toBeGreaterThan(0);
+    });
+    expect(screen.getByRole('img', { name: 'pasted-source.png' })).toBeTruthy();
+    expect(screen.getByLabelText('PSD 图层提取简报')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '分析图层结构' })).toBeTruthy();
   });
 
   it('reviews GPT-5.5 layer analysis before queuing editable layer assets', async () => {
