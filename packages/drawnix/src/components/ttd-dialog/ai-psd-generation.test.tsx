@@ -1104,6 +1104,9 @@ describe('AIImagePsdGeneration contract', () => {
     expect(layoutScss).toMatch(
       /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1\.1fr\) minmax\(254px,\s*0\.7fr\);[\s\S]*?overflow:\s*hidden;/
     );
+    expect(layoutScss).toMatch(
+      /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1\.1fr\) minmax\(254px,\s*0\.7fr\);[\s\S]*?overflow:\s*hidden;/
+    );
     expect(layoutScss).toContain('psd-workbench__rail-marker--canvas');
     expect(layoutScss).toMatch(
       /\.psd-workbench__operations\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;/
