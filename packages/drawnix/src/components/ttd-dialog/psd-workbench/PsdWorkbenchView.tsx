@@ -26,6 +26,8 @@ export interface PsdWorkbenchViewProps {
   onSourceImageError: (message: string | null) => void;
   onPrimaryAction: () => void;
   plan: PsdGenerationPlan | null;
+  isLayerPlanReviewed?: boolean;
+  onLayerPlanReviewedChange?: (reviewed: boolean) => void;
   analysisStatus?: PsdAnalysisStatus | null;
   status: PsdTaskSummary | null;
   sourceImages: ReferenceImage[];
@@ -59,6 +61,8 @@ export function PsdWorkbenchView({
   onSourceImageError,
   onPrimaryAction,
   plan,
+  isLayerPlanReviewed = false,
+  onLayerPlanReviewedChange,
   analysisStatus,
   status,
   sourceImages,
@@ -138,6 +142,8 @@ export function PsdWorkbenchView({
       <PsdLayerWorkspace
         uiLanguage={uiLanguage}
         plan={plan}
+        isLayerPlanReviewed={isLayerPlanReviewed}
+        onLayerPlanReviewedChange={onLayerPlanReviewedChange}
         analysisStatus={analysisStatus}
         status={status}
         isEmptyWorkspace={isEmptyWorkspace}

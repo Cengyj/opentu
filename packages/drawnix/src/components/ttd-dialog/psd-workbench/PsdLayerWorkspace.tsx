@@ -12,6 +12,7 @@ interface PsdLayerWorkspaceProps {
   plan: PsdGenerationPlan | null;
   analysisStatus?: PsdAnalysisStatus | null;
   status: PsdTaskSummary | null;
+  isLayerPlanReviewed?: boolean;
   isEmptyWorkspace: boolean;
   isAnalyzingWorkspace: boolean;
   activeLayerId: string | null;
@@ -22,6 +23,7 @@ interface PsdLayerWorkspaceProps {
   canDownload: boolean;
   isDownloading?: boolean;
   onDownload: () => void;
+  onLayerPlanReviewedChange?: (reviewed: boolean) => void;
   onSelectLayer: (layerId: string) => void;
   onLayerNameChange?: (layerId: string, name: string) => void;
   onLayerPromptChange?: (layerId: string, prompt: string) => void;
@@ -86,6 +88,7 @@ export function PsdLayerWorkspace({
   plan,
   analysisStatus,
   status,
+  isLayerPlanReviewed = false,
   isEmptyWorkspace,
   isAnalyzingWorkspace,
   activeLayerId,
@@ -96,6 +99,7 @@ export function PsdLayerWorkspace({
   canDownload,
   isDownloading = false,
   onDownload,
+  onLayerPlanReviewedChange,
   onSelectLayer,
   onLayerNameChange,
   onLayerPromptChange,
@@ -151,9 +155,25 @@ export function PsdLayerWorkspace({
               <CheckCircle2 size={14} />
               <span>
                 {uiLanguage === 'zh'
-                  ? '先审阅名称、提示词、显隐与参与生成状态；确认后才会创建图层 IMAGE 任务。'
-                  : 'Review names, prompts, visibility, and inclusion first; layer IMAGE tasks start only after confirmation.'}
+                  ? '先审阅名称、提示词、显隐与参与生成状态；勾选确认后才会创建图层 IMAGE 任务。'
+                  : 'Review names, prompts, visibility, and inclusion first; layer IMAGE tasks start only after explicit confirmation.'}
               </span>
+              {onLayerPlanReviewedChange ? (
+                <label className="psd-layer-workspace__review-check">
+                  <input
+                    type="checkbox"
+                    checked={isLayerPlanReviewed}
+                    onChange={(event) =>
+                      onLayerPlanReviewedChange(event.target.checked)
+                    }
+                  />
+                  <span>
+                    {uiLanguage === 'zh'
+                      ? '我已审阅图层计划'
+                      : 'I reviewed the layer plan'}
+                  </span>
+                </label>
+              ) : null}
             </div>
             <div className="psd-layer-list">
               {layers.map((layer) => (

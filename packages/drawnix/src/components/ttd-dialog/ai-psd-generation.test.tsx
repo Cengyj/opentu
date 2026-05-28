@@ -621,6 +621,12 @@ describe('buildLayerPlan', () => {
       model: 'image-model',
       width: 1024,
       height: 1024,
+      extraParams: {
+        size: '1024x1024',
+        response_format: 'url',
+        inputFidelity: 'high',
+        background: 'transparent',
+      },
     });
 
     expect(plan.exportSkeleton).toEqual({
@@ -645,6 +651,11 @@ describe('buildLayerPlan', () => {
       expect(taskPlan.params.background).toBe(
         PSD_LAYER_IMAGE_TASK_CONTRACT.background
       );
+      expect(taskPlan.params.inputFidelity).toBeUndefined();
+      expect(taskPlan.params.params).toEqual({
+        size: '1024x1024',
+        background: 'auto',
+      });
       expect(taskPlan.params.prompt).toMatch(/later app-side PSD packaging/i);
     }
   });
@@ -658,6 +669,10 @@ describe('AIImagePsdGeneration contract', () => {
     mockState.createTask.mockClear();
     mockState.triggerBlobDownload.mockClear();
   });
+
+  const markLayerPlanReviewed = () => {
+    fireEvent.click(screen.getByLabelText('我已审阅图层计划'));
+  };
 
   it('exports the PSD mode component for lazy dialog loading', () => {
     expect(AIImagePsdGeneration).toBeTypeOf('function');
@@ -743,6 +758,7 @@ describe('AIImagePsdGeneration contract', () => {
     });
     expect(mockState.createTask).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '生成图层素材' })).toHaveProperty('disabled', true);
     expect(screen.getByText('4 个动态图层')).toBeTruthy();
 
     fireEvent.click(
@@ -756,6 +772,7 @@ describe('AIImagePsdGeneration contract', () => {
     });
     expect(screen.getByDisplayValue('主视觉标题')).toBeTruthy();
 
+    markLayerPlanReviewed();
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
 
     await waitFor(() => {
@@ -828,6 +845,7 @@ describe('AIImagePsdGeneration contract', () => {
       expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
     });
     expect(mockState.createTask).toHaveBeenCalledTimes(1);
+    markLayerPlanReviewed();
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);
@@ -976,6 +994,7 @@ describe('AIImagePsdGeneration contract', () => {
       expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
     });
     expect(mockState.createTask).toHaveBeenCalledTimes(1);
+    markLayerPlanReviewed();
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);
@@ -1066,6 +1085,7 @@ describe('AIImagePsdGeneration contract', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
     });
+    markLayerPlanReviewed();
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);
