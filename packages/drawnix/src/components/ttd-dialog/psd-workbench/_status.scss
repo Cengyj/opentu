@@ -5,7 +5,11 @@
     padding: var(--psd-space-2) var(--psd-space-3);
     border-left: 3px solid var(--psd-accent);
     border-radius: var(--psd-radius-lg);
-    background: linear-gradient(90deg, var(--psd-accent-faint), var(--psd-surface-raised));
+    background: linear-gradient(
+      90deg,
+      var(--psd-accent-faint),
+      var(--psd-surface-raised)
+    );
     color: var(--psd-text-secondary);
 
     > strong {

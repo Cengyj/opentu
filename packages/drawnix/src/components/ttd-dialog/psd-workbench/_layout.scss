@@ -45,11 +45,7 @@
 
   .psd-workbench__workspace-grid {
     display: grid;
-    grid-template-columns:
-      minmax(286px, 0.72fr)
-      minmax(440px, 1.68fr)
-      minmax(344px, 0.86fr);
-    grid-template-areas: 'brief canvas plan';
+    grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.85fr);
     gap: var(--psd-space-3);
     height: 100%;
     min-height: 0;
@@ -57,14 +53,7 @@
     padding: var(--psd-space-2);
     border: 1px solid var(--psd-border);
     border-radius: calc(var(--psd-radius-xl) + 4px);
-    background: linear-gradient(
-        90deg,
-        rgba(255, 122, 26, 0.055),
-        transparent 22%,
-        transparent 78%,
-        rgba(31, 35, 41, 0.03)
-      ),
-      rgba(255, 255, 255, 0.78);
+    background: rgba(255, 255, 255, 0.72);
     box-shadow: var(--psd-shadow-panel);
   }
 
@@ -80,6 +69,19 @@
   .psd-workbench__left-rail {
     grid-area: brief;
     display: grid;
+    gap: var(--psd-space-3);
+  }
+
+  .psd-workbench__main-column {
+    grid-template-rows: minmax(168px, 0.4fr) minmax(0, 1fr);
+  }
+
+  .psd-workbench__side-column {
+    grid-template-rows: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  }
+
+  .psd-workbench__brief-column {
+    min-height: 0;
     overflow: hidden;
   }
 
@@ -104,7 +106,7 @@
 
   .psd-workbench__operations {
     display: grid;
-    gap: var(--psd-space-2);
+    gap: var(--psd-space-3);
     grid-template-rows: auto minmax(0, 1fr) auto;
     align-content: stretch;
     overflow: hidden;
@@ -152,6 +154,29 @@
 
   @media (max-width: 980px) {
     .psd-workbench {
+      overflow-y: auto;
+    }
+
+    .psd-workbench__workspace-grid {
+      grid-template-columns: 1fr;
+      height: auto;
+      overflow: visible;
+    }
+
+    .psd-workbench__main-column,
+    .psd-workbench__side-column {
+      grid-template-rows: auto;
+    }
+
+    .psd-workbench__operations {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: auto;
+      align-items: stretch;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .psd-workbench {
       grid-template-rows: auto auto;
       padding: var(--psd-space-2);
       gap: var(--psd-space-2);
@@ -174,10 +199,14 @@
       box-shadow: none;
     }
 
-    .psd-workbench__left-rail,
-    .psd-workbench__center-stage,
-    .psd-workbench__right-rail {
-      min-height: 360px;
+    .psd-workbench__main-column,
+    .psd-workbench__side-column {
+      gap: var(--psd-space-2);
+    }
+
+    .psd-workbench__main-column,
+    .psd-workbench__side-column {
+      gap: var(--psd-space-2);
     }
 
     .psd-workbench__right-rail {
@@ -188,7 +217,6 @@
 
     .psd-workbench__operations {
       grid-template-columns: 1fr;
-      grid-template-rows: auto;
     }
   }
 }
