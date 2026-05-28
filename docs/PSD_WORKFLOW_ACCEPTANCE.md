@@ -34,6 +34,13 @@ pnpm exec nx run drawnix:typecheck
 pnpm exec nx run drawnix:lint
 ```
 
+### 2026-05-28 单屏工作台回归验证记录
+
+- `pnpm exec vitest run packages/drawnix/src/services/__tests__/gpt-image-adapter.test.ts packages/drawnix/src/components/ttd-dialog/ai-psd-generation.test.tsx --exclude '.omx/**'`：通过，2 个测试文件、38 个用例通过。`gpt-image-adapter.test.ts` 仍会输出既有 `indexedDB is not defined` 配置写入警告，但未导致测试失败。
+- `pnpm exec eslint packages/drawnix/src/components/ttd-dialog/ai-psd-generation.test.tsx`：通过，覆盖本轮新增的单屏 DOM 锚点与布局样式契约测试。
+- `pnpm exec nx run drawnix:typecheck`：未通过，失败点不在 PSD 工作台改动范围内；当前仓库在 `MarkdownEditor/*` 缺少 `@milkdown/kit/*`、`@milkdown/crepe`、`@milkdown/react` 类型/模块解析，并在 `comic-creator/export-service.ts`、`services/ppt/ppt-export-service.ts` 缺少 `pptxgenjs` 类型/模块解析。
+- `pnpm exec nx run drawnix:lint`：未通过，失败点不在 PSD 工作台改动范围内；当前仓库已有 `MarkdownEditor/*` import 顺序、懒加载模块边界、`skill-dsl-parser.ts`/`storyboard-utils.ts`/`tool-test-helper.ts` 等 `no-inferrable-types`/`no-var-requires` 错误，以及 hover 用法检查失败。
+
 新增或调整浏览器验收时，运行：
 
 ```bash
