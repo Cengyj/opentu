@@ -1,0 +1,99 @@
+.ai-psd-generation-container--workbench {
+  .psd-inspector-card {
+    display: grid;
+    gap: var(--psd-space-3);
+    padding: var(--psd-space-4);
+    border: 1px solid var(--psd-border);
+    border-radius: var(--psd-radius-xl);
+    background: var(--psd-surface-raised);
+    box-shadow: var(--psd-shadow-soft);
+  }
+
+  .psd-inspector-card__head {
+    display: grid;
+    gap: var(--psd-space-1);
+
+    span {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--psd-space-1);
+      color: var(--psd-accent);
+      font-size: 10.5px;
+      font-weight: 850;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    strong {
+      color: var(--psd-text);
+      font-size: 14px;
+      font-weight: 850;
+    }
+  }
+
+  .psd-inspector-metrics {
+    display: grid;
+    gap: var(--psd-space-2);
+    margin: 0;
+
+    div {
+      display: grid;
+      grid-template-columns: minmax(94px, 0.8fr) minmax(0, 1fr);
+      align-items: center;
+      gap: var(--psd-space-2);
+      padding: var(--psd-space-2);
+      border: 1px solid var(--psd-border);
+      border-radius: var(--psd-radius-md);
+      background: var(--psd-surface-soft);
+    }
+
+    dt {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--psd-space-1);
+      color: var(--psd-muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    dd {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      color: var(--psd-text-secondary);
+      font-size: 11.5px;
+      font-weight: 750;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  .psd-inspector-contract {
+    display: grid;
+    gap: var(--psd-space-1);
+    padding: var(--psd-space-3);
+    border-radius: var(--psd-radius-md);
+    background: var(--psd-accent-faint);
+    color: var(--psd-text-secondary);
+
+    strong {
+      color: var(--psd-text);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    span {
+      color: var(--psd-accent-strong);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    p {
+      margin: 0;
+      color: var(--psd-muted);
+      font-size: 11.5px;
+      line-height: 1.5;
+    }
+  }
+}
