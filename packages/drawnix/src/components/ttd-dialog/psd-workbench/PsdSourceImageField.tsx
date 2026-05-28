@@ -193,6 +193,32 @@ export function PsdSourceImageField({
     ]
   );
 
+  const openMediaLibrary = useCallback(() => {
+    if (!disabled) {
+      setShowMediaLibrary(true);
+    }
+  }, [disabled]);
+
+  const handleMediaLibrarySelect = useCallback(
+    (asset: Asset) => {
+      if (disabled) return;
+      if (asset.type !== AssetType.IMAGE || !asset.url) {
+        onError?.(labels.invalidFile);
+        return;
+      }
+
+      onImagesChange([
+        {
+          url: asset.url,
+          name: asset.name || `asset-${asset.id}`,
+        },
+      ]);
+      onError?.(null);
+      setShowMediaLibrary(false);
+    },
+    [disabled, labels.invalidFile, onError, onImagesChange]
+  );
+
   const handleInputChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>) => {
       void handleFile(event.target.files?.[0]);
