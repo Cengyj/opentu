@@ -1,0 +1,321 @@
+// PSD 历史抽屉。渲染在工作台容器内（非 portal 到 body），只覆盖 PSD 窗口，
+// 复用 --psd-* 设计令牌与工作台视觉。
+.ai-psd-generation-container--workbench {
+  .psd-history-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    justify-content: flex-end;
+    background: rgba(31, 35, 41, 0.34);
+    backdrop-filter: blur(2px);
+    animation: psd-history-fade 0.18s ease-out;
+  }
+
+  .psd-history-panel {
+    display: flex;
+    width: min(640px, 74%);
+    height: 100%;
+    flex-direction: column;
+    border-left: 1px solid var(--psd-border);
+    background: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.92),
+        rgba(250, 251, 252, 0.96)
+      ),
+      var(--psd-surface-raised);
+    box-shadow: -18px 0 48px rgba(31, 35, 41, 0.18);
+    animation: psd-history-slide 0.22s ease-out;
+  }
+
+  .psd-history-panel__head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--psd-space-2);
+    padding: var(--psd-space-4) var(--psd-space-4) var(--psd-space-3);
+    border-bottom: 1px solid var(--psd-border);
+  }
+
+  .psd-history-panel__title {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--psd-space-2);
+    color: var(--psd-text);
+    font-size: 15px;
+    font-weight: 850;
+
+    svg {
+      color: var(--psd-accent-strong);
+    }
+  }
+
+  .psd-history-panel__count {
+    display: inline-grid;
+    min-width: 20px;
+    height: 20px;
+    place-items: center;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--psd-accent-soft);
+    color: var(--psd-accent-strong);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 850;
+  }
+
+  .psd-history-panel__head-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--psd-space-2);
+  }
+
+  .psd-history-panel__clear {
+    min-height: 28px;
+    padding: 0 var(--psd-space-3);
+    border: 1px solid var(--psd-border);
+    border-radius: 999px;
+    background: var(--psd-surface-raised);
+    color: var(--psd-muted);
+    cursor: pointer;
+    font-size: 11.5px;
+    font-weight: 800;
+
+    &:hover {
+      border-color: var(--psd-danger);
+      color: var(--psd-danger);
+    }
+  }
+
+  .psd-history-panel__close {
+    display: inline-grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border: 1px solid var(--psd-border);
+    border-radius: var(--psd-radius-md);
+    background: var(--psd-surface-raised);
+    color: var(--psd-text-secondary);
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--psd-border-strong);
+      background: var(--psd-surface-soft);
+    }
+  }
+
+  .psd-history-panel__body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--psd-space-4);
+  }
+
+  .psd-history-panel__empty {
+    display: grid;
+    height: 100%;
+    place-items: center;
+    align-content: center;
+    gap: var(--psd-space-3);
+    padding: var(--psd-space-6);
+    color: var(--psd-muted);
+    text-align: center;
+
+    svg {
+      color: var(--psd-border-strong);
+    }
+
+    span {
+      max-width: 320px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+  }
+
+  .psd-history-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+    gap: var(--psd-space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .psd-history-tile {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--psd-border);
+    border-radius: var(--psd-radius-lg);
+    background: var(--psd-surface-raised);
+    box-shadow: var(--psd-shadow-soft);
+    transition: border-color var(--psd-transition),
+      box-shadow var(--psd-transition), transform var(--psd-transition);
+
+    &:hover {
+      border-color: rgba(243, 156, 18, 0.4);
+      box-shadow: var(--psd-shadow-medium);
+      transform: translateY(-2px);
+    }
+  }
+
+  .psd-history-tile--active {
+    border-color: var(--psd-accent);
+    box-shadow: 0 0 0 2px var(--psd-accent-soft), var(--psd-shadow-soft);
+  }
+
+  .psd-history-tile__main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .psd-history-tile__preview {
+    position: relative;
+    display: grid;
+    aspect-ratio: 4 / 3;
+    place-items: center;
+    overflow: hidden;
+    color: var(--psd-muted);
+    background-color: var(--psd-surface-soft);
+    background-image: linear-gradient(
+        45deg,
+        var(--psd-canvas-check) 25%,
+        transparent 25%
+      ),
+      linear-gradient(-45deg, var(--psd-canvas-check) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, var(--psd-canvas-check) 75%),
+      linear-gradient(-45deg, transparent 75%, var(--psd-canvas-check) 75%);
+    background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+    background-size: 18px 18px;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+  }
+
+  .psd-history-tile__badge {
+    position: absolute;
+    top: var(--psd-space-2);
+    left: var(--psd-space-2);
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--psd-accent-soft);
+    color: var(--psd-accent-strong);
+    font-size: 10px;
+    font-weight: 850;
+    backdrop-filter: blur(4px);
+  }
+
+  .psd-history-tile__badge--generating {
+    background: var(--psd-warning-soft);
+    color: var(--psd-warning);
+  }
+  .psd-history-tile__badge--completed {
+    background: var(--psd-success-soft);
+    color: var(--psd-success);
+  }
+  .psd-history-tile__badge--partial {
+    background: var(--psd-warning-soft);
+    color: var(--psd-warning);
+  }
+  .psd-history-tile__badge--failed {
+    background: var(--psd-danger-soft);
+    color: var(--psd-danger);
+  }
+
+  .psd-history-tile__info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    padding: var(--psd-space-2) var(--psd-space-3) var(--psd-space-3);
+
+    strong {
+      overflow: hidden;
+      color: var(--psd-text);
+      font-size: 13px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    small {
+      color: var(--psd-muted);
+      font-size: 10.5px;
+      font-weight: 650;
+    }
+  }
+
+  .psd-history-tile__time {
+    color: var(--psd-control-disabled-text) !important;
+  }
+
+  .psd-history-tile__delete {
+    position: absolute;
+    top: var(--psd-space-2);
+    right: var(--psd-space-2);
+    z-index: 2;
+    display: inline-grid;
+    width: 26px;
+    height: 26px;
+    place-items: center;
+    border: 1px solid var(--psd-border);
+    border-radius: var(--psd-radius-sm);
+    background: var(--psd-surface-wash);
+    color: var(--psd-text-secondary);
+    cursor: pointer;
+    opacity: 0;
+    backdrop-filter: blur(4px);
+    transition: opacity var(--psd-transition), color var(--psd-transition),
+      border-color var(--psd-transition);
+
+    &:hover {
+      border-color: var(--psd-danger);
+      color: var(--psd-danger);
+    }
+  }
+
+  .psd-history-tile:hover .psd-history-tile__delete,
+  .psd-history-tile:focus-within .psd-history-tile__delete {
+    opacity: 1;
+  }
+
+  @media (max-width: 860px) {
+    .psd-history-panel {
+      width: 100%;
+      border-left: 0;
+    }
+  }
+}
+
+@keyframes psd-history-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes psd-history-slide {
+  from {
+    transform: translateX(24px);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}

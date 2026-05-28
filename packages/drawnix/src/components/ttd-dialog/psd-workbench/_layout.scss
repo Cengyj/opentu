@@ -1,4 +1,5 @@
 .ai-psd-generation-container--workbench {
+  position: relative;
   height: 100%;
   max-height: 100%;
   min-height: 0;
@@ -33,7 +34,8 @@
 
   .psd-workbench {
     display: grid;
-    grid-template-rows: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--psd-space-3);
     height: 100%;
     max-height: 100%;
     min-height: 0;
@@ -75,13 +77,8 @@
   .psd-workbench__left-rail {
     grid-area: brief;
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    gap: var(--psd-space-3);
+    grid-template-rows: minmax(0, 1fr);
     overflow: hidden;
-  }
-
-  .psd-workbench__left-header {
-    min-width: 0;
   }
 
   .psd-workbench__center-stage {
@@ -132,22 +129,25 @@
   .psd-workbench__right-rail {
     grid-area: plan;
     display: grid;
-    grid-template-rows: minmax(0, 1.04fr) minmax(246px, 0.7fr);
+    grid-template-rows: minmax(0, 1fr) auto;
     gap: var(--psd-space-3);
+    height: 100%;
+    min-height: 0;
     overflow: hidden;
   }
 
   .psd-workbench__plan-column {
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     overflow: hidden;
   }
 
   .psd-workbench__operations {
-    display: grid;
-    gap: var(--psd-space-3);
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    align-content: stretch;
-    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: var(--psd-space-2);
+    min-height: 0;
   }
 
   .psd-workbench__composer-panel,
@@ -186,7 +186,8 @@
     }
 
     .psd-workbench__right-rail {
-      grid-template-rows: minmax(0, 1fr) minmax(238px, 0.72fr);
+      display: flex;
+      flex-direction: column;
     }
   }
 
@@ -221,14 +222,98 @@
     }
 
     .psd-workbench__right-rail {
-      grid-template-rows: auto auto auto;
+      display: flex;
+      flex-direction: column;
       gap: var(--psd-space-2);
       overflow: visible;
     }
+  }
 
-    .psd-workbench__operations {
-      grid-template-columns: 1fr;
-      grid-template-rows: auto;
+  /* Operations tab panel adjustments */
+  .psd-operations-card {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 auto;
+    min-height: 0;
+    border: 1px solid var(--psd-border);
+    border-radius: var(--psd-radius-xl);
+    background: var(--psd-surface-raised);
+    box-shadow: var(--psd-shadow-soft);
+    overflow: hidden;
+  }
+
+  .psd-operations-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--psd-border);
+    background: var(--psd-surface-soft);
+    padding: 2.5px;
+    gap: 2px;
+  }
+
+  .psd-operations-tab {
+    flex: 1;
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--psd-space-2);
+    border: 1px solid transparent;
+    border-radius: calc(var(--psd-radius-md) - 1.5px);
+    background: transparent;
+    color: var(--psd-muted);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 850;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    outline: none;
+
+    &:hover {
+      color: var(--psd-text);
+      background: rgba(255, 255, 255, 0.45);
+    }
+
+    &--active {
+      background: var(--psd-surface-raised);
+      border-color: var(--psd-border);
+      color: var(--psd-accent-strong);
+      box-shadow: var(--psd-shadow-soft);
+    }
+  }
+
+  .psd-operations-tab-badge {
+    display: inline-flex;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 4.5px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--psd-accent);
+    color: var(--psd-surface-raised);
+    font-size: 8.5px;
+    font-weight: 850;
+    margin-left: 2px;
+  }
+
+  .psd-operations-tab-content {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: 380px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+
+    // Remove redundant styles for nested card elements
+    .psd-inspector-card,
+    .psd-export-card {
+      border: none;
+      background: transparent;
+      box-shadow: none;
+      padding: var(--psd-space-3);
+      width: 100%;
+      height: auto;
+      min-height: max-content;
+      box-sizing: border-box;
     }
   }
 }

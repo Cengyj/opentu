@@ -8,16 +8,18 @@
  * - tasks: 任务状态和结果
  * - workflows: 工作流状态
  * - config: API 配置
+ * - psd_history: PSD 工作台会话历史（与素材库解耦）
  */
 
 const DB_NAME = 'aitu-app';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Store 名称常量
 export const APP_DB_STORES = {
   TASKS: 'tasks',
   WORKFLOWS: 'workflows',
   CONFIG: 'config',
+  PSD_HISTORY: 'psd_history',
 } as const;
 
 let dbInstance: IDBDatabase | null = null;
@@ -50,12 +52,24 @@ export async function getAppDB(): Promise<IDBDatabase> {
       reject(request.error);
     };
 
+    // 升级被其他打开的连接阻塞时记录，便于排查（如旧无版本连接阻塞新 store 创建）
+    request.onblocked = () => {
+      console.warn('[AppDB] open blocked by another open connection');
+    };
+
     request.onsuccess = () => {
       clearTimeout(timeout);
       dbInstance = request.result;
 
       // 监听数据库关闭事件，清理缓存
       dbInstance.onclose = () => {
+        dbInstance = null;
+        dbPromise = null;
+      };
+
+      // 其他连接发起版本升级时主动让路（关闭本连接），避免阻塞升级
+      dbInstance.onversionchange = () => {
+        dbInstance?.close();
         dbInstance = null;
         dbPromise = null;
       };
@@ -89,6 +103,18 @@ export async function getAppDB(): Promise<IDBDatabase> {
       // config store
       if (!db.objectStoreNames.contains(APP_DB_STORES.CONFIG)) {
         db.createObjectStore(APP_DB_STORES.CONFIG, { keyPath: 'key' });
+      }
+
+      // psd_history store (PSD 会话历史，独立于素材库)
+      if (!db.objectStoreNames.contains(APP_DB_STORES.PSD_HISTORY)) {
+        const psdHistoryStore = db.createObjectStore(
+          APP_DB_STORES.PSD_HISTORY,
+          { keyPath: 'id' }
+        );
+        psdHistoryStore.createIndex('updatedAt', 'updatedAt', {
+          unique: false,
+        });
+        psdHistoryStore.createIndex('status', 'status', { unique: false });
       }
     };
   });

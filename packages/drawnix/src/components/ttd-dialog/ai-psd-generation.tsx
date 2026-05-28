@@ -46,6 +46,7 @@ import {
   getDefaultPsdLayerExtractionPrompt,
   parsePsdLayerAnalysisResponse,
   type PsdLayerStrategy,
+  type PsdLayerType,
   type PsdTemplate,
 } from './ai-psd-plan';
 import {
@@ -58,6 +59,12 @@ import {
   PsdWorkbenchView,
   type PsdAnalysisStatus,
 } from './psd-workbench/PsdWorkbenchView';
+import { PsdHistoryDrawer } from './psd-workbench/PsdHistoryDrawer';
+import {
+  derivePsdHistoryStatus,
+  psdHistoryService,
+} from '../../services/psd-history/psd-history-service';
+import type { PsdHistoryEntry } from '../../services/psd-history/psd-history-types';
 import {
   buildPsdTaskStats,
   getTaskBatchId,
@@ -159,9 +166,10 @@ const AIImagePsdGeneration = ({
   const [isCreatingAnalysisTask, setIsCreatingAnalysisTask] = useState(false);
   const [isQueuingLayerTasks, setIsQueuingLayerTasks] = useState(false);
   const [isDownloadingPsdReady, setIsDownloadingPsdReady] = useState(false);
-  const [isLayerPlanReviewed, setIsLayerPlanReviewed] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const processedAnalysisTaskIdRef = useRef<string | null>(null);
+  const currentSessionIdRef = useRef<string | null>(null);
   const preferEditableText = true;
   const avoidBakedText = true;
   const selectedParams = loadScopedAIImageToolPreferences(
@@ -374,8 +382,8 @@ const AIImagePsdGeneration = ({
     setPsdTaskIds([]);
     setPsdBatchId(null);
     setAnalysisTaskId(null);
-    setIsLayerPlanReviewed(false);
     processedAnalysisTaskIdRef.current = null;
+    currentSessionIdRef.current = null;
 
     try {
       const serializableImages = await convertUploadedImagesToSerializable();
@@ -462,7 +470,6 @@ const AIImagePsdGeneration = ({
           analysisTaskId,
           assetBatchId: psdBatchId,
         });
-        setIsLayerPlanReviewed(false);
         setAnalysisMessage(
           uiLanguage === 'zh'
             ? `${analysisModel} 已完成分析：${nextPlan.layers.length} 个动态图层，请检查后生成图层素材`
@@ -598,18 +605,45 @@ const AIImagePsdGeneration = ({
     Record<string, string[]>
   >({});
 
+  // Stable id:type signature so normalization only re-runs when results or a
+  // layer's type actually change — not on unrelated plan edits like toggling
+  // visibility, which would otherwise flash the raw (un-normalized) images.
+  const layerTypeSignature = useMemo(
+    () => (plan?.layers ?? []).map((layer) => `${layer.id}:${layer.type}`).join('|'),
+    [plan?.layers]
+  );
+  // 仅当结果 URL 的「内容」变化时才重新归一化。layerPreviewUrls 在切换显隐时会
+  // 因 layerTaskStateMap 重建而产生新引用（内容不变），用内容签名 + ref 避免
+  // 把已归一化的图层重置回原图导致闪烁。
+  const layerPreviewUrlsRef = useRef(layerPreviewUrls);
+  layerPreviewUrlsRef.current = layerPreviewUrls;
+  const layerPreviewSignature = useMemo(
+    () => JSON.stringify(layerPreviewUrls),
+    [layerPreviewUrls]
+  );
+
   useEffect(() => {
     let cancelled = false;
-    setDisplayLayerPreviewUrls(layerPreviewUrls);
+    const currentLayerPreviewUrls = layerPreviewUrlsRef.current;
+    setDisplayLayerPreviewUrls(currentLayerPreviewUrls);
 
     const normalizeLayerPreviews = async () => {
-      if (!plan || Object.keys(layerPreviewUrls).length === 0) return;
+      if (Object.keys(currentLayerPreviewUrls).length === 0) return;
 
-      const layerTypeById = new Map(
-        plan.layers.map((layer) => [layer.id, layer.type])
+      const layerTypeById = new Map<string, PsdLayerType>(
+        layerTypeSignature
+          .split('|')
+          .filter(Boolean)
+          .map((pair) => {
+            const separatorIndex = pair.lastIndexOf(':');
+            return [
+              pair.slice(0, separatorIndex),
+              pair.slice(separatorIndex + 1) as PsdLayerType,
+            ] as const;
+          })
       );
       const normalizedEntries = await Promise.all(
-        Object.entries(layerPreviewUrls).map(async ([layerId, urls]) => {
+        Object.entries(currentLayerPreviewUrls).map(async ([layerId, urls]) => {
           const layerType = layerTypeById.get(layerId);
           const normalizedUrls = await Promise.all(
             urls.map(async (url) => {
@@ -633,12 +667,92 @@ const AIImagePsdGeneration = ({
     return () => {
       cancelled = true;
     };
-  }, [layerPreviewUrls, plan]);
+  }, [layerPreviewSignature, layerTypeSignature]);
   const layerPreviewUrlsForDisplay =
     Object.keys(layerPreviewUrls).length > 0 &&
     Object.keys(displayLayerPreviewUrls).length > 0
       ? displayLayerPreviewUrls
       : layerPreviewUrls;
+
+  // 把当前 PSD 会话（含进行中）快照进 PSD 历史，去抖避免频繁写入。
+  const sourceImageUrl = uploadedImages[0]?.url;
+  const sourceImageName = uploadedImages[0]?.name;
+  useEffect(() => {
+    if (!plan) return;
+    if (!currentSessionIdRef.current) {
+      currentSessionIdRef.current = `${plan.planId}-${Date.now()}`;
+    }
+    const sessionId = currentSessionIdRef.current;
+    const timer = setTimeout(() => {
+      const states = Object.values(layerTaskStateMap);
+      const hasTasks =
+        psdTaskIds.length > 0 ||
+        states.some(
+          (state) => state.status !== 'planned' && state.status !== 'skipped'
+        );
+      const status = derivePsdHistoryStatus(states, hasTasks);
+      const layerResults: Record<string, string[]> = {};
+      for (const [layerId, state] of Object.entries(layerTaskStateMap)) {
+        if (state.status === 'ready' && state.resultUrls.length > 0) {
+          layerResults[layerId] = state.resultUrls;
+        }
+      }
+      void psdHistoryService.upsertEntry({
+        id: sessionId,
+        status,
+        title: (prompt.trim() || plan.title || 'PSD').slice(0, 24),
+        prompt,
+        sourceImage: sourceImageUrl
+          ? { url: sourceImageUrl, name: sourceImageName }
+          : null,
+        plan,
+        planId: plan.planId,
+        psdBatchId,
+        analysisTaskId,
+        taskIds: psdTaskIds,
+        layerResults,
+      });
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [
+    plan,
+    psdBatchId,
+    analysisTaskId,
+    layerTaskStateMap,
+    prompt,
+    sourceImageUrl,
+    sourceImageName,
+    psdTaskIds,
+  ]);
+
+  const handleRestoreHistory = useCallback(
+    (entry: PsdHistoryEntry) => {
+      currentSessionIdRef.current = entry.id;
+      setError(null);
+      setPrompt(entry.prompt);
+      const restoredSource = entry.sourceImage
+        ? {
+            url: entry.sourceImage.url,
+            name: entry.sourceImage.name || 'source',
+          }
+        : null;
+      setUploadedImages(restoredSource ? [restoredSource] : []);
+      setPsdTaskIds(entry.taskIds);
+      setPsdBatchId(entry.psdBatchId);
+      setAnalysisTaskId(entry.analysisTaskId);
+      if (entry.analysisTaskId) {
+        processedAnalysisTaskIdRef.current = entry.analysisTaskId;
+      }
+      setPlan(entry.plan, {
+        prompt: entry.prompt,
+        sourceImage: restoredSource,
+        analysisTaskId: entry.analysisTaskId,
+        assetBatchId: entry.psdBatchId,
+      });
+      setIsHistoryOpen(false);
+    },
+    [setPlan]
+  );
 
   const analysisStatus = useMemo<PsdAnalysisStatus | null>(() => {
     if (!analysisTaskId && !isCreatingAnalysisTask && !analysisMessage) {
@@ -758,7 +872,6 @@ const AIImagePsdGeneration = ({
         canRunPrimaryAction={
           plan
             ? canGenerateLayerAssets &&
-              isLayerPlanReviewed &&
               hasCompletedLayerAnalysis &&
               !isCreatingAnalysisTask &&
               !isAnalysisActive &&
@@ -780,6 +893,7 @@ const AIImagePsdGeneration = ({
           ((psdTaskIds.length > 0 || psdTasks.length > 0) &&
             psdTaskStats.isActive)
         }
+        onOpenHistory={() => setIsHistoryOpen(true)}
         onPromptChange={setPrompt}
         onSourceImagesChange={setUploadedImages}
         onSourceImageError={setError}
@@ -787,8 +901,7 @@ const AIImagePsdGeneration = ({
           plan ? () => void handleGenerateLayerAssets() : handlePrimaryAction
         }
         plan={plan}
-        isLayerPlanReviewed={isLayerPlanReviewed}
-        onLayerPlanReviewedChange={setIsLayerPlanReviewed}
+        isLayerPlanReviewed={Boolean(plan)}
         analysisStatus={analysisStatus}
         status={
           plan && (psdTaskIds.length > 0 || psdTasks.length > 0)
@@ -816,6 +929,14 @@ const AIImagePsdGeneration = ({
           })
         }
         errorPanel={<ErrorDisplay error={error} />}
+      />
+      <PsdHistoryDrawer
+        uiLanguage={uiLanguage}
+        open={isHistoryOpen}
+        tasks={tasks}
+        activeSessionId={currentSessionIdRef.current}
+        onClose={() => setIsHistoryOpen(false)}
+        onRestore={handleRestoreHistory}
       />
     </div>
   );

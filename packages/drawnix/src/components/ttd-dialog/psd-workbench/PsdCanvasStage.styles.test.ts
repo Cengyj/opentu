@@ -99,7 +99,6 @@ describe('PSD canvas stage style contract', () => {
       '.psd-stage-shell',
       '.psd-stage__content',
       '.psd-stage__artboard',
-      '.psd-stage-footer',
       '.psd-preview-strip',
     ]) {
       expect(canvasStyles).toContain(selector);
@@ -113,7 +112,7 @@ describe('PSD canvas stage style contract', () => {
     );
 
     expect(canvasStyles).toMatch(
-      /\.psd-stage-shell\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1fr\) auto;/
+      /\.psd-stage-shell\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1fr\);/
     );
     expect(stageContentBlock).toContain('position: relative;');
     expect(stageContentBlock).toContain('min-height: 0;');

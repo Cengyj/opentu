@@ -49,7 +49,9 @@ export function PsdComposerPanel({
       ? `${layerCount} 个图层待审阅`
       : `${layerCount} layers ready for review`
     : analysisStatus
-    ? analysisStatus.title
+    ? uiLanguage === 'zh'
+      ? '分析中'
+      : 'Analyzing'
     : uiLanguage === 'zh'
     ? '等待分析简报'
     : 'Waiting for layer brief';
@@ -113,16 +115,6 @@ export function PsdComposerPanel({
         </div>
       </div>
 
-      {analysisStatus ? (
-        <div
-          className={`psd-analysis-result-card psd-analysis-result-card--${analysisStatus.state}`}
-          role="status"
-        >
-          <strong>{analysisStatus.title}</strong>
-          <div>{analysisStatus.detail}</div>
-        </div>
-      ) : null}
-
       <section className="psd-composer-card psd-composer-card--source">
         <div className="psd-composer-card__head">
           <span>
@@ -150,11 +142,32 @@ export function PsdComposerPanel({
             <ShieldCheck size={13} />{' '}
             {uiLanguage === 'zh' ? '拆层目标' : 'Extraction objective'}
           </span>
-          <strong>
-            {uiLanguage === 'zh'
-              ? '约束、互斥元素与可编辑文字策略'
-              : 'Constraints, exclusions, and editable text policy'}
-          </strong>
+          {prompt !== defaultPrompt ? (
+            <button
+              type="button"
+              className="psd-composer-quick-fill"
+              onClick={() => onPromptChange(defaultPrompt)}
+              disabled={isDisabled}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                color: 'var(--psd-accent)',
+                cursor: 'pointer',
+                fontSize: '10px',
+                fontWeight: 850,
+                padding: '0 4px',
+                textDecoration: 'underline',
+              }}
+            >
+              {uiLanguage === 'zh' ? '填入默认' : 'Use Default'}
+            </button>
+          ) : (
+            <strong>
+              {uiLanguage === 'zh'
+                ? '约束与文字策略'
+                : 'Constraints & text policy'}
+            </strong>
+          )}
         </div>
         <textarea
           className="psd-composer-brief"
@@ -183,11 +196,6 @@ export function PsdComposerPanel({
           {isPrimaryActionBusy ? <RefreshCw size={15} /> : <Play size={15} />}
           {primaryActionLabel}
         </button>
-        <p>
-          {uiLanguage === 'zh'
-            ? '业务边界：首个动作只创建 CHAT 分析任务；确认审阅后才创建 IMAGE 图层素材任务。导出始终是 .psd-ready-workspace.zip。'
-            : 'Contract: the first action creates only a CHAT analysis task. IMAGE layer tasks start only after review. Export remains .psd-ready-workspace.zip.'}
-        </p>
       </section>
 
       {errorPanel ? <div className="psd-setup-error">{errorPanel}</div> : null}

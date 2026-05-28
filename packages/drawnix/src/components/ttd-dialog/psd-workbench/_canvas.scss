@@ -77,10 +77,24 @@
       transition: border-color var(--psd-transition),
         background var(--psd-transition), color var(--psd-transition);
 
-      &:hover {
+      &:hover:not(:disabled) {
         border-color: var(--psd-accent);
         background: var(--psd-accent-soft);
         color: var(--psd-accent);
+      }
+
+      &[aria-pressed='true'] {
+        border-color: var(--psd-accent);
+        background: var(--psd-accent-soft);
+        color: var(--psd-accent-strong);
+      }
+
+      &:disabled {
+        border-color: var(--psd-control-disabled-border);
+        background: var(--psd-control-disabled-bg);
+        color: var(--psd-control-disabled-text);
+        box-shadow: var(--psd-control-disabled-shadow);
+        cursor: not-allowed;
       }
     }
 
@@ -93,10 +107,18 @@
     }
   }
 
+  .psd-preview-toolbar__actions .psd-preview-toolbar__divider {
+    width: 1px;
+    min-width: 1px;
+    height: 18px;
+    margin: 0 var(--psd-space-1);
+    background: var(--psd-border-strong);
+  }
+
   .psd-stage-shell {
     position: relative;
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(0, 1fr);
     height: 100%;
     min-height: 0;
     overflow: hidden;
@@ -204,6 +226,22 @@
     opacity: 0.18;
     filter: saturate(0.5);
     pointer-events: none;
+  }
+
+  // 显隐用透明度平滑过渡：隐藏图层保持挂载（不卸载/不重载），淡入淡出无闪烁
+  .psd-stage__stack-layer {
+    transition: opacity 0.24s ease-out;
+    will-change: opacity;
+  }
+
+  .psd-stage__stack-layer--hidden {
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .psd-stage__stack-layer {
+      transition: none;
+    }
   }
 
   .psd-stage__empty {
@@ -358,198 +396,6 @@
       font-size: 10.5px;
       font-weight: 850;
     }
-  }
-
-  .psd-stage-footer {
-    display: grid;
-    min-width: 0;
-    border-top: 1px solid var(--psd-stage-border);
-    background: var(--psd-stage-dock-bg);
-    backdrop-filter: blur(10px);
-  }
-
-  .psd-stage-hint {
-    display: flex;
-    gap: var(--psd-space-2);
-    align-items: center;
-    padding: var(--psd-space-2) var(--psd-space-3);
-    border-bottom: 1px solid var(--psd-stage-border);
-    color: var(--psd-stage-chrome-muted);
-    font-size: 11px;
-  }
-
-  .psd-stage__stack-dock {
-    display: flex;
-    min-width: 0;
-    min-height: 0;
-    flex-direction: column;
-    gap: var(--psd-space-2);
-    padding: var(--psd-space-2) var(--psd-space-3) var(--psd-space-3);
-    overflow: hidden;
-  }
-
-  .psd-stage__stack-dock-header {
-    display: flex;
-    gap: var(--psd-space-2);
-    align-items: center;
-    justify-content: space-between;
-
-    > span {
-      color: var(--psd-stage-chrome);
-      font-size: 11px;
-      font-weight: 850;
-    }
-  }
-
-  .psd-stage__stack-dock-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--psd-space-2);
-
-    span {
-      color: var(--psd-success);
-      font-size: 10.5px;
-      font-weight: 850;
-      white-space: nowrap;
-    }
-
-    button {
-      display: inline-flex;
-      min-height: 24px;
-      align-items: center;
-      gap: var(--psd-space-1);
-      padding: 0 var(--psd-space-2);
-      border: 1px solid var(--psd-border);
-      border-radius: var(--psd-radius-sm);
-      background: var(--psd-surface);
-      color: var(--psd-text-secondary);
-      cursor: pointer;
-      font-size: 10px;
-      font-weight: 850;
-
-      &[aria-pressed='true'] {
-        border-color: var(--psd-accent);
-        background: var(--psd-accent-soft);
-        color: var(--psd-accent);
-      }
-      &:disabled {
-        border-color: var(--psd-control-disabled-border);
-        background: var(--psd-control-disabled-bg);
-        color: var(--psd-control-disabled-text);
-        box-shadow: var(--psd-control-disabled-shadow);
-        cursor: not-allowed;
-      }
-    }
-  }
-
-  .psd-stage__stack-chip-list {
-    display: flex;
-    min-width: 0;
-    gap: var(--psd-space-2);
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-
-  .psd-stage__stack-chip {
-    display: grid;
-    flex: 0 0 176px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--psd-space-1);
-    align-items: center;
-    min-width: 0;
-    padding: var(--psd-space-1);
-    border: 1px solid var(--psd-stage-border);
-    border-radius: var(--psd-radius-sm);
-    background: var(--psd-surface);
-    color: var(--psd-stage-chrome-muted);
-  }
-
-  .psd-stage__stack-empty {
-    color: var(--psd-stage-chrome-muted);
-    font-size: 11.5px;
-    font-weight: 650;
-  }
-
-  .psd-stage__stack-chip-main {
-    display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr) auto;
-    gap: var(--psd-space-2);
-    align-items: center;
-    min-width: 0;
-    padding: 2px;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    text-align: left;
-
-    strong {
-      overflow: hidden;
-      color: var(--psd-stage-chrome);
-      font-size: 11px;
-      font-weight: 850;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    small {
-      color: var(--psd-muted);
-      font-size: 9.5px;
-      font-weight: 750;
-    }
-  }
-
-  .psd-stage__stack-chip-eye {
-    display: inline-grid;
-    width: 22px;
-    height: 22px;
-    place-items: center;
-    border: 1px solid var(--psd-stage-border);
-    border-radius: var(--psd-radius-sm);
-    background: var(--psd-surface);
-    color: var(--psd-stage-chrome-muted);
-    cursor: pointer;
-
-    &:disabled {
-      border-color: var(--psd-control-disabled-border);
-      background: var(--psd-control-disabled-bg);
-      color: var(--psd-control-disabled-text);
-      box-shadow: var(--psd-control-disabled-shadow);
-      cursor: not-allowed;
-    }
-  }
-
-  .psd-stage__stack-chip-index {
-    display: inline-grid;
-    width: 16px;
-    height: 16px;
-    place-items: center;
-    border-radius: 999px;
-    background: var(--psd-accent-soft);
-    color: var(--psd-muted);
-    font-size: 9.5px;
-    font-weight: 850;
-  }
-
-  .psd-stage__stack-chip--hidden {
-    opacity: 0.46;
-  }
-  .psd-stage__stack-chip-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background: var(--psd-accent);
-  }
-  .psd-stage__stack-chip-dot--image {
-    background: var(--psd-info);
-  }
-  .psd-stage__stack-chip-dot--text {
-    background: var(--psd-warning);
-  }
-  .psd-stage__stack-chip-dot--decoration {
-    background: var(--psd-danger);
-  }
-  .psd-stage__stack-chip-dot--adjustment {
-    background: var(--psd-muted);
   }
 
   .psd-preview-strip {

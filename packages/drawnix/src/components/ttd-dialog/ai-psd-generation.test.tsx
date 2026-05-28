@@ -922,9 +922,6 @@ describe('AIImagePsdGeneration contract', () => {
     mockState.triggerBlobDownload.mockClear();
   });
 
-  const markLayerPlanReviewed = () => {
-    fireEvent.click(screen.getByLabelText('我已审阅图层计划'));
-  };
 
   it('exports the PSD mode component for lazy dialog loading', () => {
     expect(AIImagePsdGeneration).toBeTypeOf('function');
@@ -1014,7 +1011,7 @@ describe('AIImagePsdGeneration contract', () => {
     ).toBeTruthy();
     expect(screen.queryByTestId('reference-upload')).toBeNull();
     expect(
-      screen.getByText(/导出始终是 \.psd-ready-workspace\.zip/)
+      screen.getByRole('button', { name: '分析图层结构' })
     ).toBeTruthy();
   });
 
@@ -1104,11 +1101,11 @@ describe('AIImagePsdGeneration contract', () => {
       /\.psd-workbench__center-stage\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\);[\s\S]*?var\(--psd-stage-bg\)/
     );
     expect(layoutScss).toMatch(
-      /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1\.04fr\) minmax\(246px,\s*0\.7fr\);[\s\S]*?overflow:\s*hidden;/
+      /\.psd-workbench__right-rail\s*\{[\s\S]*?grid-template-rows:\s*minmax\(0,\s*1fr\) auto;[\s\S]*?overflow:\s*hidden;/
     );
     expect(layoutScss).toContain('psd-workbench__stage-chrome');
     expect(layoutScss).toMatch(
-      /\.psd-workbench__operations\s*\{[\s\S]*?grid-template-rows:\s*auto minmax\(0,\s*1fr\) auto;/
+      /\.psd-workbench__operations\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/
     );
     expect(layoutScss).not.toContain('.psd-workbench__rail-marker--canvas');
     expect(layoutScss).not.toContain('psd-workbench__main-column');
@@ -1172,7 +1169,6 @@ describe('AIImagePsdGeneration contract', () => {
           screen.getAllByText('library-poster.png').length
         ).toBeGreaterThan(0);
       });
-      expect(screen.getAllByText('源图已载入').length).toBeGreaterThan(0);
       expect(globalThis.fetch).toHaveBeenCalledWith('blob:asset-source');
     } finally {
       globalThis.fetch = originalFetch;
@@ -1332,13 +1328,13 @@ describe('AIImagePsdGeneration contract', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/gpt-5.5 已完成分析/)).toBeTruthy();
+      expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
     });
     expect(mockState.createTask).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '生成图层素材' })).toHaveProperty(
       'disabled',
-      true
+      false
     );
     expect(screen.getByText('4 个动态图层')).toBeTruthy();
 
@@ -1353,7 +1349,7 @@ describe('AIImagePsdGeneration contract', () => {
     });
     expect(screen.getByDisplayValue('主视觉标题')).toBeTruthy();
     fireEvent.click(
-      screen.getAllByRole('button', { name: '隐藏图层：主视觉标题' })[1]
+      screen.getAllByRole('button', { name: '隐藏图层：主视觉标题' })[0]
     );
     expect(
       (
@@ -1363,7 +1359,7 @@ describe('AIImagePsdGeneration contract', () => {
       ).checked
     ).toBe(false);
     fireEvent.click(
-      screen.getAllByRole('button', { name: '显示图层：主视觉标题' })[1]
+      screen.getAllByRole('button', { name: '显示图层：主视觉标题' })[0]
     );
     expect(
       (
@@ -1373,7 +1369,6 @@ describe('AIImagePsdGeneration contract', () => {
       ).checked
     ).toBe(true);
 
-    markLayerPlanReviewed();
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
 
     await waitFor(() => {
@@ -1452,7 +1447,6 @@ describe('AIImagePsdGeneration contract', () => {
       expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
     });
     expect(mockState.createTask).toHaveBeenCalledTimes(1);
-    markLayerPlanReviewed();
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);
@@ -1512,12 +1506,11 @@ describe('AIImagePsdGeneration contract', () => {
       screen.getByRole('button', { name: '下载 PSD-ready 工作区包' })
     ).toHaveProperty('disabled', false);
     expect(screen.getByText('分层结果叠放预览')).toBeTruthy();
-    expect(screen.getByText('源图 / 叠放 / 图层目标')).toBeTruthy();
     expect(screen.getByRole('button', { name: /原图对照/ })).toBeTruthy();
     expect(
       container.querySelectorAll('.psd-stage__layer-outline')
     ).toHaveLength(0);
-    fireEvent.click(screen.getByRole('button', { name: '显示边界' }));
+    fireEvent.click(screen.getByRole('button', { name: '显示图层边界' }));
     expect(
       container.querySelectorAll('.psd-stage__layer-outline')
     ).toHaveLength(4);
@@ -1616,7 +1609,6 @@ describe('AIImagePsdGeneration contract', () => {
       expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
     });
     expect(mockState.createTask).toHaveBeenCalledTimes(1);
-    markLayerPlanReviewed();
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);
@@ -1709,7 +1701,6 @@ describe('AIImagePsdGeneration contract', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '生成图层素材' })).toBeTruthy();
     });
-    markLayerPlanReviewed();
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
     await waitFor(() => {
       expect(mockState.createTask).toHaveBeenCalledTimes(5);

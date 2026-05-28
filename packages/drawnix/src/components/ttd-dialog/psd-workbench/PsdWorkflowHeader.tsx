@@ -3,6 +3,7 @@ import {
   CheckCircle2,
   ClipboardCheck,
   FileImage,
+  History,
   Layers3,
   PackageCheck,
   WandSparkles,
@@ -17,6 +18,7 @@ interface PsdWorkflowHeaderProps {
   analysisStatus?: PsdAnalysisStatus | null;
   resultCount: number;
   canDownload: boolean;
+  onOpenHistory?: () => void;
 }
 
 type PsdStepState = 'done' | 'active' | 'waiting';
@@ -43,6 +45,7 @@ export function PsdWorkflowHeader({
   analysisStatus,
   resultCount,
   canDownload,
+  onOpenHistory,
 }: PsdWorkflowHeaderProps) {
   const isAnalyzing = Boolean(
     analysisStatus && analysisStatus.state !== 'completed' && !hasLayerPlan
@@ -91,7 +94,7 @@ export function PsdWorkflowHeader({
   ];
 
   return (
-    <header className="psd-workbench__header">
+    <header className="psd-workbench__header psd-workbench__left-header">
       <div className="psd-workbench__headline">
         <span className="psd-workbench__kicker">
           <Layers3 size={15} />
@@ -113,30 +116,43 @@ export function PsdWorkflowHeader({
         </div>
       </div>
 
-      <ol
-        className="psd-workbench__step-rail"
-        aria-label={
-          uiLanguage === 'zh' ? 'PSD 工作流阶段' : 'PSD workflow stages'
-        }
-      >
-        {steps.map((step, index) => (
-          <li
-            key={step.id}
-            className={`psd-workbench__step psd-workbench__step--${step.state}`}
+      <div className="psd-workbench__header-aside">
+        {onOpenHistory ? (
+          <button
+            type="button"
+            className="psd-workbench__history-btn"
+            onClick={onOpenHistory}
+            aria-label={uiLanguage === 'zh' ? 'PSD 历史记录' : 'PSD history'}
           >
-            <span className="psd-workbench__step-icon">
-              {step.state === 'done' ? <CheckCircle2 size={15} /> : step.icon}
-            </span>
-            <span className="psd-workbench__step-copy">
-              <strong>{step.label}</strong>
-              <small>{step.detail}</small>
-            </span>
-            {index < steps.length - 1 ? (
-              <span className="psd-workbench__step-line" />
-            ) : null}
-          </li>
-        ))}
-      </ol>
+            <History size={16} />
+            <span>{uiLanguage === 'zh' ? '历史记录' : 'History'}</span>
+          </button>
+        ) : null}
+        <ol
+          className="psd-workbench__step-rail"
+          aria-label={
+            uiLanguage === 'zh' ? 'PSD 工作流阶段' : 'PSD workflow stages'
+          }
+        >
+          {steps.map((step, index) => (
+            <li
+              key={step.id}
+              className={`psd-workbench__step psd-workbench__step--${step.state}`}
+            >
+              <span className="psd-workbench__step-icon">
+                {step.state === 'done' ? <CheckCircle2 size={15} /> : step.icon}
+              </span>
+              <span className="psd-workbench__step-copy">
+                <strong>{step.label}</strong>
+                <small>{step.detail}</small>
+              </span>
+              {index < steps.length - 1 ? (
+                <span className="psd-workbench__step-line" />
+              ) : null}
+            </li>
+          ))}
+        </ol>
+      </div>
 
       {isAnalyzing ? (
         <div className="psd-workbench__live-status" role="status">

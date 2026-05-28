@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Eye,
-  EyeOff,
   FileImage,
   Layers,
   LocateFixed,
   Maximize2,
-  Move,
   ScanSearch,
   SquareStack,
   ZoomIn,
@@ -35,24 +33,29 @@ interface PsdCanvasStageProps {
   layerPreviewUrls?: Record<string, string[]>;
   isEmptyWorkspace: boolean;
   isAnalyzingWorkspace: boolean;
+  activeLayerId?: string | null;
   onCanvasSizeChange: (size: { width: number; height: number } | null) => void;
   onSelectionChange: (context: {
     activeLayerId: string | null;
     selectedLayerBounds: LayerBounds | null;
   }) => void;
-  onLayerVisibilityChange?: (layerId: string, visible: boolean) => void;
 }
 
 interface PsdCanvasStageToolbarProps {
   uiLanguage: 'zh' | 'en';
   heading: string;
-  hasSource: boolean;
   isLayerPreview: boolean;
   isCompositeStackPreview: boolean;
   hasLayerResults: boolean;
   visibleLayerCount: number;
   layerCount: number;
   zoom: number;
+  showLayerGuides: boolean;
+  showSourceUnderlay: boolean;
+  guidesDisabled: boolean;
+  underlayDisabled: boolean;
+  onToggleGuides: () => void;
+  onToggleUnderlay: () => void;
   onZoomOut: () => void;
   onZoomIn: () => void;
   onFit: () => void;
@@ -61,13 +64,18 @@ interface PsdCanvasStageToolbarProps {
 function PsdCanvasStageToolbar({
   uiLanguage,
   heading,
-  hasSource,
   isLayerPreview,
   isCompositeStackPreview,
   hasLayerResults,
   visibleLayerCount,
   layerCount,
   zoom,
+  showLayerGuides,
+  showSourceUnderlay,
+  guidesDisabled,
+  underlayDisabled,
+  onToggleGuides,
+  onToggleUnderlay,
   onZoomOut,
   onZoomIn,
   onFit,
@@ -80,14 +88,33 @@ function PsdCanvasStageToolbar({
         </span>
         <strong>{heading}</strong>
         <div className="psd-preview-toolbar__meta">
-          <span>{hasSource ? uiLanguage === 'zh' ? '源图已载入' : 'Source loaded' : uiLanguage === 'zh' ? '未上传' : 'No source'}</span>
           <span>{isLayerPreview ? uiLanguage === 'zh' ? '单层目标' : 'Layer target' : isCompositeStackPreview ? uiLanguage === 'zh' ? `${visibleLayerCount} 层叠放` : `${visibleLayerCount} stacked` : hasLayerResults ? uiLanguage === 'zh' ? '结果对照' : 'Result compare' : uiLanguage === 'zh' ? '准备中' : 'Preparing'}</span>
-          <span>{uiLanguage === 'zh' ? '同画布透明契约' : 'Same-canvas transparency contract'}</span>
           <span>{uiLanguage === 'zh' ? `可见 ${visibleLayerCount}/${layerCount}` : `Visible ${visibleLayerCount}/${layerCount}`}</span>
         </div>
       </div>
 
       <div className="psd-preview-toolbar__actions">
+        <button
+          type="button"
+          className="psd-preview-toolbar__toggle"
+          onClick={onToggleGuides}
+          aria-pressed={showLayerGuides}
+          disabled={guidesDisabled}
+          aria-label={uiLanguage === 'zh' ? '显示图层边界' : 'Show layer guides'}
+        >
+          <ScanSearch size={16} />
+        </button>
+        <button
+          type="button"
+          className="psd-preview-toolbar__toggle"
+          onClick={onToggleUnderlay}
+          aria-pressed={showSourceUnderlay}
+          disabled={underlayDisabled}
+          aria-label={uiLanguage === 'zh' ? '原图对照' : 'Compare source'}
+        >
+          <Eye size={16} />
+        </button>
+        <span className="psd-preview-toolbar__divider" aria-hidden="true" />
         <button type="button" onClick={onZoomOut} aria-label="Zoom out"><ZoomOut size={16} /></button>
         <span>{Math.round(zoom * 100)}%</span>
         <button type="button" onClick={onZoomIn} aria-label="Zoom in"><ZoomIn size={16} /></button>
@@ -176,9 +203,9 @@ export function PsdCanvasStage({
   layerPreviewUrls = {},
   isEmptyWorkspace,
   isAnalyzingWorkspace,
+  activeLayerId: requestedLayerId,
   onCanvasSizeChange,
   onSelectionChange,
-  onLayerVisibilityChange,
 }: PsdCanvasStageProps) {
   const sourcePreviewUrl = sourceImages[0]?.url;
   const layers = useMemo(() => plan?.layers || [], [plan?.layers]);
@@ -188,10 +215,11 @@ export function PsdCanvasStage({
   const [canvasSize, setCanvasSize] = useState<{ width: number; height: number } | null>(null);
   const [stageViewportSize, setStageViewportSize] = useState<{ width: number; height: number } | null>(null);
   const [showSourceUnderlay, setShowSourceUnderlay] = useState(false);
-  const [showLayerGuides, setShowLayerGuides] = useState(false);
+  const [showLayerGuides, setShowLayerGuides] = useState(true);
   const [isDraggingCanvas, setIsDraggingCanvas] = useState(false);
   const stageContentRef = useRef<HTMLDivElement | null>(null);
   const hasAutoSelectedResultRef = useRef(false);
+  const lastRequestedLayerIdRef = useRef<string | null | undefined>(requestedLayerId);
   const dragStartRef = useRef<{ pointerId: number; x: number; y: number; panX: number; panY: number } | null>(null);
 
   const selectedLayerId = previewSelection.type === 'layer' ? previewSelection.layerId : null;
@@ -202,11 +230,18 @@ export function PsdCanvasStage({
     [selectedLayer, selectedLayerIndex]
   );
   const visibleLayers = useMemo(() => layers.filter((layer) => layer.visible !== false), [layers]);
-  const layerStackItems = useMemo(
-    () => layers.map((layer, index) => ({ layer, index, previewUrl: layerPreviewUrls[layer.id]?.[0], isHidden: layer.visible === false })),
+  // 渲染全部图层（含隐藏的），用透明度切换显隐——隐藏的图层保持挂载，
+  // 重新显示时无需重新加载/解码，配合 CSS 过渡实现平滑淡入淡出、消除闪烁。
+  const stackItems = useMemo(
+    () =>
+      layers.map((layer, index) => ({
+        layer,
+        index,
+        previewUrl: layerPreviewUrls[layer.id]?.[0],
+        hidden: layer.visible === false,
+      })),
     [layerPreviewUrls, layers]
   );
-  const visibleStackItems = useMemo(() => layerStackItems.filter((item) => !item.isHidden), [layerStackItems]);
   const activeLayerId = selectedLayer?.id || null;
   const selectedLayerPreviewUrl = activeLayerId ? layerPreviewUrls[activeLayerId]?.[0] : undefined;
   const hasSource = sourceImages.length > 0;
@@ -216,8 +251,6 @@ export function PsdCanvasStage({
   const shouldRenderCompositeStack = isCompositeStackPreview && (!hasResult || hasLayerResults);
   const isLayerPreview = previewSelection.type === 'layer' && !!selectedLayer;
   const isSourcePreview = previewSelection.type === 'source';
-  const generatedStackLayerCount = visibleStackItems.filter((item) => item.previewUrl).length;
-  const hiddenLayerCount = layerStackItems.filter((item) => item.isHidden).length;
   const visibleLayerCount = visibleLayers.length;
   const shouldShowLayerGuides =
     !isLayerPreview &&
@@ -302,7 +335,6 @@ export function PsdCanvasStage({
       setIsDraggingCanvas(false);
     }
   }, []);
-  const toggleLayerVisibility = useCallback((layer: PsdLayer) => onLayerVisibilityChange?.(layer.id, layer.visible === false), [onLayerVisibilityChange]);
 
   const renderLayerSilhouette = (layer: PsdLayer, index: number) => {
     const bounds = getLayerBounds(layer, index);
@@ -320,6 +352,21 @@ export function PsdCanvasStage({
   useEffect(() => {
     onSelectionChange({ activeLayerId, selectedLayerBounds });
   }, [activeLayerId, onSelectionChange, selectedLayerBounds]);
+  // Bridge: an external selection (right-rail layer card) drives the canvas
+  // preview. Only react to actual changes of the external request, never to the
+  // canvas's own selection — otherwise a local click would race the round-trip
+  // through onSelectionChange and flicker between layers.
+  useEffect(() => {
+    if (requestedLayerId === lastRequestedLayerIdRef.current) return;
+    lastRequestedLayerIdRef.current = requestedLayerId;
+    if (
+      requestedLayerId &&
+      requestedLayerId !== activeLayerId &&
+      layers.some((layer) => layer.id === requestedLayerId)
+    ) {
+      selectLayerPreview(requestedLayerId);
+    }
+  }, [requestedLayerId, activeLayerId, layers, selectLayerPreview]);
   useEffect(() => {
     const node = stageContentRef.current;
     if (!node) return undefined;
@@ -364,13 +411,18 @@ export function PsdCanvasStage({
       <PsdCanvasStageToolbar
         uiLanguage={uiLanguage}
         heading={previewHeading}
-        hasSource={hasSource}
         isLayerPreview={isLayerPreview}
         isCompositeStackPreview={shouldRenderCompositeStack}
         hasLayerResults={hasResult || hasLayerResults}
         visibleLayerCount={visibleLayerCount}
         layerCount={layers.length}
         zoom={zoom}
+        showLayerGuides={showLayerGuides}
+        showSourceUnderlay={showSourceUnderlay}
+        guidesDisabled={visibleLayers.length === 0}
+        underlayDisabled={!sourcePreviewUrl || !shouldRenderCompositeStack}
+        onToggleGuides={() => setShowLayerGuides((current) => !current)}
+        onToggleUnderlay={() => setShowSourceUnderlay((current) => !current)}
         onZoomOut={() => setZoom((current) => clamp(current - ZOOM_STEP, MIN_ZOOM, MAX_ZOOM))}
         onZoomIn={() => setZoom((current) => clamp(current + ZOOM_STEP, MIN_ZOOM, MAX_ZOOM))}
         onFit={fitView}
@@ -409,9 +461,17 @@ export function PsdCanvasStage({
                   {shouldRenderCompositeStack ? (
                     <div className="psd-stage__stack" aria-label={uiLanguage === 'zh' ? '同画布透明图层叠放预览' : 'Same-canvas transparent layer stack preview'}>
                       {showSourceUnderlay && sourcePreviewUrl ? <img className="psd-stage__stack-underlay" src={sourcePreviewUrl} alt={uiLanguage === 'zh' ? '原图对照底稿' : 'Source comparison underlay'} onLoad={(event) => handleCanvasImageLoad(event, { force: true })} /> : null}
-                      {visibleStackItems.map(({ layer, index, previewUrl }) => previewUrl ? (
-                        <img key={layer.id} className="psd-stage__stack-layer" src={previewUrl} alt={uiLanguage === 'zh' ? `叠放图层：${layer.name}` : `Stacked layer: ${layer.name}`} style={{ opacity: layer.opacity / 100 }} onLoad={handleCanvasImageLoad} />
-                      ) : renderLayerSilhouette(layer, index))}
+                      {stackItems.map(({ layer, index, previewUrl, hidden }) => previewUrl ? (
+                        <img
+                          key={layer.id}
+                          className={`psd-stage__stack-layer${hidden ? ' psd-stage__stack-layer--hidden' : ''}`}
+                          src={previewUrl}
+                          alt={uiLanguage === 'zh' ? `叠放图层：${layer.name}` : `Stacked layer: ${layer.name}`}
+                          style={{ opacity: hidden ? 0 : layer.opacity / 100 }}
+                          aria-hidden={hidden}
+                          onLoad={handleCanvasImageLoad}
+                        />
+                      ) : hidden ? null : renderLayerSilhouette(layer, index))}
                     </div>
                   ) : null}
 
@@ -443,46 +503,6 @@ export function PsdCanvasStage({
                   }) : null}
                 </>
               ) : null}
-            </div>
-          </div>
-        </div>
-
-        <div className="psd-stage-footer">
-          <div className="psd-stage-hint">
-            <Move size={14} />
-            <span>{uiLanguage === 'zh' ? `拖拽平移，缩放检查；隐藏 ${hiddenLayerCount} 层。` : `Drag to pan and zoom to inspect; ${hiddenLayerCount} hidden.`}</span>
-          </div>
-          <div className="psd-stage__stack-dock" onPointerDown={(event) => event.stopPropagation()}>
-            <div className="psd-stage__stack-dock-header">
-              <span>{uiLanguage === 'zh' ? '源图 / 叠放 / 图层目标' : 'Source / stack / layer targets'}</span>
-              <div className="psd-stage__stack-dock-actions">
-                <span>{uiLanguage === 'zh' ? `${generatedStackLayerCount}/${visibleLayerCount} 层已有结果` : `${generatedStackLayerCount}/${visibleLayerCount} generated`}</span>
-                <button type="button" onClick={() => setShowLayerGuides((current) => !current)} aria-pressed={showLayerGuides} disabled={!hasLayerResults}>
-                  <ScanSearch size={13} />
-                  {showLayerGuides ? uiLanguage === 'zh' ? '隐藏边界' : 'Hide guides' : uiLanguage === 'zh' ? '显示边界' : 'Show guides'}
-                </button>
-                <button type="button" onClick={() => setShowSourceUnderlay((current) => !current)} aria-pressed={showSourceUnderlay} disabled={!sourcePreviewUrl || !shouldRenderCompositeStack}>
-                  <Eye size={13} />
-                  {showSourceUnderlay ? uiLanguage === 'zh' ? '隐藏原图' : 'Hide source' : uiLanguage === 'zh' ? '原图对照' : 'Compare source'}
-                </button>
-              </div>
-            </div>
-            <div className="psd-stage__stack-chip-list">
-              {layerStackItems.length === 0 ? (
-                <div className="psd-stage__stack-empty">{uiLanguage === 'zh' ? '分析完成后，图层目标会在这里保持可选。' : 'Layer targets stay selectable here after analysis.'}</div>
-              ) : layerStackItems.map(({ layer, previewUrl, isHidden }, index) => (
-                <div key={layer.id} className={`psd-stage__stack-chip ${isHidden ? 'psd-stage__stack-chip--hidden' : ''}`}>
-                  <button type="button" className="psd-stage__stack-chip-main" onClick={() => selectLayerPreview(layer.id)}>
-                    <span className="psd-stage__stack-chip-index">{index + 1}</span>
-                    <span className={`psd-stage__stack-chip-dot psd-stage__stack-chip-dot--${layer.type}`} />
-                    <strong>{layer.name}</strong>
-                    <small>{isHidden ? uiLanguage === 'zh' ? '隐藏' : 'Hidden' : previewUrl ? uiLanguage === 'zh' ? '已叠放' : 'Stacked' : uiLanguage === 'zh' ? '计划' : 'Planned'}</small>
-                  </button>
-                  <button type="button" className="psd-stage__stack-chip-eye" onClick={() => toggleLayerVisibility(layer)} aria-pressed={!isHidden} aria-label={isHidden ? uiLanguage === 'zh' ? `显示图层：${layer.name}` : `Show layer: ${layer.name}` : uiLanguage === 'zh' ? `隐藏图层：${layer.name}` : `Hide layer: ${layer.name}`}>
-                    {isHidden ? <EyeOff size={13} /> : <Eye size={13} />}
-                  </button>
-                </div>
-              ))}
             </div>
           </div>
         </div>

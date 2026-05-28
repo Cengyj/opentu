@@ -64,7 +64,7 @@ function renderStage(
 }
 
 describe('PsdCanvasStage image visibility', () => {
-  it('does not cover the source preview with automatic layer guide overlays during review', () => {
+  it('overlays clickable layer guides on the source preview during review while keeping the source image visible', () => {
     const { container } = renderStage();
 
     expect(screen.getByText('Source preview')).toBeTruthy();
@@ -72,7 +72,9 @@ describe('PsdCanvasStage image visibility', () => {
       screen.getByRole('img', { name: 'Uploaded source image' })
         .getAttribute('src')
     ).toBe(SOURCE_URL);
-    expect(container.querySelector('.psd-stage__layer-outline')).toBeNull();
+    expect(
+      container.querySelectorAll('.psd-stage__layer-outline').length
+    ).toBeGreaterThan(0);
   });
 
   it('keeps the original source and composite preview images visible as real artboard images', () => {

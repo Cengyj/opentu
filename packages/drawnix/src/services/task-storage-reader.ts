@@ -99,6 +99,8 @@ export interface AssetTaskRecord {
   completedAt?: number;
   remoteId?: string;
   archived?: boolean;
+  /** PSD 工作台图层/合成结果——不作为素材库资产展示，由 PSD 历史单独管理。 */
+  isPsdInternal?: boolean;
   params: {
     prompt?: string;
     model?: string;
@@ -296,6 +298,7 @@ function convertSWTaskToAssetTask(swTask: SWTask): AssetTaskRecord | null {
     completedAt: swTask.completedAt,
     remoteId: swTask.remoteId,
     archived: swTask.archived,
+    isPsdInternal: Boolean(swTask.params?.psdPlan),
     params: {
       prompt: swTask.params?.prompt,
       model: swTask.params?.model,

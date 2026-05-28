@@ -27,6 +27,7 @@ export function PsdWorkbenchShell({
 }: PsdWorkbenchShellProps) {
   return (
     <div className="psd-workbench">
+      {header}
       <div className="psd-workbench__workspace-grid">
         <section
           className="psd-workbench__region psd-workbench__region--brief psd-workbench__left-rail"
@@ -34,7 +35,6 @@ export function PsdWorkbenchShell({
             uiLanguage === 'zh' ? 'PSD 分层任务简报' : 'PSD layer task brief'
           }
         >
-          <div className="psd-workbench__left-header">{header}</div>
           {brief}
         </section>
 

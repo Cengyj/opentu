@@ -9,11 +9,10 @@
  */
 
 import { normalizeImageDataUrl } from '@aitu/utils';
-import { APP_DB_NAME, APP_DB_STORES } from '../app-database';
+import { APP_DB_STORES, getAppDB } from '../app-database';
 import type { TaskInvocationRouteSnapshot } from '../../types/task.types';
 
 // 使用主线程专用数据库
-const DB_NAME = APP_DB_NAME;
 const TASKS_STORE = APP_DB_STORES.TASKS;
 
 // 使用与 SW 端一致的字符串字面量类型
@@ -107,48 +106,15 @@ export interface SWTask {
  * 提供直接写入 IndexedDB 的能力，用于降级模式。
  */
 class TaskStorageWriter {
-  private db: IDBDatabase | null = null;
-  private dbPromise: Promise<IDBDatabase> | null = null;
-
   /**
-   * 获取数据库连接
+   * 获取数据库连接。
+   *
+   * 统一走 getAppDB()（带版本的单一连接），不再用无版本 indexedDB.open 自开连接：
+   * 否则该缓存连接会阻塞 getAppDB 的版本升级（如新增 psd_history store），
+   * 导致升级超时、新 store 创建失败。
    */
   private async getDB(): Promise<IDBDatabase> {
-    if (this.db) {
-      return this.db;
-    }
-
-    if (this.dbPromise) {
-      return this.dbPromise;
-    }
-
-    this.dbPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME);
-
-      request.onerror = () => {
-        this.dbPromise = null;
-        reject(new Error('Failed to open database'));
-      };
-
-      request.onsuccess = () => {
-        this.db = request.result;
-        this.dbPromise = null;
-        resolve(this.db);
-      };
-
-      request.onupgradeneeded = () => {
-        // 如果数据库不存在，创建必要的 object store
-        const db = request.result;
-        if (!db.objectStoreNames.contains(TASKS_STORE)) {
-          const store = db.createObjectStore(TASKS_STORE, { keyPath: 'id' });
-          store.createIndex('status', 'status', { unique: false });
-          store.createIndex('type', 'type', { unique: false });
-          store.createIndex('createdAt', 'createdAt', { unique: false });
-        }
-      };
-    });
-
-    return this.dbPromise;
+    return getAppDB();
   }
 
   /**
@@ -500,15 +466,6 @@ class TaskStorageWriter {
     }
   }
 
-  /**
-   * 关闭数据库连接
-   */
-  close(): void {
-    if (this.db) {
-      this.db.close();
-      this.db = null;
-    }
-  }
 }
 
 /**

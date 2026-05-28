@@ -25,13 +25,13 @@ export interface PsdWorkbenchViewProps {
   primaryActionEyebrow: string;
   canRunPrimaryAction: boolean;
   isPrimaryActionBusy: boolean;
+  onOpenHistory?: () => void;
   onPromptChange: (prompt: string) => void;
   onSourceImagesChange: (images: ReferenceImage[]) => void;
   onSourceImageError: (message: string | null) => void;
   onPrimaryAction: () => void;
   plan: PsdGenerationPlan | null;
   isLayerPlanReviewed?: boolean;
-  onLayerPlanReviewedChange?: (reviewed: boolean) => void;
   analysisStatus?: PsdAnalysisStatus | null;
   status: PsdTaskSummary | null;
   sourceImages: ReferenceImage[];
@@ -59,13 +59,13 @@ export function PsdWorkbenchView({
   primaryActionEyebrow,
   canRunPrimaryAction,
   isPrimaryActionBusy,
+  onOpenHistory,
   onPromptChange,
   onSourceImagesChange,
   onSourceImageError,
   onPrimaryAction,
   plan,
   isLayerPlanReviewed = false,
-  onLayerPlanReviewedChange,
   analysisStatus,
   status,
   sourceImages,
@@ -123,6 +123,7 @@ export function PsdWorkbenchView({
           analysisStatus={analysisStatus}
           resultCount={resultCount}
           canDownload={canDownload}
+          onOpenHistory={onOpenHistory}
         />
       }
       brief={
@@ -154,17 +155,15 @@ export function PsdWorkbenchView({
           layerPreviewUrls={layerPreviewUrls}
           isEmptyWorkspace={isEmptyWorkspace}
           isAnalyzingWorkspace={isAnalyzingWorkspace}
+          activeLayerId={activeLayerId}
           onCanvasSizeChange={setCanvasSize}
           onSelectionChange={handleSelectionChange}
-          onLayerVisibilityChange={onLayerVisibilityChange}
         />
       }
       plan={
         <PsdLayerWorkspace
           uiLanguage={uiLanguage}
           plan={plan}
-          isLayerPlanReviewed={isLayerPlanReviewed}
-          onLayerPlanReviewedChange={onLayerPlanReviewedChange}
           analysisStatus={analysisStatus}
           status={status}
           isEmptyWorkspace={isEmptyWorkspace}

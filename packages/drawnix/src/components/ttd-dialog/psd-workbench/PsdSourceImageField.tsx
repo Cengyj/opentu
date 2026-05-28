@@ -278,19 +278,6 @@ export function PsdSourceImageField({
                 className="psd-source-field__preview"
               />
             </div>
-            <div className="psd-source-field__meta">
-              <span className="psd-source-field__status">
-                <FileImage size={13} /> {labels.loaded}
-              </span>
-              <strong title={sourceImage.name}>{sourceImage.name}</strong>
-              <small>
-                {sourceImage.file
-                  ? formatFileSize(sourceImage.file.size)
-                  : isLibraryAssetUrl(sourceImage.url)
-                  ? labels.libraryOnly
-                  : labels.localOnly}
-              </small>
-            </div>
             <div className="psd-source-field__actions">
               <button
                 type="button"
