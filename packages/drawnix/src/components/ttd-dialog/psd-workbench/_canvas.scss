@@ -5,7 +5,13 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--psd-space-3) var(--psd-space-4);
+    border-color: rgba(255, 255, 255, 0.12);
     border-radius: var(--psd-radius-lg);
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.96),
+      rgba(255, 247, 237, 0.92)
+    );
   }
 
   .psd-preview-toolbar__title {
@@ -97,7 +103,16 @@
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    border-radius: calc(var(--psd-radius-xl) + 6px);
+    border-color: rgba(255, 255, 255, 0.12);
+    border-radius: var(--psd-radius-xl);
+    background:
+      linear-gradient(90deg, var(--psd-stage-grid) 1px, transparent 1px),
+      linear-gradient(0deg, var(--psd-stage-grid) 1px, transparent 1px),
+      radial-gradient(circle at 50% 38%, rgba(255, 122, 26, 0.16), transparent 28%),
+      linear-gradient(180deg, var(--psd-stage-bg-soft), var(--psd-stage-bg));
+    background-size: 28px 28px, 28px 28px, auto, auto;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 -38px 90px rgba(0, 0, 0, 0.2);
   }
 
   .psd-stage__source-probe {
@@ -110,7 +125,7 @@
 
   .psd-stage__content {
     position: absolute;
-    inset: 34px 24px 24px;
+    inset: 34px 26px 118px;
     display: grid;
     min-width: 0;
     min-height: 0;
@@ -135,15 +150,16 @@
   .psd-stage__artboard {
     position: relative;
     display: grid;
-    width: min(100%, 760px);
+    width: min(100%, 920px);
     max-width: 100%;
     max-height: 100%;
     place-items: center;
     overflow: hidden;
-    border: 1px solid var(--psd-border);
+    border: 1px solid rgba(255, 255, 255, 0.32);
     border-radius: var(--psd-radius-md);
     background: var(--psd-surface);
-    box-shadow: var(--psd-shadow-panel);
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.32),
+      0 0 0 8px rgba(255, 255, 255, 0.045);
   }
 
   .psd-stage__artboard--transparent {
@@ -194,7 +210,7 @@
     padding: var(--psd-space-6);
     border: 1px solid var(--psd-border);
     border-radius: var(--psd-radius-lg);
-    background: rgba(255, 250, 242, 0.9);
+    background: rgba(255, 255, 255, 0.94);
     color: var(--psd-muted);
     text-align: center;
     box-shadow: var(--psd-shadow-soft);
@@ -341,8 +357,9 @@
   .psd-stage-footer {
     display: grid;
     min-width: 0;
-    border-top: 1px solid var(--psd-border);
-    background: var(--psd-surface-raised);
+    border-top: 1px solid rgba(255, 255, 255, 0.11);
+    background: rgba(18, 23, 34, 0.72);
+    backdrop-filter: blur(10px);
   }
 
   .psd-stage-hint {
@@ -351,7 +368,7 @@
     align-items: center;
     padding: var(--psd-space-2) var(--psd-space-3);
     border-bottom: 1px solid var(--psd-border);
-    color: var(--psd-muted);
+    color: rgba(255, 255, 255, 0.66);
     font-size: 11px;
   }
 
@@ -361,7 +378,7 @@
     min-height: 0;
     flex-direction: column;
     gap: var(--psd-space-2);
-    padding: var(--psd-space-3);
+    padding: var(--psd-space-2) var(--psd-space-3) var(--psd-space-3);
     overflow: hidden;
   }
 
@@ -372,7 +389,7 @@
     justify-content: space-between;
 
     > span {
-      color: var(--psd-text);
+      color: rgba(255, 255, 255, 0.86);
       font-size: 11px;
       font-weight: 850;
     }
@@ -435,14 +452,14 @@
     align-items: center;
     min-width: 0;
     padding: var(--psd-space-1);
-    border: 1px solid var(--psd-border);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     border-radius: var(--psd-radius-sm);
-    background: var(--psd-surface-soft);
-    color: var(--psd-text);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.82);
   }
 
   .psd-stage__stack-empty {
-    color: var(--psd-muted);
+    color: rgba(255, 255, 255, 0.58);
     font-size: 11.5px;
     font-weight: 650;
   }
@@ -462,14 +479,14 @@
 
     strong {
       overflow: hidden;
-      color: var(--psd-text);
+      color: rgba(255, 255, 255, 0.9);
       font-size: 11px;
       font-weight: 850;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
     small {
-      color: var(--psd-muted);
+      color: rgba(255, 255, 255, 0.56);
       font-size: 9.5px;
       font-weight: 750;
     }
@@ -480,10 +497,10 @@
     width: 22px;
     height: 22px;
     place-items: center;
-    border: 1px solid var(--psd-border);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: var(--psd-radius-sm);
-    background: var(--psd-surface);
-    color: var(--psd-muted);
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.62);
     cursor: pointer;
 
     &:disabled {

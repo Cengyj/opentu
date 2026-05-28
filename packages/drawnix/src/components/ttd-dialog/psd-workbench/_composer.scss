@@ -2,11 +2,11 @@
   .psd-workbench__composer-panel {
     display: flex;
     flex-direction: column;
-    gap: var(--psd-space-3);
-    padding: var(--psd-space-4);
+    gap: var(--psd-space-2);
+    padding: var(--psd-space-3);
     border-radius: var(--psd-radius-xl);
     overflow-y: auto;
-    border-left: 4px solid var(--psd-accent);
+    border-left: 3px solid var(--psd-accent);
     background: linear-gradient(
         180deg,
         rgba(255, 122, 26, 0.055),
@@ -17,14 +17,14 @@
 
   .psd-composer-identity {
     display: grid;
-    gap: var(--psd-space-2);
-    padding-bottom: var(--psd-space-3);
+    gap: var(--psd-space-1);
+    padding-bottom: var(--psd-space-2);
     border-bottom: 1px solid var(--psd-border);
 
     h2 {
       margin: 0;
       color: var(--psd-text);
-      font-size: 19px;
+      font-size: 17px;
       font-weight: 850;
       letter-spacing: -0.03em;
     }
@@ -32,7 +32,7 @@
     p {
       margin: 0;
       color: var(--psd-muted);
-      font-size: 12.5px;
+      font-size: 12px;
       line-height: 1.55;
     }
   }
@@ -141,7 +141,7 @@
   .psd-composer-card,
   .psd-composer-action {
     display: grid;
-    gap: var(--psd-space-3);
+    gap: var(--psd-space-2);
     padding: var(--psd-space-3);
   }
 
@@ -170,7 +170,7 @@
   .psd-source-field {
     position: relative;
     display: grid;
-    min-height: 132px;
+    min-height: 112px;
     overflow: hidden;
     border: 1px solid var(--psd-border-strong);
     border-radius: var(--psd-radius-lg);
@@ -607,13 +607,14 @@
       border-color: var(--psd-control-disabled-border);
       background: linear-gradient(
         180deg,
-        var(--psd-control-disabled-bg),
+        #fafbfc,
         var(--psd-surface-soft)
       );
       color: var(--psd-control-disabled-text);
       cursor: not-allowed;
       box-shadow: var(--psd-control-disabled-shadow);
       transform: none;
+      opacity: 0.92;
     }
 
     &--busy {

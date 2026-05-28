@@ -121,12 +121,13 @@
       border: 1px solid var(--psd-control-disabled-border);
       background: linear-gradient(
         180deg,
-        var(--psd-control-disabled-bg),
+        #fafbfc,
         var(--psd-surface-soft)
       );
       color: var(--psd-control-disabled-text);
       box-shadow: var(--psd-control-disabled-shadow);
       cursor: not-allowed;
+      opacity: 0.92;
     }
 
     &--busy {
