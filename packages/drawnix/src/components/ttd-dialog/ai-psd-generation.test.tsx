@@ -1016,6 +1016,68 @@ describe('AIImagePsdGeneration contract', () => {
     ).toBeTruthy();
   });
 
+  it('renders PSD mode through the visible three-rail workbench path instead of the legacy image layout', () => {
+    const { container } = render(<AIImagePsdGeneration />);
+
+    const root = container.querySelector('.ai-psd-generation-container');
+    const workbench = root?.querySelector('.psd-workbench');
+    const workspaceGrid = workbench?.querySelector(
+      '.psd-workbench__workspace-grid'
+    );
+    const directRegions = Array.from(workspaceGrid?.children || []);
+
+    expect(root?.classList.contains('ai-image-generation-container')).toBe(
+      true
+    );
+    expect(
+      root?.classList.contains('ai-psd-generation-container--workbench')
+    ).toBe(true);
+    expect(root?.querySelector('.main-content')).toBeNull();
+    expect(root?.querySelector('.ai-image-generation-section')).toBeNull();
+    expect(root?.querySelector('.preview-section')).toBeNull();
+    expect(root?.querySelector('.task-sidebar')).toBeNull();
+    expect(root?.querySelector('.ttd-dialog-panels')).toBeNull();
+    expect(root?.querySelector('.ttd-dialog-panel')).toBeNull();
+
+    expect(workbench?.parentElement).toBe(root);
+    expect(directRegions).toHaveLength(3);
+    expect(Array.from(directRegions[0]?.classList || [])).toEqual(
+      expect.arrayContaining([
+        'psd-workbench__left-rail',
+        'psd-workbench__region--brief',
+      ])
+    );
+    expect(Array.from(directRegions[1]?.classList || [])).toEqual(
+      expect.arrayContaining([
+        'psd-workbench__center-stage',
+        'psd-workbench__region--canvas',
+      ])
+    );
+    expect(Array.from(directRegions[2]?.classList || [])).toEqual(
+      expect.arrayContaining([
+        'psd-workbench__right-rail',
+        'psd-workbench__region--plan',
+      ])
+    );
+
+    expect(
+      directRegions[0]?.querySelector('.psd-workbench__composer-panel')
+    ).toBeTruthy();
+    expect(directRegions[1]?.querySelector('.psd-stage-shell')).toBeTruthy();
+    expect(directRegions[1]?.querySelector('.psd-layer-workspace')).toBeNull();
+    expect(
+      directRegions[2]?.querySelector('.psd-workbench__plan-column')
+    ).toBeTruthy();
+    expect(
+      directRegions[2]?.querySelector('.psd-layer-workspace')
+    ).toBeTruthy();
+    expect(
+      directRegions[2]?.querySelector('.psd-workbench__operations')
+    ).toBeTruthy();
+    expect(directRegions[2]?.querySelector('.psd-inspector-card')).toBeTruthy();
+    expect(directRegions[2]?.querySelector('.psd-export-card')).toBeTruthy();
+  });
+
   it('locks the desktop PSD workbench to one no-page-scroll viewport shell', () => {
     const layoutScssPath =
       'packages/drawnix/src/components/ttd-dialog/psd-workbench/_layout.scss';
