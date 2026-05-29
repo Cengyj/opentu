@@ -19,6 +19,11 @@ import {
   getCompatibleParams,
   type ParamConfig,
 } from '../../constants/model-config';
+import { parseGPTImage2PixelSize } from '../../services/model-adapters/image-size-quality-resolver';
+import {
+  GptImageCustomSizeEditor,
+  DEFAULT_GPT_IMAGE_2_CUSTOM_SIZE,
+} from './GptImageCustomSizeEditor';
 import { Z_INDEX } from '../../constants/z-index';
 import { useControllableState } from '../../hooks/useControllableState';
 import './parameters-dropdown.scss';
@@ -53,6 +58,17 @@ function isRandomizableSeedParam(param: ParamConfig): boolean {
   return (
     param.valueType === 'number' && param.id.toLowerCase().includes('seed')
   );
+}
+
+/** 该参数当前值是否处于「自定义像素尺寸」模式（值是合法像素串且不在 options 内） */
+function isCustomSizeMode(param: ParamConfig, value: string | undefined): boolean {
+  if (!param.allowCustomPixelSize || !value) {
+    return false;
+  }
+  if (param.options?.some((option) => option.value === value)) {
+    return false;
+  }
+  return !!parseGPTImage2PixelSize(value);
 }
 
 function getRandomParamValue(param: ParamConfig): string {
@@ -131,6 +147,14 @@ export const ParametersDropdown: React.FC<ParametersDropdownProps> = ({
     return params;
   }, [compatibleParamsProp, modelId, excludeParamIds]);
 
+  // 当 size 处于自定义像素模式时，resolution 档位被忽略（像素串直接透传）
+  const sizeInCustomMode = useMemo(() => {
+    const sizeParam = compatibleParams.find((p) => p.id === 'size');
+    return sizeParam
+      ? isCustomSizeMode(sizeParam, selectedParams[sizeParam.id])
+      : false;
+  }, [compatibleParams, selectedParams]);
+
   // 打开时重置高亮索引
   useEffect(() => {
     if (isOpen && compatibleParams.length > 0) {
@@ -161,6 +185,9 @@ export const ParametersDropdown: React.FC<ParametersDropdownProps> = ({
             summaryParts.push(
               getCompactEnumSummaryLabel(param.id, value, option.label)
             );
+          } else if (isCustomSizeMode(param, value)) {
+            // 自定义像素尺寸：直接展示 "1536×1024"
+            summaryParts.push(value.replace(/x/i, '×'));
           }
         } else {
           const displayValue =
@@ -265,8 +292,8 @@ export const ParametersDropdown: React.FC<ParametersDropdownProps> = ({
   );
 
   const handleValueSelect = useCallback(
-    (paramId: string, value: string) => {
-      onParamChange(paramId, value);
+    (paramId: string, value: string, options?: { keepOpen?: boolean }) => {
+      onParamChange(paramId, value, options);
     },
     [onParamChange]
   );
@@ -346,6 +373,10 @@ export const ParametersDropdown: React.FC<ParametersDropdownProps> = ({
                       const currentValue = selectedParams[param.id];
                       const isParamHighlighted =
                         paramIndex === highlightedParamIndex;
+                      const customSizeMode = isCustomSizeMode(
+                        param,
+                        currentValue
+                      );
                       return (
                         <div
                           key={param.id}
@@ -358,48 +389,98 @@ export const ParametersDropdown: React.FC<ParametersDropdownProps> = ({
                           <div className="parameters-dropdown__section-title">
                             {param.label}
                           </div>
+                          {param.id === 'resolution' && sizeInCustomMode && (
+                            <div className="parameters-dropdown__section-hint">
+                              {language === 'zh'
+                                ? '自定义尺寸下分辨率由像素决定'
+                                : 'Ignored when using a custom size'}
+                            </div>
+                          )}
                           {param.valueType === 'enum' ? (
-                            <div className="parameters-dropdown__options">
-                              {param.options?.map((option, optionIndex) => {
-                                const isSelected =
-                                  currentValue === option.value;
-                                const isOptionHighlighted =
-                                  isParamHighlighted &&
-                                  optionIndex === highlightedOptionIndex;
-                                return (
+                            <>
+                              <div className="parameters-dropdown__options">
+                                {param.options?.map((option, optionIndex) => {
+                                  const isSelected =
+                                    currentValue === option.value;
+                                  const isOptionHighlighted =
+                                    isParamHighlighted &&
+                                    optionIndex === highlightedOptionIndex;
+                                  return (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      className={`parameters-dropdown__option ${
+                                        isSelected
+                                          ? 'parameters-dropdown__option--selected'
+                                          : ''
+                                      } ${
+                                        isOptionHighlighted
+                                          ? 'parameters-dropdown__option--highlighted'
+                                          : ''
+                                      }`}
+                                      onClick={() =>
+                                        handleValueSelect(
+                                          param.id,
+                                          option.value
+                                        )
+                                      }
+                                      onMouseEnter={() => {
+                                        setHighlightedParamIndex(paramIndex);
+                                        setHighlightedOptionIndex(optionIndex);
+                                      }}
+                                    >
+                                      <span className="parameters-dropdown__option-label">
+                                        {option.label.split('(')[0].trim()}
+                                      </span>
+                                      {isSelected && (
+                                        <Check
+                                          size={12}
+                                          className="parameters-dropdown__option-check"
+                                        />
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                                {param.allowCustomPixelSize && (
                                   <button
-                                    key={option.value}
                                     type="button"
                                     className={`parameters-dropdown__option ${
-                                      isSelected
+                                      customSizeMode
                                         ? 'parameters-dropdown__option--selected'
-                                        : ''
-                                    } ${
-                                      isOptionHighlighted
-                                        ? 'parameters-dropdown__option--highlighted'
                                         : ''
                                     }`}
                                     onClick={() =>
-                                      handleValueSelect(param.id, option.value)
+                                      handleValueSelect(
+                                        param.id,
+                                        customSizeMode
+                                          ? currentValue
+                                          : DEFAULT_GPT_IMAGE_2_CUSTOM_SIZE,
+                                        { keepOpen: true }
+                                      )
                                     }
-                                    onMouseEnter={() => {
-                                      setHighlightedParamIndex(paramIndex);
-                                      setHighlightedOptionIndex(optionIndex);
-                                    }}
                                   >
                                     <span className="parameters-dropdown__option-label">
-                                      {option.label.split('(')[0].trim()}
+                                      {language === 'zh' ? '自定义' : 'Custom'}
                                     </span>
-                                    {isSelected && (
+                                    {customSizeMode && (
                                       <Check
                                         size={12}
                                         className="parameters-dropdown__option-check"
                                       />
                                     )}
                                   </button>
-                                );
-                              })}
-                            </div>
+                                )}
+                              </div>
+                              {customSizeMode && (
+                                <GptImageCustomSizeEditor
+                                  value={currentValue}
+                                  onChange={(value, opts) =>
+                                    handleValueSelect(param.id, value, opts)
+                                  }
+                                  language={language}
+                                />
+                              )}
+                            </>
                           ) : (
                             <div
                               className={`parameters-dropdown__field ${

@@ -93,6 +93,11 @@ export interface ParamConfig {
   valueType: ParamValueType;
   /** 可选值列表（enum 类型时使用） */
   options?: Array<{ value: string; label: string }>;
+  /**
+   * enum 类型下是否额外允许自定义像素尺寸（如 gpt-image-2 的 "1536x1024"）。
+   * 为 true 时，UI 会渲染自定义尺寸编辑器，且 size 值不在 options 列表内时也视为合法。
+   */
+  allowCustomPixelSize?: boolean;
   /** 默认值 */
   defaultValue?: string;
   /** 数值最小值（number 类型时使用） */
@@ -2237,6 +2242,7 @@ export const IMAGE_PARAMS: ParamConfig[] = [
       { value: '21x9', label: '21:9 超宽' },
     ],
     defaultValue: 'auto',
+    allowCustomPixelSize: true,
     compatibleModels: GPT_IMAGE_2_MODEL_IDS,
     modelType: 'image',
   },

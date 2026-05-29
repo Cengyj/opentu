@@ -83,6 +83,7 @@ import {
   type ModelConfig,
 } from '../../constants/model-config';
 import { getEffectiveVideoCompatibleParams } from '../../services/video-binding-utils';
+import { isAcceptableSizeValue } from '../../services/model-adapters/image-size-quality-resolver';
 import { BUILT_IN_TOOLS } from '../../constants/built-in-tools';
 import { initializeMCP, mcpRegistry } from '../../mcp';
 import { setCanvasBoard } from '../../services/canvas-operations/canvas-insertion';
@@ -2782,9 +2783,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       const sizeParam = compatibleParams.find((p) => p.id === 'size');
       const prevSize = baseParams.size;
       const prevSizeIsValid =
-        !prevSize ||
-        !sizeParam?.options ||
-        sizeParam.options.some((option) => option.value === prevSize);
+        !prevSize || !sizeParam || isAcceptableSizeValue(sizeParam, prevSize);
       if (!selectedModel.startsWith('mj') && sizeParam) {
         nextParams.size =
           prevSize && prevSizeIsValid

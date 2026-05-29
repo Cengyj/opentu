@@ -23,6 +23,7 @@ import type { VideoModel } from '../types/video.types';
 import type { GenerationType } from '../utils/ai-input-parser';
 import { applyForcedSunoParams } from '../utils/suno-model-aliases';
 import { getEffectiveVideoCompatibleParams } from './video-binding-utils';
+import { isAcceptableSizeValue } from './model-adapters/image-size-quality-resolver';
 
 type PersistedParams = Record<string, string>;
 
@@ -209,9 +210,7 @@ function sanitizeSelectedParams(
     options?.keepDefaultSize !== false
   ) {
     const persistedSize = persistedParams.size;
-    const isValidPersistedSize = sizeParam.options?.some(
-      (option) => option.value === persistedSize
-    );
+    const isValidPersistedSize = isAcceptableSizeValue(sizeParam, persistedSize);
     nextParams.size = isValidPersistedSize
       ? persistedSize
       : getDefaultSizeForModel(modelId);

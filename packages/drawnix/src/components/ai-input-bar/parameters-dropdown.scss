@@ -138,6 +138,13 @@ $text-dark: #1f2937;
     letter-spacing: 0.5px;
   }
 
+  &__section-hint {
+    font-size: 11px;
+    color: $orange-dark;
+    padding: 0 4px 6px;
+    line-height: 1.3;
+  }
+
   // 选项按钮组（流式布局）
   &__options {
     display: flex;
