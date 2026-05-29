@@ -306,13 +306,17 @@ const AIImagePsdGeneration = ({
       setIsQueuingLayerTasks(true);
       try {
         const serializableImages = await convertUploadedImagesToSerializable();
+        // Strip size/resolution from extraParams — PSD layers must match source canvas,
+        // not the user's general aspect-ratio preference stored in the image tool.
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { size: _omit, resolution: _omitRes, ...psdExtraParams } = selectedParams ?? {};
         const taskPlans = buildPsdLayerImageTaskPlans(targetPlan, {
           model: currentModel,
           modelRef: currentModelRef,
           uploadedImages: serializableImages,
           knowledgeContextRefs,
           size: 'auto',
-          extraParams: selectedParams,
+          extraParams: psdExtraParams,
           language: uiLanguage,
           layerIds: targetLayerIds,
         });
