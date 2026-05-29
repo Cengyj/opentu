@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, Eye, EyeOff, RefreshCcw } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, RefreshCcw, Trash2 } from 'lucide-react';
 import { getLayerTypeLabel, type PsdGenerationPlan } from '../ai-psd-plan';
 import {
   getLayerStatusLabel,
@@ -24,6 +24,8 @@ interface PsdLayerCardProps {
   onLayerNameChange?: (layerId: string, name: string) => void;
   onLayerPromptChange?: (layerId: string, prompt: string) => void;
   onLayerVisibilityChange?: (layerId: string, visible: boolean) => void;
+  onLayerRemove?: (layerId: string) => void;
+  canRemoveLayer?: boolean;
   onRetryLayer?: (layerId: string) => void;
 }
 
@@ -41,6 +43,8 @@ export function PsdLayerCard({
   onLayerNameChange,
   onLayerPromptChange,
   onLayerVisibilityChange,
+  onLayerRemove,
+  canRemoveLayer = true,
   onRetryLayer,
 }: PsdLayerCardProps) {
   const isVisible = layer.visible !== false;
@@ -127,6 +131,28 @@ export function PsdLayerCard({
           >
             {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
+          {onLayerRemove ? (
+            <button
+              type="button"
+              className="psd-layer-card__remove"
+              onClick={() => onLayerRemove(layer.id)}
+              disabled={!canRemoveLayer}
+              aria-label={
+                uiLanguage === 'zh'
+                  ? `删除图层：${layer.name}`
+                  : `Delete layer: ${layer.name}`
+              }
+              title={
+                !canRemoveLayer
+                  ? uiLanguage === 'zh'
+                    ? '至少保留一个图层'
+                    : 'Keep at least one layer'
+                  : undefined
+              }
+            >
+              <Trash2 size={14} />
+            </button>
+          ) : null}
         </div>
       </div>
 

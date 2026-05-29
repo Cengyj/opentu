@@ -117,6 +117,16 @@ export function updatePsdDraftLayer(
   };
 }
 
+export function removePsdDraftLayer(
+  draft: PsdDraft,
+  layerId: string
+): PsdDraft {
+  return {
+    ...draft,
+    layers: draft.layers.filter((layer) => layer.id !== layerId),
+  };
+}
+
 export function applyPsdDraftToPlan(
   plan: PsdGenerationPlan,
   draft: PsdDraft

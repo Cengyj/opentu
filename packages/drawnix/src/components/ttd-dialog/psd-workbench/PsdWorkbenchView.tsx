@@ -48,6 +48,7 @@ export interface PsdWorkbenchViewProps {
   onLayerNameChange?: (layerId: string, name: string) => void;
   onLayerPromptChange?: (layerId: string, prompt: string) => void;
   onLayerVisibilityChange?: (layerId: string, visible: boolean) => void;
+  onLayerRemove?: (layerId: string) => void;
   onRetryLayer?: (layerId: string) => void;
   onRetryFailedLayers?: () => void;
   errorPanel?: React.ReactNode;
@@ -85,6 +86,7 @@ export function PsdWorkbenchView({
   onLayerNameChange,
   onLayerPromptChange,
   onLayerVisibilityChange,
+  onLayerRemove,
   onRetryLayer,
   onRetryFailedLayers,
   errorPanel,
@@ -115,6 +117,17 @@ export function PsdWorkbenchView({
       setSelectedLayerBounds(context.selectedLayerBounds);
     },
     []
+  );
+
+  const handleLayerRemove = useCallback(
+    (layerId: string) => {
+      onLayerRemove?.(layerId);
+      if (activeLayerId === layerId) {
+        setActiveLayerId(null);
+        setSelectedLayerBounds(null);
+      }
+    },
+    [activeLayerId, onLayerRemove]
   );
 
   return (
@@ -184,6 +197,7 @@ export function PsdWorkbenchView({
           onLayerNameChange={onLayerNameChange}
           onLayerPromptChange={onLayerPromptChange}
           onLayerVisibilityChange={onLayerVisibilityChange}
+          onLayerRemove={onLayerRemove ? handleLayerRemove : undefined}
           onRetryLayer={onRetryLayer}
           onRetryFailedLayers={onRetryFailedLayers}
         />

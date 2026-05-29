@@ -363,7 +363,8 @@
   }
 
   .psd-layer-card__retry,
-  .psd-layer-card__visibility {
+  .psd-layer-card__visibility,
+  .psd-layer-card__remove {
     display: inline-grid;
     width: 24px;
     height: 24px;
@@ -395,8 +396,22 @@
     }
   }
 
+  .psd-layer-card__remove {
+    border: 1px solid var(--psd-border);
+    background: var(--psd-surface);
+    color: var(--psd-muted);
+
+    &:hover:not(:disabled) {
+      border-color: var(--psd-danger);
+      background: var(--psd-danger-soft);
+      color: var(--psd-danger);
+      box-shadow: 0 5px 12px rgba(213, 73, 65, 0.12);
+    }
+  }
+
   .psd-layer-card__retry:disabled,
   .psd-layer-card__visibility:disabled,
+  .psd-layer-card__remove:disabled,
   .psd-layer-workspace__retry:disabled {
     border-color: var(--psd-control-disabled-border);
     background: var(--psd-control-disabled-bg);

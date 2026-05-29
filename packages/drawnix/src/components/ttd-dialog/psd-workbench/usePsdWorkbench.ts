@@ -3,6 +3,7 @@ import type { ReferenceImage } from '../shared';
 import type { PsdGenerationPlan, PsdLayerStatus } from '../ai-psd-plan';
 import {
   createPsdDraftFromPlan,
+  removePsdDraftLayer,
   toPsdLayerTaskStatus,
   updatePsdDraftLayer,
   type PsdDraft,
@@ -127,6 +128,20 @@ export function usePsdWorkbench({
     [updateLayer]
   );
 
+  const removeLayer = useCallback((layerId: string) => {
+    setPlanState((current) => {
+      if (!current || current.layers.length <= 1) return current;
+      return {
+        ...current,
+        layers: current.layers.filter((layer) => layer.id !== layerId),
+      };
+    });
+    setDraft((current) => {
+      if (!current || current.layers.length <= 1) return current;
+      return removePsdDraftLayer(current, layerId);
+    });
+  }, []);
+
   const updateLayerStatuses = useCallback(
     (layerIds: string[], status: PsdLayerStatus) => {
       const layerIdSet = new Set(layerIds);
@@ -173,6 +188,7 @@ export function usePsdWorkbench({
     updateLayerName,
     updateLayerPrompt,
     updateLayerVisibility,
+    removeLayer,
     updateLayerStatuses,
   };
 }

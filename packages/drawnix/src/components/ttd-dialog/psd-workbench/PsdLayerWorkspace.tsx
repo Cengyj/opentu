@@ -20,6 +20,7 @@ interface PsdLayerWorkspaceProps {
   onLayerNameChange?: (layerId: string, name: string) => void;
   onLayerPromptChange?: (layerId: string, prompt: string) => void;
   onLayerVisibilityChange?: (layerId: string, visible: boolean) => void;
+  onLayerRemove?: (layerId: string) => void;
   onRetryLayer?: (layerId: string) => void;
   onRetryFailedLayers?: () => void;
 }
@@ -126,6 +127,7 @@ export function PsdLayerWorkspace({
   onLayerNameChange,
   onLayerPromptChange,
   onLayerVisibilityChange,
+  onLayerRemove,
   onRetryLayer,
   onRetryFailedLayers,
 }: PsdLayerWorkspaceProps) {
@@ -227,6 +229,8 @@ export function PsdLayerWorkspace({
                 onLayerNameChange={onLayerNameChange}
                 onLayerPromptChange={onLayerPromptChange}
                 onLayerVisibilityChange={onLayerVisibilityChange}
+                onLayerRemove={onLayerRemove}
+                canRemoveLayer={layers.length > 1}
                 onRetryLayer={onRetryLayer}
               />
             ))}

@@ -158,6 +158,7 @@ const AIImagePsdGeneration = ({
     updateLayerName,
     updateLayerPrompt,
     updateLayerVisibility,
+    removeLayer,
     updateLayerStatuses,
   } = usePsdWorkbench({
     prompt,
@@ -997,6 +998,7 @@ const AIImagePsdGeneration = ({
         onLayerNameChange={updateLayerName}
         onLayerPromptChange={updateLayerPrompt}
         onLayerVisibilityChange={updateLayerVisibility}
+        onLayerRemove={removeLayer}
         onRetryLayer={(layerId) =>
           void handleGenerateLayerAssets({ layerIds: [layerId], force: true })
         }

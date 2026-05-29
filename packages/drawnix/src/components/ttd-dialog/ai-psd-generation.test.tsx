@@ -23,6 +23,7 @@ import {
 } from './ai-psd-plan';
 import {
   createPsdDraftFromPlan,
+  removePsdDraftLayer,
   updatePsdDraftLayer,
 } from './psd-workbench/psd-types';
 import {
@@ -559,6 +560,16 @@ describe('buildLayerPlan', () => {
       visible: false,
     });
     expect(draft.layers[1].name).toBe('主标题与副标题');
+    const removedDraft = removePsdDraftLayer(draft, 'psd-layer-2');
+    expect(removedDraft.layers.map((layer) => layer.id)).toEqual([
+      'psd-layer-1',
+      'psd-layer-3',
+    ]);
+    expect(draft.layers.map((layer) => layer.id)).toEqual([
+      'psd-layer-1',
+      'psd-layer-2',
+      'psd-layer-3',
+    ]);
 
     const layerTaskStateMap = buildPsdLayerTaskStateMap(plan.layers, [
       createMockPsdTask({
@@ -1339,6 +1350,12 @@ describe('AIImagePsdGeneration contract', () => {
     expect(screen.getByText('4 个动态图层')).toBeTruthy();
 
     fireEvent.click(
+      screen.getByRole('button', { name: '删除图层：地图定位与坐标' })
+    );
+    expect(screen.getByText('3 个动态图层')).toBeTruthy();
+    expect(screen.queryByText('地图定位与坐标')).toBeNull();
+
+    fireEvent.click(
       screen.getByRole('button', { name: '查看图层：主标题与副标题' })
     );
     fireEvent.change(screen.getByLabelText('图层名称：主标题与副标题'), {
@@ -1372,11 +1389,11 @@ describe('AIImagePsdGeneration contract', () => {
     fireEvent.click(screen.getByRole('button', { name: '生成图层素材' }));
 
     await waitFor(() => {
-      expect(mockState.createTask).toHaveBeenCalledTimes(5);
+      expect(mockState.createTask).toHaveBeenCalledTimes(4);
     });
     expect(screen.getByText('同画布图层任务已排队')).toBeTruthy();
     expect(
-      screen.getByText(/成功 0 \/ 失败 0 \/ 进行中 0 \/ 排队 4 \/ 总计 4/)
+      screen.getByText(/成功 0 \/ 失败 0 \/ 进行中 0 \/ 排队 3 \/ 总计 3/)
     ).toBeTruthy();
     expect(screen.getByText(/打开任务队列查看/)).toBeTruthy();
     expect(screen.getAllByText(/PSD.*工作区包/).length).toBeGreaterThan(0);
@@ -1392,6 +1409,19 @@ describe('AIImagePsdGeneration contract', () => {
           (call: CreateTaskCall) => call[0]?.psdPlan?.layerName === '主视觉标题'
         )
     ).toBe(true);
+    expect(
+      mockState.createTask.mock.calls
+        .slice(1)
+        .map((call: CreateTaskCall) => call[0]?.psdPlan?.layerName)
+    ).toEqual(['背景底图', '主视觉标题', '底部信息与装饰']);
+    expect(
+      mockState.createTask.mock.calls
+        .slice(1)
+        .some(
+          (call: CreateTaskCall) =>
+            call[0]?.psdPlan?.layerName === '地图定位与坐标'
+        )
+    ).toBe(false);
     expect(
       mockState.createTask.mock.calls
         .slice(1)
