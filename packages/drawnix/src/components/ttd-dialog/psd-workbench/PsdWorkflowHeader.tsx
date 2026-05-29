@@ -6,6 +6,7 @@ import {
   History,
   Layers3,
   PackageCheck,
+  Plus,
   WandSparkles,
 } from 'lucide-react';
 import type { PsdAnalysisStatus } from './psd-workbench-types';
@@ -18,6 +19,7 @@ interface PsdWorkflowHeaderProps {
   analysisStatus?: PsdAnalysisStatus | null;
   resultCount: number;
   canDownload: boolean;
+  onNew?: () => void;
   onOpenHistory?: () => void;
 }
 
@@ -45,6 +47,7 @@ export function PsdWorkflowHeader({
   analysisStatus,
   resultCount,
   canDownload,
+  onNew,
   onOpenHistory,
 }: PsdWorkflowHeaderProps) {
   const isAnalyzing = Boolean(
@@ -117,17 +120,30 @@ export function PsdWorkflowHeader({
       </div>
 
       <div className="psd-workbench__header-aside">
-        {onOpenHistory ? (
-          <button
-            type="button"
-            className="psd-workbench__history-btn"
-            onClick={onOpenHistory}
-            aria-label={uiLanguage === 'zh' ? 'PSD 历史记录' : 'PSD history'}
-          >
-            <History size={16} />
-            <span>{uiLanguage === 'zh' ? '历史记录' : 'History'}</span>
-          </button>
-        ) : null}
+        <div className="psd-workbench__session-btns">
+          {onNew ? (
+            <button
+              type="button"
+              className="psd-workbench__new-btn"
+              onClick={onNew}
+              aria-label={uiLanguage === 'zh' ? '新建 PSD 任务' : 'New PSD session'}
+            >
+              <Plus size={16} />
+              <span>{uiLanguage === 'zh' ? '新建' : 'New'}</span>
+            </button>
+          ) : null}
+          {onOpenHistory ? (
+            <button
+              type="button"
+              className="psd-workbench__history-btn"
+              onClick={onOpenHistory}
+              aria-label={uiLanguage === 'zh' ? 'PSD 历史记录' : 'PSD history'}
+            >
+              <History size={16} />
+              <span>{uiLanguage === 'zh' ? '历史' : 'History'}</span>
+            </button>
+          ) : null}
+        </div>
         <ol
           className="psd-workbench__step-rail"
           aria-label={

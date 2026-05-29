@@ -1,0 +1,7 @@
+services:
+  opentu:
+    image: ghcr.io/cengyj/opentu:latest
+    container_name: opentu
+    ports:
+      - "80:80"
+    restart: unless-stopped

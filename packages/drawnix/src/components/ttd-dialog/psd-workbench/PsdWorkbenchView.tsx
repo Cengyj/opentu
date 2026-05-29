@@ -27,6 +27,7 @@ export interface PsdWorkbenchViewProps {
   isPrimaryActionBusy: boolean;
   autoGenerateAfterAnalysis?: boolean;
   onAutoGenerateAfterAnalysisChange?: (enabled: boolean) => void;
+  onNew?: () => void;
   onOpenHistory?: () => void;
   onPromptChange: (prompt: string) => void;
   onSourceImagesChange: (images: ReferenceImage[]) => void;
@@ -63,6 +64,7 @@ export function PsdWorkbenchView({
   isPrimaryActionBusy,
   autoGenerateAfterAnalysis,
   onAutoGenerateAfterAnalysisChange,
+  onNew,
   onOpenHistory,
   onPromptChange,
   onSourceImagesChange,
@@ -127,6 +129,7 @@ export function PsdWorkbenchView({
           analysisStatus={analysisStatus}
           resultCount={resultCount}
           canDownload={canDownload}
+          onNew={onNew}
           onOpenHistory={onOpenHistory}
         />
       }
