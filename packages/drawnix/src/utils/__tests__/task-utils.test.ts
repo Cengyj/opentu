@@ -4,7 +4,12 @@ import {
   TaskType,
   type Task,
 } from '../../types/task.types';
-import { isResumableAsyncImageTask } from '../task-utils';
+import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
+import {
+  getTaskTimeout,
+  isResumableAsyncImageTask,
+  isTaskTimeout,
+} from '../task-utils';
 
 function createImageTask(overrides: Partial<Task> = {}): Task {
   const now = Date.now();
@@ -23,6 +28,31 @@ function createImageTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe('task-utils', () => {
+  describe('getTaskTimeout', () => {
+    it('uses a 35 minute timeout for image tasks', () => {
+      expect(getTaskTimeout(TaskType.IMAGE)).toBe(35 * 60 * 1000);
+      expect(getTaskTimeout(TaskType.IMAGE)).toBe(IMAGE_GENERATION_TIMEOUT_MS);
+    });
+  });
+
+  describe('isTaskTimeout', () => {
+    it('does not time out image tasks before 35 minutes', () => {
+      const task = createImageTask({
+        startedAt: Date.now() - (35 * 60 * 1000 - 1000),
+      });
+
+      expect(isTaskTimeout(task)).toBe(false);
+    });
+
+    it('times out image tasks after 35 minutes', () => {
+      const task = createImageTask({
+        startedAt: Date.now() - (35 * 60 * 1000 + 1000),
+      });
+
+      expect(isTaskTimeout(task)).toBe(true);
+    });
+  });
+
   describe('isResumableAsyncImageTask', () => {
     it('uses persisted async image binding as resumable source of truth', () => {
       const task = createImageTask({

@@ -394,11 +394,11 @@ export interface TaskQueueConfig {
  */
 export const DEFAULT_TASK_QUEUE_CONFIG: TaskQueueConfig = {
   timeouts: {
-    [TaskType.IMAGE]: 15 * 60 * 1000, // 15 minutes for image
+    [TaskType.IMAGE]: 35 * 60 * 1000, // 35 minutes for image
     [TaskType.VIDEO]: 20 * 60 * 1000, // 20 minutes for video
     [TaskType.AUDIO]: 30 * 60 * 1000, // 30 minutes for audio
     [TaskType.CHARACTER]: 10 * 60 * 1000, // 10 minutes
-    [TaskType.INSPIRATION_BOARD]: 15 * 60 * 1000, // 15 minutes (same as image)
+    [TaskType.INSPIRATION_BOARD]: 35 * 60 * 1000, // 35 minutes (same as image)
     [TaskType.CHAT]: 10 * 60 * 1000, // 10 minutes
   },
 };
