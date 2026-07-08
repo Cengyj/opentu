@@ -1,0 +1,134 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+describe('settings-repository', () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it('uses the saved legacy provider type and auth type in snapshots', async () => {
+    vi.doMock('../../utils/settings-manager', () => ({
+      DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
+      LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
+      FOR_DEFAULT_PROVIDER_NAME: 'default 分组',
+      FOR_PROVIDER_DEFAULT_BASE_URL: 'https://foropencode.com/v1',
+      createModelRef: (profileId?: string | null, modelId?: string | null) => ({
+        profileId: profileId ?? null,
+        modelId: modelId ?? null,
+      }),
+      geminiSettings: {
+        get: () => ({
+          apiKey: 'legacy-key',
+          baseUrl: 'https://foropencode.com/v1',
+          textModelName: 'text-model',
+          imageModelName: 'image-model',
+          videoModelName: 'video-model',
+        }),
+      },
+      providerProfilesSettings: {
+        get: () => [
+          {
+            id: 'legacy-default',
+            name: 'default 分组',
+            providerType: 'custom',
+            baseUrl: 'https://foropencode.com/v1',
+            apiKey: 'legacy-key',
+            authType: 'query',
+            enabled: true,
+            capabilities: {
+              supportsModelsEndpoint: true,
+              supportsText: true,
+              supportsImage: true,
+              supportsVideo: true,
+              supportsTools: true,
+            },
+          },
+        ],
+      },
+      providerCatalogsSettings: {
+        get: () => [],
+      },
+      providerPricingCacheSettings: {
+        get: () => [],
+      },
+      resolveInvocationRoute: () => {
+        throw new Error('resolveInvocationRoute should not be called');
+      },
+    }));
+
+    const { listSettingsProviderProfiles } = await import(
+      '../provider-routing/settings-repository'
+    );
+
+    const profiles = listSettingsProviderProfiles();
+
+    expect(profiles[0]).toMatchObject({
+      id: 'legacy-default',
+      name: 'default 分组',
+      providerType: 'custom',
+      authType: 'query',
+      imageApiCompatibility: 'openai-gpt-image',
+    });
+  });
+
+  it('preserves saved generic image compatibility overrides in snapshots', async () => {
+    vi.doMock('../../utils/settings-manager', () => ({
+      DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
+      LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
+      FOR_DEFAULT_PROVIDER_NAME: 'default 分组',
+      FOR_PROVIDER_DEFAULT_BASE_URL: 'https://foropencode.com/v1',
+      createModelRef: (profileId?: string | null, modelId?: string | null) => ({
+        profileId: profileId ?? null,
+        modelId: modelId ?? null,
+      }),
+      geminiSettings: {
+        get: () => ({
+          apiKey: 'legacy-key',
+          baseUrl: 'https://foropencode.com/v1',
+          textModelName: 'text-model',
+          imageModelName: 'image-model',
+          videoModelName: 'video-model',
+        }),
+      },
+      providerProfilesSettings: {
+        get: () => [
+          {
+            id: 'legacy-default',
+            name: 'default 分组',
+            providerType: 'custom',
+            baseUrl: 'https://foropencode.com/v1',
+            apiKey: 'legacy-key',
+            authType: 'query',
+            imageApiCompatibility: 'openai-compatible-basic',
+            enabled: true,
+            capabilities: {
+              supportsModelsEndpoint: true,
+              supportsText: true,
+              supportsImage: true,
+              supportsVideo: true,
+              supportsTools: true,
+            },
+          },
+        ],
+      },
+      providerCatalogsSettings: {
+        get: () => [],
+      },
+      providerPricingCacheSettings: {
+        get: () => [],
+      },
+      resolveInvocationRoute: () => {
+        throw new Error('resolveInvocationRoute should not be called');
+      },
+    }));
+
+    const { listSettingsProviderProfiles } = await import(
+      '../provider-routing/settings-repository'
+    );
+
+    const profiles = listSettingsProviderProfiles();
+
+    expect(profiles[0]).toMatchObject({
+      imageApiCompatibility: 'openai-compatible-basic',
+    });
+  });
+});

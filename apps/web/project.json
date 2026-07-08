@@ -1,0 +1,82 @@
+{
+  "name": "web",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/web/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build-sw": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vite build -c vite.sw.config.ts",
+        "cwd": "apps/web"
+      }
+    },
+    "watch-sw": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vite build -c vite.sw.config.ts --watch --mode development",
+        "cwd": "apps/web"
+      }
+    },
+    "serve-app": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vite serve --host 0.0.0.0",
+        "cwd": "apps/web"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "nx run web:serve-pwa"
+      }
+    },
+    "serve-pwa": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["nx run web:watch-sw", "nx run web:serve-app"],
+        "parallel": true
+      }
+    },
+    "build-app": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vite build",
+        "cwd": "apps/web"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "nx run web:typecheck",
+          "nx run web:build-app",
+          "nx run web:build-sw"
+        ],
+        "parallel": false
+      }
+    },
+    "preview": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vite preview",
+        "cwd": "apps/web"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint .",
+        "cwd": "apps/web"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsc -p tsconfig.app.json --noEmit",
+        "cwd": "apps/web"
+      }
+    }
+  }
+}
