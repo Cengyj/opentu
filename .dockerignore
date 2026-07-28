@@ -16,6 +16,3 @@ test-results
 *.log
 .env
 .env.*
-
-.omx
-.codex

@@ -37,24 +37,6 @@ export function normalizeApiBase(url: string): string {
   return base;
 }
 
-function isForOpenCodeBaseUrl(baseUrl: string): boolean {
-  const trimmed = baseUrl.trim();
-  if (!trimmed) {
-    return false;
-  }
-
-  try {
-    const url = new URL(
-      /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed)
-        ? trimmed
-        : `https://${trimmed}`
-    );
-    return url.hostname.toLowerCase() === 'foropencode.com';
-  } catch {
-    return false;
-  }
-}
-
 function inferProviderType(
   baseUrl: string,
   explicitProviderType?: string
@@ -74,11 +56,30 @@ function inferProviderType(
     normalized.includes('/openai') ||
     normalized.endsWith('/v1') ||
     normalized.includes('api.openai.com') ||
-    isForOpenCodeBaseUrl(baseUrl)
+    isBuiltInProviderBaseUrl(normalized)
   ) {
     return 'openai-compatible';
   }
   return 'custom';
+}
+
+function isBuiltInProviderBaseUrl(baseUrl: string): boolean {
+  const trimmed = baseUrl.trim().toLowerCase();
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed)
+        ? trimmed
+        : `https://${trimmed}`
+    );
+    const hostname = url.hostname.toLowerCase();
+    return hostname === 'foropencode.com';
+  } catch {
+    return false;
+  }
 }
 
 function inferAuthType(

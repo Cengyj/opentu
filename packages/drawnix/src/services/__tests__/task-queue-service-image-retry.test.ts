@@ -255,7 +255,9 @@ async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
   }));
 
   vi.doMock('../../utils/task-utils', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../../utils/task-utils')>();
+    const actual = await importOriginal<
+      typeof import('../../utils/task-utils')
+    >();
 
     return {
       ...actual,
@@ -414,6 +416,34 @@ describe('task-queue-service image edit retry persistence', () => {
     });
   });
 
+  it('claims an external task before persistence so startup restoration cannot misclassify it', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const task: Task = {
+      id: 'task-external-startup-race',
+      type: TaskType.IMAGE,
+      status: TaskStatus.PROCESSING,
+      params: {
+        prompt: 'First image after configuring a key',
+        model: 'gpt-image-2',
+      },
+      createdAt: 1,
+      updatedAt: 1,
+      executionPhase: TaskExecutionPhase.SUBMITTING,
+    };
+
+    taskQueueService.claimTaskForCurrentSession(task.id);
+    expect(taskQueueService.isTaskOwnedByCurrentSession(task.id)).toBe(true);
+
+    taskQueueService.restoreTasks([clone(task)]);
+    expect(taskQueueService.isTaskOwnedByCurrentSession(task.id)).toBe(true);
+
+    taskQueueService.trackExternalTask(clone(task));
+
+    expect(taskQueueService.isTaskOwnedByCurrentSession(task.id)).toBe(true);
+  });
+
   it('keeps a cancelled active task from being overwritten by late executor completion', async () => {
     const { taskQueueService, storedTasks, mocks } =
       await setupTaskQueueServiceHarness([TaskStatus.COMPLETED]);
@@ -473,8 +503,9 @@ describe('task-queue-service image edit retry persistence', () => {
   });
 
   it('emits storage sync updates when completed result or insertion flag changes without status progress changes', async () => {
-    const { taskQueueService } =
-      await setupTaskQueueServiceHarness([TaskStatus.COMPLETED]);
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
     const task: Task = {
       id: 'task-storage-sync-1',
       type: TaskType.IMAGE,
@@ -566,8 +597,9 @@ describe('task-queue-service image edit retry persistence', () => {
   });
 
   it('emits storage sync updates when invocation route changes', async () => {
-    const { taskQueueService } =
-      await setupTaskQueueServiceHarness([TaskStatus.COMPLETED]);
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
     const task: Task = {
       id: 'task-video-route-sync-1',
       type: TaskType.VIDEO,

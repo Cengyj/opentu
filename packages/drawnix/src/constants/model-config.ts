@@ -93,11 +93,6 @@ export interface ParamConfig {
   valueType: ParamValueType;
   /** 可选值列表（enum 类型时使用） */
   options?: Array<{ value: string; label: string }>;
-  /**
-   * enum 类型下是否额外允许自定义像素尺寸（如 gpt-image-2 的 "1536x1024"）。
-   * 为 true 时，UI 会渲染自定义尺寸编辑器，且 size 值不在 options 列表内时也视为合法。
-   */
-  allowCustomPixelSize?: boolean;
   /** 默认值 */
   defaultValue?: string;
   /** 数值最小值（number 类型时使用） */
@@ -108,7 +103,7 @@ export interface ParamConfig {
   step?: number;
   /** 是否要求整数（number 类型时使用） */
   integer?: boolean;
-  /** 兼容的模型 ID 列表（空数组表示所有模型都兼容） */
+  /** 兼容的模型 ID 列表（未设置 compatibleTags 时，空数组表示所有模型都兼容） */
   compatibleModels: string[];
   /** 兼容的模型标签列表（任一命中则视为兼容，用于减少硬编码模型 ID） */
   compatibleTags?: string[];
@@ -181,6 +176,9 @@ export interface ModelConfig {
 }
 
 const BUILT_IN_MODEL_RECOMMENDATION_SCORES: Readonly<Record<string, number>> = {
+  'gpt-5.6-sol': 102,
+  'gpt-5.6-terra': 101,
+  'gpt-5.6-luna': 100,
   'gpt-5.5': 99,
   'claude-opus-4-6': 98,
   'gpt-5.4': 97,
@@ -209,6 +207,7 @@ const BUILT_IN_MODEL_RECOMMENDATION_SCORES: Readonly<Record<string, number>> = {
   'gemini-3-pro-image-preview-async': 98,
   'gemini-3-pro-image-preview-2k-async': 97,
   'gemini-2.5-flash-image-vip': 96,
+  'gpt-image-2-vip': 96,
   'gpt-image-2': 95,
   'gemini-2.5-flash-image': 95,
   'doubao-seedream-4-0-250828': 94,
@@ -238,6 +237,8 @@ const BUILT_IN_MODEL_RECOMMENDATION_SCORES: Readonly<Record<string, number>> = {
   'happyhorse-1.0-t2v': 87,
   'happyhorse-1.0-video-edit': 86,
   'veo3.1': 93,
+  'omni-flash': 93,
+  'omni-flash-components': 48,
   'veo3-fast-frames': 92,
   'veo3-pro': 91,
   veo3: 84,
@@ -415,6 +416,18 @@ export const IMAGE_MODEL_MORE_OPTIONS: ModelConfig[] = [
     vendor: ModelVendor.MIDJOURNEY,
     supportsTools: true,
     imageDefaults: IMAGE_DEFAULT_PARAMS,
+  },
+  {
+    id: 'gpt-image-2-vip',
+    label: 'gpt-image-2-vip',
+    shortCode: 'gpt2v',
+    description: 'OpenAI GPT Image 2 VIP 图片生成模型',
+    type: 'image',
+    vendor: ModelVendor.GPT,
+    isVip: true,
+    supportsTools: true,
+    imageDefaults: IMAGE_DEFAULT_PARAMS,
+    tags: ['new'],
   },
   {
     id: 'gpt-image-2',
@@ -788,7 +801,8 @@ const BUILT_IN_VIDEO_MODELS: ModelConfig[] = [
     id: 'happyhorse-1.0-video-edit',
     label: 'HappyHorse 1.0 Video Edit',
     shortCode: 'h10v',
-    description: 'HappyHorse 视频参考生成视频，时长跟随输入视频，支持保留原音频',
+    description:
+      'HappyHorse 视频参考生成视频，时长跟随输入视频，支持保留原音频',
     type: 'video',
     vendor: ModelVendor.HAPPYHORSE,
     supportsTools: true,
@@ -846,6 +860,27 @@ const BUILT_IN_VIDEO_MODELS: ModelConfig[] = [
     description: '8秒模式，支持3张参考图',
     type: 'video',
     vendor: ModelVendor.VEO,
+    supportsTools: true,
+    videoDefaults: VEO_DEFAULT_PARAMS,
+  },
+  {
+    id: 'omni-flash',
+    label: 'Gemini Omni Flash',
+    shortCode: 'omf',
+    description: '8秒快速模式，支持首尾帧',
+    type: 'video',
+    vendor: ModelVendor.GEMINI,
+    isVip: true,
+    supportsTools: true,
+    videoDefaults: VEO_DEFAULT_PARAMS,
+  },
+  {
+    id: 'omni-flash-components',
+    label: 'Gemini Omni Flash Components',
+    shortCode: 'omfc',
+    description: '8秒模式，支持3张参考图',
+    type: 'video',
+    vendor: ModelVendor.GEMINI,
     supportsTools: true,
     videoDefaults: VEO_DEFAULT_PARAMS,
   },
@@ -1161,6 +1196,30 @@ export const TEXT_MODELS: ModelConfig[] = applyBuiltInRecommendedScores([
     tags: ['new'],
   },
   {
+    id: 'gpt-5.6-sol',
+    label: 'GPT-5.6 Sol',
+    shortCode: 'g56s',
+    type: 'text',
+    vendor: ModelVendor.GPT,
+    tags: ['new'],
+  },
+  {
+    id: 'gpt-5.6-terra',
+    label: 'GPT-5.6 Terra',
+    shortCode: 'g56t',
+    type: 'text',
+    vendor: ModelVendor.GPT,
+    tags: ['new'],
+  },
+  {
+    id: 'gpt-5.6-luna',
+    label: 'GPT-5.6 Luna',
+    shortCode: 'g56l',
+    type: 'text',
+    vendor: ModelVendor.GPT,
+    tags: ['new'],
+  },
+  {
     id: 'gpt-5.5',
     label: 'GPT-5.5',
     shortCode: 'g55',
@@ -1369,6 +1428,22 @@ export function getStaticModelConfig(modelId: string): ModelConfig | undefined {
   );
 }
 
+export const DEFAULT_DISPLAY_MODEL_IDS: Record<ModelType, readonly string[]> = {
+  text: ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'],
+  image: ['gpt-image-2'],
+  video: [],
+  audio: [],
+};
+
+export function getDefaultDisplayModelsByType(type: ModelType): ModelConfig[] {
+  return DEFAULT_DISPLAY_MODEL_IDS[type]
+    .map((modelId) => getStaticModelConfig(modelId))
+    .filter(
+      (model): model is ModelConfig =>
+        model !== undefined && model.type === type
+    );
+}
+
 // ============================================
 // 辅助函数
 // ============================================
@@ -1563,7 +1638,7 @@ export const DEFAULT_VIDEO_MODEL = DEFAULT_VIDEO_MODEL_ID;
 /**
  * 默认文本模型 ID
  */
-export const DEFAULT_TEXT_MODEL_ID = 'gpt-5.5';
+export const DEFAULT_TEXT_MODEL_ID = 'gpt-5.6-sol';
 
 /**
  * 获取默认文本模型 ID
@@ -1602,6 +1677,8 @@ const VEO_MODEL_IDS = [
   'veo3.1',
   'veo3.1-pro',
   'veo3.1-components',
+  'omni-flash',
+  'omni-flash-components',
 ];
 
 /** Veo 4K 系列模型 ID（4K分辨率，只支持 8 秒） */
@@ -1650,7 +1727,7 @@ const SEEDREAM_IMAGE_MODEL_IDS = [
 ];
 
 /** GPT Image 2 模型 ID（支持扩展比例） */
-const GPT_IMAGE_2_MODEL_IDS = ['gpt-image-2'];
+const GPT_IMAGE_2_MODEL_IDS = ['gpt-image-2-vip', 'gpt-image-2'];
 
 /** 所有 GPT 图片模型 ID */
 const GPT_IMAGE_MODEL_IDS = [...GPT_IMAGE_2_MODEL_IDS];
@@ -1840,7 +1917,8 @@ export const VIDEO_PARAMS: ParamConfig[] = [
     id: 'duration',
     label: '视频时长',
     shortLabel: '时长',
-    description: 'HappyHorse 视频时长（3-15 秒整数；Video Edit 跟随输入视频，不支持此参数）',
+    description:
+      'HappyHorse 视频时长（3-15 秒整数；Video Edit 跟随输入视频，不支持此参数）',
     valueType: 'enum',
     options: [
       { value: '3', label: '3秒' },
@@ -2242,7 +2320,6 @@ export const IMAGE_PARAMS: ParamConfig[] = [
       { value: '21x9', label: '21:9 超宽' },
     ],
     defaultValue: 'auto',
-    allowCustomPixelSize: true,
     compatibleModels: GPT_IMAGE_2_MODEL_IDS,
     modelType: 'image',
   },
@@ -2426,7 +2503,8 @@ export const IMAGE_PARAMS: ParamConfig[] = [
       { value: '21:9', label: '21:9 超宽' },
     ],
     defaultValue: 'default',
-    compatibleModels: MJ_IMAGE_MODEL_IDS,
+    compatibleModels: [],
+    compatibleTags: ['mj', 'midjourney'],
     modelType: 'image',
   },
   {
@@ -2437,11 +2515,14 @@ export const IMAGE_PARAMS: ParamConfig[] = [
     valueType: 'enum',
     options: [
       { value: 'default', label: '默认 (V7)' },
+      { value: '8.1', label: 'V8.1' },
+      { value: '8', label: 'V8' },
       { value: '7', label: 'V7' },
       { value: '6', label: 'V6' },
     ],
     defaultValue: 'default',
-    compatibleModels: MJ_IMAGE_MODEL_IDS,
+    compatibleModels: [],
+    compatibleTags: ['mj', 'midjourney'],
     modelType: 'image',
   },
   {
@@ -2455,7 +2536,8 @@ export const IMAGE_PARAMS: ParamConfig[] = [
       { value: 'raw', label: 'raw (Legacy)' },
     ],
     defaultValue: 'default',
-    compatibleModels: MJ_IMAGE_MODEL_IDS,
+    compatibleModels: [],
+    compatibleTags: ['mj', 'midjourney'],
     modelType: 'image',
   },
   {
@@ -2474,7 +2556,8 @@ export const IMAGE_PARAMS: ParamConfig[] = [
       { value: '1000', label: '1000' },
     ],
     defaultValue: 'default',
-    compatibleModels: MJ_IMAGE_MODEL_IDS,
+    compatibleModels: [],
+    compatibleTags: ['mj', 'midjourney'],
     modelType: 'image',
   },
   {
@@ -2490,7 +2573,8 @@ export const IMAGE_PARAMS: ParamConfig[] = [
       { value: '4', label: '4x' },
     ],
     defaultValue: 'default',
-    compatibleModels: MJ_IMAGE_MODEL_IDS,
+    compatibleModels: [],
+    compatibleTags: ['mj', 'midjourney'],
     modelType: 'image',
   },
   {
@@ -2508,7 +2592,8 @@ export const IMAGE_PARAMS: ParamConfig[] = [
       { value: '9999', label: '9999' },
     ],
     defaultValue: 'default',
-    compatibleModels: MJ_IMAGE_MODEL_IDS,
+    compatibleModels: [],
+    compatibleTags: ['mj', 'midjourney'],
     modelType: 'image',
   },
 ];
@@ -2602,14 +2687,14 @@ export function getCompatibleParams(modelId: string): ParamConfig[] {
   return ALL_PARAMS.filter((param) => {
     // 检查模型类型是否匹配
     if (param.modelType !== modelConfig.type) return false;
-    // 检查是否在兼容 ID 列表（空数组表示所有模型都兼容）
-    const idMatched =
-      param.compatibleModels.length === 0 ||
-      param.compatibleModels.includes(modelId);
     // 检查标签兼容（可选）
     const tagMatched = param.compatibleTags
       ? param.compatibleTags.some((tag) => modelTags.has(tag.toLowerCase()))
       : false;
+    // 检查是否在兼容 ID 列表（无标签限制时，空数组表示所有模型都兼容）
+    const idMatched =
+      param.compatibleModels.includes(modelId) ||
+      (param.compatibleModels.length === 0 && !param.compatibleTags?.length);
     return idMatched || tagMatched;
   });
 }

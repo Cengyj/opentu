@@ -30,16 +30,12 @@ import {
 import { LS_KEYS } from '../../constants/storage-keys';
 import { ModelDiscoveryDialog } from './model-discovery-dialog';
 import { PricingFieldGroup } from './pricing-field-group';
-import {
-  useModelPriceText,
-  useModelMeta,
-} from '../../hooks/use-model-pricing';
+import { useModelPriceText, useModelMeta } from '../../hooks/use-model-pricing';
 import {
   getDefaultAudioModel,
   getDefaultImageModel,
   getDefaultTextModel,
   getDefaultVideoModel,
-  ModelVendor,
   type ModelConfig,
   type ModelType,
 } from '../../constants/model-config';
@@ -61,14 +57,12 @@ import {
   getRouteModelId,
   getRouteProfileId,
   invocationPresetsSettings,
+  isBuiltInDefaultProviderProfileId,
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
   providerProfilesSettings,
-  FOROPENCODE_BUSINESS_PROVIDER_PROFILE_ID,
   settingsManager,
-  FOROPENCODE_MIX_PROVIDER_PROFILE_ID,
-  FOROPENCODE_CODEX_PROVIDER_PROFILE_ID,
-  FOROPENCODE_ORIGINAL_PROVIDER_PROFILE_ID,
-  FOROPENCODE_PROVIDER_DEFAULT_BASE_URL,
+  FOR_CODEX_PROVIDER_PROFILE_ID,
+  FOR_PROVIDER_DEFAULT_BASE_URL,
   type ImageApiCompatibility,
   type InvocationPreset,
   type ModelRef,
@@ -97,19 +91,14 @@ import {
 } from '../../utils/posthog-analytics';
 import { modelBenchmarkService } from '../../services/model-benchmark-service';
 import { HoverTip } from '../shared/hover';
-import { createProviderProfileDraft } from './provider-profile-draft';
-import { MessagePlugin } from '../../utils/message-plugin';
 import {
-  getImageApiCompatibilityHint,
-  IMAGE_API_COMPATIBILITY_META,
-} from './image-api-compatibility-display';
+  createProviderProfileDraft,
+  reconcileProviderPresetModels,
+} from './provider-profile-draft';
+import { MessagePlugin } from '../../utils/message-plugin';
 
 export { IMAGE_MODEL_GROUPED_SELECT_OPTIONS as IMAGE_MODEL_GROUPED_OPTIONS } from '../../constants/model-config';
 export { VIDEO_MODEL_SELECT_OPTIONS as VIDEO_MODEL_OPTIONS } from '../../constants/model-config';
-export {
-  getImageApiCompatibilityHint,
-  IMAGE_API_COMPATIBILITY_META,
-} from './image-api-compatibility-display';
 
 type SettingsView = 'providers' | 'presets' | 'canvas' | 'speech';
 type CompactPanelMode = 'catalog' | 'detail';
@@ -257,6 +246,67 @@ const AUTH_TYPE_META: Record<ProviderProfile['authType'], { label: string }> = {
     label: '手动拼装',
   },
 };
+
+const IMAGE_API_COMPATIBILITY_META: Record<
+  ImageApiCompatibility,
+  { label: string }
+> = {
+  auto: {
+    label: '自动',
+  },
+  'openai-gpt-image': {
+    label: 'OpenAI GPT Image',
+  },
+  'openai-compatible-basic': {
+    label: 'OpenAI-compatible 通用兼容（兜底）',
+  },
+};
+
+function normalizeImageApiCompatibilityForDisplay(
+  value?: ImageApiCompatibility | string | null
+): ImageApiCompatibility {
+  if (
+    value === 'auto' ||
+    value === 'openai-gpt-image' ||
+    value === 'openai-compatible-basic'
+  ) {
+    return value;
+  }
+
+  return 'openai-gpt-image';
+}
+
+function resolveAutoImageApiCompatibilityForDisplay(
+  profile: Pick<ProviderProfile, 'baseUrl'>
+): Exclude<ImageApiCompatibility, 'auto'> {
+  const normalizedBaseUrl = profile.baseUrl.trim().toLowerCase();
+
+  if (normalizedBaseUrl.includes('api.openai.com')) {
+    return 'openai-gpt-image';
+  }
+
+  return 'openai-compatible-basic';
+}
+
+function getImageApiCompatibilityHint(
+  profile: Pick<ProviderProfile, 'baseUrl' | 'imageApiCompatibility'>
+): string {
+  const storedCompatibility = normalizeImageApiCompatibilityForDisplay(
+    profile.imageApiCompatibility
+  );
+
+  if (storedCompatibility === 'auto') {
+    const resolvedCompatibility =
+      resolveAutoImageApiCompatibilityForDisplay(profile);
+    return `默认推荐显式选择 OpenAI GPT Image；如果保留自动模式，GPT Image 模型当前会解析为 ${IMAGE_API_COMPATIBILITY_META[resolvedCompatibility].label}。`;
+  }
+
+  if (storedCompatibility === 'openai-gpt-image') {
+    return '默认推荐模式。适用于官方 GPT Image 请求格式，也便于后续继续扩展官方图生图能力。';
+  }
+
+  return `同一个图片模型在不同 API Key 或网关下可能需要不同接口格式；当前已固定为 ${IMAGE_API_COMPATIBILITY_META[storedCompatibility].label}。`;
+}
 
 const PROVIDER_AVATAR_THEMES = [
   'amber',
@@ -454,13 +504,7 @@ function inferAuthTypeForProviderType(
 }
 
 function isManagedProviderProfile(profileId: string): boolean {
-  return (
-    profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ||
-    profileId === FOROPENCODE_ORIGINAL_PROVIDER_PROFILE_ID ||
-    profileId === FOROPENCODE_MIX_PROVIDER_PROFILE_ID ||
-    profileId === FOROPENCODE_CODEX_PROVIDER_PROFILE_ID ||
-    profileId === FOROPENCODE_BUSINESS_PROVIDER_PROFILE_ID
-  );
+  return isBuiltInDefaultProviderProfileId(profileId);
 }
 
 const ProviderAvatar = ({
@@ -651,6 +695,7 @@ export const SettingsDialog = ({
   const runtimeState = useRuntimeModelDiscoveryState(
     selectedProfile?.id || LEGACY_DEFAULT_PROVIDER_PROFILE_ID
   );
+  const providerSelectionMode = runtimeModelDiscovery.isProviderSelectionMode();
   const deferredModelSearchQuery = useDeferredValue(modelSearchQuery);
   const legacyImageModels = useProfilePreferredModels(
     LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
@@ -790,6 +835,7 @@ export const SettingsDialog = ({
       DEFAULT_INVOCATION_PRESET_ID;
     const persistedGemini = geminiSettings.get();
     const persistedShowWorkZoneCard = readPersistedWorkZoneCard();
+    const useBuiltInFallback = !runtimeModelDiscovery.isProviderSelectionMode();
 
     setInitialProfiles(persistedProfiles);
     setInitialDraftSignature(
@@ -798,12 +844,17 @@ export const SettingsDialog = ({
         presets: persistedPresets,
         activePresetId: persistedActivePresetId,
         audioModelName:
-          persistedGemini.audioModelName || getDefaultAudioModel(),
+          persistedGemini.audioModelName ||
+          (useBuiltInFallback ? getDefaultAudioModel() : ''),
         imageModelName:
-          persistedGemini.imageModelName || getDefaultImageModel(),
+          persistedGemini.imageModelName ||
+          (useBuiltInFallback ? getDefaultImageModel() : ''),
         videoModelName:
-          persistedGemini.videoModelName || getDefaultVideoModel(),
-        textModelName: persistedGemini.textModelName || getDefaultTextModel(),
+          persistedGemini.videoModelName ||
+          (useBuiltInFallback ? getDefaultVideoModel() : ''),
+        textModelName:
+          persistedGemini.textModelName ||
+          (useBuiltInFallback ? getDefaultTextModel() : ''),
         showWorkZoneCard: persistedShowWorkZoneCard,
       })
     );
@@ -821,6 +872,7 @@ export const SettingsDialog = ({
       invocationPresetsSettings.getActivePresetId() ||
       DEFAULT_INVOCATION_PRESET_ID;
     const geminiConfig = geminiSettings.get();
+    const useBuiltInFallback = !runtimeModelDiscovery.isProviderSelectionMode();
     let nextShowWorkZoneCard = true;
     const pendingProviderIntent = readPendingProviderNavigationIntent();
     const nextSelectedProfileId =
@@ -847,10 +899,22 @@ export const SettingsDialog = ({
         ? currentPresetId
         : nextPresets[0]?.id || DEFAULT_INVOCATION_PRESET_ID
     );
-    setAudioModelName(geminiConfig.audioModelName || getDefaultAudioModel());
-    setImageModelName(geminiConfig.imageModelName || getDefaultImageModel());
-    setVideoModelName(geminiConfig.videoModelName || getDefaultVideoModel());
-    setTextModelName(geminiConfig.textModelName || getDefaultTextModel());
+    setAudioModelName(
+      geminiConfig.audioModelName ||
+        (useBuiltInFallback ? getDefaultAudioModel() : '')
+    );
+    setImageModelName(
+      geminiConfig.imageModelName ||
+        (useBuiltInFallback ? getDefaultImageModel() : '')
+    );
+    setVideoModelName(
+      geminiConfig.videoModelName ||
+        (useBuiltInFallback ? getDefaultVideoModel() : '')
+    );
+    setTextModelName(
+      geminiConfig.textModelName ||
+        (useBuiltInFallback ? getDefaultTextModel() : '')
+    );
 
     try {
       nextShowWorkZoneCard =
@@ -872,10 +936,18 @@ export const SettingsDialog = ({
         profiles: nextProfiles,
         presets: nextPresets,
         activePresetId: nextActivePresetId,
-        audioModelName: geminiConfig.audioModelName || getDefaultAudioModel(),
-        imageModelName: geminiConfig.imageModelName || getDefaultImageModel(),
-        videoModelName: geminiConfig.videoModelName || getDefaultVideoModel(),
-        textModelName: geminiConfig.textModelName || getDefaultTextModel(),
+        audioModelName:
+          geminiConfig.audioModelName ||
+          (useBuiltInFallback ? getDefaultAudioModel() : ''),
+        imageModelName:
+          geminiConfig.imageModelName ||
+          (useBuiltInFallback ? getDefaultImageModel() : ''),
+        videoModelName:
+          geminiConfig.videoModelName ||
+          (useBuiltInFallback ? getDefaultVideoModel() : ''),
+        textModelName:
+          geminiConfig.textModelName ||
+          (useBuiltInFallback ? getDefaultTextModel() : ''),
         showWorkZoneCard: nextShowWorkZoneCard,
       })
     );
@@ -955,23 +1027,30 @@ export const SettingsDialog = ({
         nextPresets.find((preset) => preset.id === effectiveActivePresetId) ||
         nextPresets[0] ||
         null;
+      const useBuiltInFallback =
+        !runtimeModelDiscovery.isProviderSelectionMode();
       const nextAudioModelName =
         getRouteModelId(activePreset?.audio) ||
-        persistedGemini.audioModelName ||
-        getDefaultAudioModel();
+        (useBuiltInFallback
+          ? persistedGemini.audioModelName || getDefaultAudioModel()
+          : '');
       const nextImageModelName =
         getRouteModelId(activePreset?.image) ||
-        persistedGemini.imageModelName ||
-        getDefaultImageModel();
+        (useBuiltInFallback
+          ? persistedGemini.imageModelName || getDefaultImageModel()
+          : '');
       const nextVideoModelName =
         getRouteModelId(activePreset?.video) ||
-        persistedGemini.videoModelName ||
-        getDefaultVideoModel();
+        (useBuiltInFallback
+          ? persistedGemini.videoModelName || getDefaultVideoModel()
+          : '');
       const nextTextModelName =
         getRouteModelId(activePreset?.text) ||
-        persistedGemini.textModelName ||
-        persistedGemini.chatModel ||
-        getDefaultTextModel();
+        (useBuiltInFallback
+          ? persistedGemini.textModelName ||
+            persistedGemini.chatModel ||
+            getDefaultTextModel()
+          : '');
 
       await invocationPresetsSettings.update(cloneValue(nextPresets));
       await invocationPresetsSettings.setActivePresetId(
@@ -1249,10 +1328,14 @@ export const SettingsDialog = ({
   const handleAddPreset = () => {
     const fallbackProfileId = enabledProfiles[0]?.id || null;
     const nextPreset = createPreset(fallbackProfileId, {
-      audio: audioModelName || getDefaultAudioModel(),
-      image: imageModelName || getDefaultImageModel(),
-      video: videoModelName || getDefaultVideoModel(),
-      text: textModelName || getDefaultTextModel(),
+      audio:
+        audioModelName || (providerSelectionMode ? '' : getDefaultAudioModel()),
+      image:
+        imageModelName || (providerSelectionMode ? '' : getDefaultImageModel()),
+      video:
+        videoModelName || (providerSelectionMode ? '' : getDefaultVideoModel()),
+      text:
+        textModelName || (providerSelectionMode ? '' : getDefaultTextModel()),
     });
     setPresetsDraft((current) => [...current, nextPreset]);
     analytics.trackUIInteraction({
@@ -1374,7 +1457,7 @@ export const SettingsDialog = ({
 
     const trimmedApiKey = selectedProfile.apiKey.trim();
     const normalizedBaseUrl = normalizeModelApiBaseUrl(
-      selectedProfile.baseUrl.trim() || FOROPENCODE_PROVIDER_DEFAULT_BASE_URL
+      selectedProfile.baseUrl.trim() || FOR_PROVIDER_DEFAULT_BASE_URL
     );
 
     if (!trimmedApiKey) {
@@ -1423,7 +1506,7 @@ export const SettingsDialog = ({
     }
   };
 
-  const handleApplySelectedModels = (
+  const handleApplySelectedModels = async (
     selectedModelIds: string[],
     options?: {
       successMessage?: string;
@@ -1438,6 +1521,15 @@ export const SettingsDialog = ({
       selectedModelIds
     );
     const selectedModels = selectionChange.models;
+    const allSelectedModels = (
+      ['image', 'video', 'audio', 'text'] as ModelType[]
+    ).flatMap((type) => runtimeModelDiscovery.getSelectableModels(type));
+    const nextPresets = reconcileProviderPresetModels(
+      presetsDraft,
+      selectedProfile.id,
+      selectedModels,
+      allSelectedModels
+    );
 
     if (selectedProfile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID) {
       const nextImageModels = selectedModels.filter(
@@ -1446,37 +1538,29 @@ export const SettingsDialog = ({
       const nextVideoModels = selectedModels.filter(
         (model) => model.type === 'video'
       );
+      const nextAudioModels = selectedModels.filter(
+        (model) => model.type === 'audio'
+      );
       const nextTextModels = selectedModels.filter(
         (model) => model.type === 'text'
       );
-      const discoveredImageIds = runtimeState.discoveredModels
-        .filter((model) => model.type === 'image')
-        .map((model) => model.id);
-      const discoveredVideoIds = runtimeState.discoveredModels
-        .filter((model) => model.type === 'video')
-        .map((model) => model.id);
-      const discoveredTextIds = runtimeState.discoveredModels
-        .filter((model) => model.type === 'text')
-        .map((model) => model.id);
 
-      if (
-        !nextImageModels.some((model) => model.id === imageModelName) &&
-        discoveredImageIds.includes(imageModelName)
-      ) {
-        setImageModelName(nextImageModels[0]?.id || getDefaultImageModel());
+      if (!nextImageModels.some((model) => model.id === imageModelName)) {
+        setImageModelName(nextImageModels[0]?.id || '');
       }
-      if (
-        !nextVideoModels.some((model) => model.id === videoModelName) &&
-        discoveredVideoIds.includes(videoModelName)
-      ) {
-        setVideoModelName(nextVideoModels[0]?.id || getDefaultVideoModel());
+      if (!nextVideoModels.some((model) => model.id === videoModelName)) {
+        setVideoModelName(nextVideoModels[0]?.id || '');
       }
-      if (
-        !nextTextModels.some((model) => model.id === textModelName) &&
-        discoveredTextIds.includes(textModelName)
-      ) {
-        setTextModelName(nextTextModels[0]?.id || getDefaultTextModel());
+      if (!nextAudioModels.some((model) => model.id === audioModelName)) {
+        setAudioModelName(nextAudioModels[0]?.id || '');
       }
+      if (!nextTextModels.some((model) => model.id === textModelName)) {
+        setTextModelName(nextTextModels[0]?.id || '');
+      }
+    }
+
+    if (!areEqual(nextPresets, presetsDraft)) {
+      await persistPresetConfiguration(nextPresets, activePresetIdDraft);
     }
 
     const successMessage =
@@ -1515,7 +1599,7 @@ export const SettingsDialog = ({
     const nextIds = runtimeState.selectedModelIds.filter(
       (id) => id !== modelId
     );
-    handleApplySelectedModels(nextIds);
+    void handleApplySelectedModels(nextIds);
   };
 
   const closeSettingsDialog = () => {
@@ -1596,24 +1680,24 @@ export const SettingsDialog = ({
         ) || normalizedProfiles[0];
 
       const normalizedLegacyBaseUrl = normalizeModelApiBaseUrl(
-        legacyProfile?.baseUrl || FOROPENCODE_PROVIDER_DEFAULT_BASE_URL
+        legacyProfile?.baseUrl || FOR_PROVIDER_DEFAULT_BASE_URL
       );
       const normalizedAudioModel =
         audioModelName.trim() ||
         legacyAudioModels[0]?.id ||
-        getDefaultAudioModel();
+        (providerSelectionMode ? '' : getDefaultAudioModel());
       const normalizedImageModel =
         imageModelName.trim() ||
         legacyImageModels[0]?.id ||
-        getDefaultImageModel();
+        (providerSelectionMode ? '' : getDefaultImageModel());
       const normalizedVideoModel =
         videoModelName.trim() ||
         legacyVideoModels[0]?.id ||
-        getDefaultVideoModel();
+        (providerSelectionMode ? '' : getDefaultVideoModel());
       const normalizedTextModel =
         textModelName.trim() ||
         legacyTextModels[0]?.id ||
-        getDefaultTextModel();
+        (providerSelectionMode ? '' : getDefaultTextModel());
       const normalizedActiveImageModel =
         getRouteModelId(activePreset?.image) || normalizedImageModel;
       const normalizedActiveVideoModel =
@@ -1624,10 +1708,24 @@ export const SettingsDialog = ({
         getRouteModelId(activePreset?.text) || normalizedTextModel;
 
       normalizedProfiles.forEach((profile) => {
+        const previousProfile = initialProfiles.find(
+          (item) => item.id === profile.id
+        );
+        const credentialsChanged = Boolean(
+          previousProfile &&
+            (normalizeModelApiBaseUrl(
+              previousProfile.baseUrl || FOR_PROVIDER_DEFAULT_BASE_URL
+            ) !==
+              normalizeModelApiBaseUrl(
+                profile.baseUrl || FOR_PROVIDER_DEFAULT_BASE_URL
+              ) ||
+              previousProfile.apiKey.trim() !== profile.apiKey.trim())
+        );
         runtimeModelDiscovery.invalidateIfConfigChanged(
           profile.id,
-          profile.baseUrl || FOROPENCODE_PROVIDER_DEFAULT_BASE_URL,
-          profile.apiKey || ''
+          profile.baseUrl || FOR_PROVIDER_DEFAULT_BASE_URL,
+          profile.apiKey || '',
+          credentialsChanged
         );
       });
 
@@ -1693,7 +1791,9 @@ export const SettingsDialog = ({
           closeAfterSave,
           profilesCount: normalizedProfiles.length,
           presetsCount: normalizedPresets.length,
-          enabledProfilesCount: normalizedProfiles.filter((profile) => profile.enabled).length,
+          enabledProfilesCount: normalizedProfiles.filter(
+            (profile) => profile.enabled
+          ).length,
         },
       });
 
@@ -2125,10 +2225,10 @@ export const SettingsDialog = ({
               </label>
               <select
                 className="settings-dialog__select"
-                value={
+                value={normalizeImageApiCompatibilityForDisplay(
                   selectedProfile.imageApiCompatibility ||
-                  DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
-                }
+                    DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
+                )}
                 onChange={(event) =>
                   updateProfile(selectedProfile.id, (profile) => ({
                     ...profile,
@@ -2145,6 +2245,44 @@ export const SettingsDialog = ({
               </select>
               <span className="settings-dialog__field-hint">
                 {selectedImageApiCompatibilityHint}
+              </span>
+            </div>
+
+            <div
+              className="settings-dialog__field settings-dialog__field--full"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'wrap',
+              }}
+            >
+              <label className="settings-dialog__label" style={{ margin: 0 }}>
+                图片优先使用异步接口（实验功能，建议不要开，还未上线）
+              </label>
+              <Switch
+                size="small"
+                value={selectedProfile.preferAsyncImageEndpoint ?? false}
+                onChange={(checked) => {
+                  const value = checked as boolean;
+                  updateProfile(selectedProfile.id, (profile) => ({
+                    ...profile,
+                    preferAsyncImageEndpoint: value,
+                  }));
+                  providerProfilesSettings.update(
+                    cloneValue(providerProfilesSettings.get()).map((profile) =>
+                      profile.id === selectedProfile.id
+                        ? { ...profile, preferAsyncImageEndpoint: value }
+                        : profile
+                    )
+                  );
+                }}
+              />
+              <span
+                className="settings-dialog__field-hint"
+                style={{ width: '100%' }}
+              >
+                开启后，支持异步接口的图片模型将优先使用 /v1/videos 异步接口生成
               </span>
             </div>
 
@@ -2183,7 +2321,7 @@ export const SettingsDialog = ({
                     baseUrl: event.target.value,
                   }))
                 }
-                placeholder={FOROPENCODE_PROVIDER_DEFAULT_BASE_URL}
+                placeholder={FOR_PROVIDER_DEFAULT_BASE_URL}
               />
             </div>
 
@@ -2198,7 +2336,7 @@ export const SettingsDialog = ({
                       您可以从以下地址获取 API Key:
                       <br />
                       <a
-                        href="https://foropencode.com/token"
+                        href="https://foropencode.com/keys"
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{
@@ -2208,7 +2346,7 @@ export const SettingsDialog = ({
                           marginBottom: 8,
                         }}
                       >
-                        foropencode.com/token
+                        foropencode.com/keys
                       </a>
                     </div>
                   }
@@ -2258,7 +2396,11 @@ export const SettingsDialog = ({
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => setIsApiKeyVisible((visible) => !visible)}
                     >
-                      {isApiKeyVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                      {isApiKeyVisible ? (
+                        <EyeOff size={16} />
+                      ) : (
+                        <Eye size={16} />
+                      )}
                     </button>
                   </HoverTip>
                 </div>
@@ -2304,10 +2446,26 @@ export const SettingsDialog = ({
             <div className="settings-dialog__compat-card">
               <div className="settings-dialog__compat-title">兼容默认模型</div>
               <div className="settings-dialog__compat-meta">
-                <span>图片：{imageModelName || getDefaultImageModel()}</span>
-                <span>视频：{videoModelName || getDefaultVideoModel()}</span>
-                <span>音频：{audioModelName || getDefaultAudioModel()}</span>
-                <span>文本：{textModelName || getDefaultTextModel()}</span>
+                <span>
+                  图片：
+                  {imageModelName ||
+                    (providerSelectionMode ? '未选择' : getDefaultImageModel())}
+                </span>
+                <span>
+                  视频：
+                  {videoModelName ||
+                    (providerSelectionMode ? '未选择' : getDefaultVideoModel())}
+                </span>
+                <span>
+                  音频：
+                  {audioModelName ||
+                    (providerSelectionMode ? '未选择' : getDefaultAudioModel())}
+                </span>
+                <span>
+                  文本：
+                  {textModelName ||
+                    (providerSelectionMode ? '未选择' : getDefaultTextModel())}
+                </span>
               </div>
             </div>
           </div>
@@ -2670,6 +2828,8 @@ export const SettingsDialog = ({
               ? legacyImageModels
               : routeType === 'video'
               ? legacyVideoModels
+              : routeType === 'audio'
+              ? legacyAudioModels
               : legacyTextModels
             : runtimeModelDiscovery
                 .getState(profile.id)
@@ -2685,13 +2845,14 @@ export const SettingsDialog = ({
           currentModelId &&
           !uniqueModels.some((model) => model.id === currentModelId)
         ) {
-          uniqueModels.unshift({
-            id: currentModelId,
-            label: currentModelId,
-            shortLabel: currentModelId,
-            type: routeType,
-            vendor: ModelVendor.OTHER,
-          });
+          const pinnedModel = runtimeModelDiscovery.getPinnedSelectableModel(
+            routeType,
+            currentModelId,
+            createModelRef(profile.id, currentModelId)
+          );
+          if (pinnedModel) {
+            uniqueModels.unshift(pinnedModel);
+          }
         }
 
         return {

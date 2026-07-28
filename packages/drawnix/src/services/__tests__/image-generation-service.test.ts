@@ -4,12 +4,14 @@ import { TaskExecutionPhase, TaskStatus } from '../../types/task.types';
 import type { Task } from '../../types/shared/core.types';
 
 const createTaskMock = vi.fn(async () => undefined);
+const claimTaskForCurrentSessionMock = vi.fn();
 const trackExternalTaskMock = vi.fn();
 const syncTaskFromStorageMock = vi.fn();
 const generateImageMock = vi.fn(async () => undefined);
 const waitForTaskCompletionMock = vi.fn();
 const waitForInitializationMock = vi.fn(async () => undefined);
 const hasInvocationRouteCredentialsMock = vi.fn(() => true);
+const resolveInvocationPlanFromRouteMock = vi.fn(() => null);
 const getFallbackExecutorMock = vi.fn(() => ({
   generateImage: generateImageMock,
 }));
@@ -33,10 +35,27 @@ vi.mock('../../utils/settings-manager', () => ({
     waitForInitialization: waitForInitializationMock,
   },
   hasInvocationRouteCredentials: hasInvocationRouteCredentialsMock,
+  createModelRef: (profileId?: string | null, modelId?: string | null) =>
+    profileId || modelId
+      ? { profileId: profileId || null, modelId: modelId || null }
+      : null,
+  resolveInvocationRoute: (_operation: string, requestedModel?: string) => ({
+    profileId: 'legacy-default',
+    providerType: 'openai-compatible',
+    modelId: requestedModel || 'gpt-image-2',
+  }),
+  providerProfilesSettings: {
+    get: () => [],
+  },
+}));
+
+vi.mock('../provider-routing', () => ({
+  resolveInvocationPlanFromRoute: resolveInvocationPlanFromRouteMock,
 }));
 
 vi.mock('../task-queue-service', () => ({
   taskQueueService: {
+    claimTaskForCurrentSession: claimTaskForCurrentSessionMock,
     trackExternalTask: trackExternalTaskMock,
     syncTaskFromStorage: syncTaskFromStorageMock,
   },
@@ -90,6 +109,11 @@ describe('image-generation-service', () => {
       count: 2,
     });
 
+    expect(claimTaskForCurrentSessionMock).toHaveBeenCalledWith('task-image-1');
+    expect(
+      claimTaskForCurrentSessionMock.mock.invocationCallOrder[0]
+    ).toBeLessThan(createTaskMock.mock.invocationCallOrder[0]);
+
     expect(createTaskMock).toHaveBeenCalledWith(
       'task-image-1',
       'image',
@@ -113,6 +137,13 @@ describe('image-generation-service', () => {
           quality: 'high',
           n: 2,
         },
+      }),
+      expect.objectContaining({
+        operation: 'image',
+        providerProfileId: 'legacy-default',
+        providerType: 'openai-compatible',
+        modelId: 'gpt-image-2',
+        binding: null,
       })
     );
 

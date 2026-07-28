@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 分析页 - 视频输入 + AI 分析 + 结果摘要
  */
 
@@ -23,7 +23,6 @@ import {
   type CreativeBrief,
 } from '../../shared/workflow';
 import { useSelectableModels } from '../../../hooks/use-runtime-models';
-import { useProviderProfiles } from '../../../hooks/use-provider-profiles';
 import { useDrawnix } from '../../../hooks/use-drawnix';
 import { ShotTimeline } from '../components/ShotTimeline';
 import { ShotCard } from '../components/ShotCard';
@@ -35,10 +34,7 @@ import {
 } from '../../../utils/model-selection';
 import { ModelVendor, type ModelConfig } from '../../../constants/model-config';
 import { getVideoModelConfig } from '../../../constants/video-model-config';
-import {
-  FOROPENCODE_MIX_PROVIDER_PROFILE_ID,
-  type ModelRef,
-} from '../../../utils/settings-manager';
+import { type ModelRef } from '../../../utils/settings-manager';
 import {
   buildVideoPromptGenerationPrompt,
   readStoredModelSelection,
@@ -207,7 +203,6 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
   const [analysis, setAnalysis] = useState<VideoAnalysisData | null>(
     existingRecord?.analysis || null
   );
-  const providerProfiles = useProviderProfiles();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
   const previewUrlRef = useRef<string | null>(null);
@@ -358,19 +353,21 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
     () => (isGeminiRequiredForAnalysis ? geminiTextModels : allTextModels),
     [allTextModels, geminiTextModels, isGeminiRequiredForAnalysis]
   );
-  const isGeminiMixConfigured = useMemo(() => {
-    const mixProfile = providerProfiles.find(
-      (profile) => profile.id === FOROPENCODE_MIX_PROVIDER_PROFILE_ID
-    );
-    return Boolean(mixProfile?.apiKey.trim());
-  }, [providerProfiles]);
-  const isUsingGeminiMixModel =
-    selectedModelRef?.profileId === FOROPENCODE_MIX_PROVIDER_PROFILE_ID;
+  const isUsingGeminiTextModel = useMemo(
+    () =>
+      Boolean(
+        findMatchingSelectableModel(
+          geminiTextModels,
+          selectedModel,
+          selectedModelRef
+        )
+      ),
+    [geminiTextModels, selectedModel, selectedModelRef]
+  );
 
-  const handleOpenGeminiMixSettings = useCallback(() => {
+  const handleOpenProviderSettings = useCallback(() => {
     const intent = {
-      action: 'select' as const,
-      profileId: FOROPENCODE_MIX_PROVIDER_PROFILE_ID,
+      action: 'create' as const,
     };
 
     (
@@ -1008,18 +1005,16 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
                 : '开始分析'}
             </button>
           </div>
-          {isGeminiRequiredForAnalysis && !isUsingGeminiMixModel && (
+          {isGeminiRequiredForAnalysis && !isUsingGeminiTextModel && (
             <div className="va-model-tip">
-              <span>建议使用 gemini-mix 分组的gemini-3.1-pro-preview</span>
-              {!isGeminiMixConfigured && (
-                <button
-                  type="button"
-                  className="va-model-tip-link"
-                  onClick={handleOpenGeminiMixSettings}
-                >
-                  去设置
-                </button>
-              )}
+              <span>请配置并选择可用的 Gemini 文本模型</span>
+              <button
+                type="button"
+                className="va-model-tip-link"
+                onClick={handleOpenProviderSettings}
+              >
+                去设置
+              </button>
             </div>
           )}
           {error && <div className="va-error">{error}</div>}

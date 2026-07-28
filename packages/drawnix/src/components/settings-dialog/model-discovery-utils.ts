@@ -1,5 +1,13 @@
-import type { ModelConfig, ModelType, ModelVendor } from '../../constants/model-config';
-import { DISCOVERY_VENDOR_ORDER, getDiscoveryVendorLabel } from '../shared/ModelVendorBrand';
+import {
+  DEFAULT_DISPLAY_MODEL_IDS,
+  type ModelConfig,
+  type ModelType,
+  type ModelVendor,
+} from '../../constants/model-config';
+import {
+  DISCOVERY_VENDOR_ORDER,
+  getDiscoveryVendorLabel,
+} from '../shared/ModelVendorBrand';
 import { sortModelsByDisplayPriority } from '../../utils/model-sort';
 
 export type ModelTypeFilter = 'all' | ModelType;
@@ -52,6 +60,17 @@ export function matchesModelQuery(model: ModelConfig, query: string) {
   ]
     .filter(Boolean)
     .some((value) => value?.toLowerCase().includes(normalized));
+}
+
+export function getRecommendedDiscoveredModelIds(
+  models: ModelConfig[]
+): string[] {
+  const defaultDisplayModelIds = new Set(
+    Object.values(DEFAULT_DISPLAY_MODEL_IDS).flat()
+  );
+  return models
+    .filter((model) => defaultDisplayModelIds.has(model.id))
+    .map((model) => model.id);
 }
 
 function sortModels(models: ModelConfig[]) {

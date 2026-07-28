@@ -857,7 +857,7 @@ function renderReferenceImages(referenceImages) {
         <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">参考图 ${index + 1}</div>
         <div style="width: 140px; height: 140px; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #1a1a1a; border-radius: 4px;">
           ${isPreviewable 
-            ? `<img src="${escapeHtml(imgUrl)}" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="openDebugPreviewUrl(this.src)" title="点击查看原图" onerror="this.parentElement.innerHTML='<span style=\\'color:#666;font-size:12px;\\'>加载失败</span>'">`
+            ? `<img src="${escapeHtml(imgUrl)}" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: pointer;" onclick="window.open('${escapeHtml(imgUrl)}')" title="点击查看原图" onerror="this.parentElement.innerHTML='<span style=\\'color:#666;font-size:12px;\\'>加载失败</span>'">`
             : `<span style="color: #666; font-size: 12px; text-align: center; padding: 8px;">无法预览<br><span style="font-size: 10px; word-break: break-all;">${imgUrl ? imgUrl.substring(0, 30) + '...' : '无 URL'}</span></span>`
           }
         </div>

@@ -11,9 +11,6 @@ const adapterRegistry = new Map<string, ModelAdapter>();
 
 export function registerModelAdapter(adapter: ModelAdapter): void {
   adapterRegistry.set(adapter.id, adapter);
-  adapter.legacyIds?.forEach((legacyId) => {
-    adapterRegistry.set(legacyId, adapter);
-  });
 }
 
 export function getModelAdapter(adapterId: string): ModelAdapter | undefined {
@@ -29,7 +26,7 @@ export function clearModelAdapters(): void {
 }
 
 export function listModelAdapters(kind?: ModelKind): ModelAdapter[] {
-  const adapters = Array.from(new Set(adapterRegistry.values()));
+  const adapters = Array.from(adapterRegistry.values());
   return kind ? adapters.filter((adapter) => adapter.kind === kind) : adapters;
 }
 
@@ -90,7 +87,8 @@ export function resolveAdapterForModel(
     if (adapter.matchModels?.includes(modelId)) return true;
 
     // 3) 自定义匹配函数
-    if (adapter.matchPredicate && adapter.matchPredicate(modelConfig)) return true;
+    if (adapter.matchPredicate && adapter.matchPredicate(modelConfig))
+      return true;
 
     // 4) 标签匹配
     if (
@@ -152,7 +150,6 @@ function resolveGPTImageAdapterForLegacyRoute(
     return undefined;
   }
 
-  void modelRef;
   return findImageAdapterBySchema('openai.image.gpt-generation-json');
 }
 

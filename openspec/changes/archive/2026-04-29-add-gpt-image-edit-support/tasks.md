@@ -24,7 +24,7 @@
 - [x] 4.2 Add planner tests for preferred request schema selection and fallback.
 - [x] 4.3 Add GPT adapter edit form body tests.
 - [x] 4.4 Add execution/adapter-selection tests for reference-image requests.
-- [x] 4.5 Add regression coverage proving For/basic reference-image requests stay on default adapter.
+- [x] 4.5 Add regression coverage proving generic reference-image requests stay on the default adapter.
 
 ## 5. Verification
 

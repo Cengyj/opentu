@@ -73,7 +73,7 @@ class GitHubApiService {
   private async getHeaders(): Promise<Headers> {
     const token = await tokenService.getToken();
     if (!token) {
-      throw new GitHubApiError('未配置同步访问令牌', 401);
+      throw new GitHubApiError('未配置 GitHub Token', 401);
     }
 
     return new Headers({
@@ -145,7 +145,7 @@ class GitHubApiService {
       403: '权限不足，请确保 Token 具有 gist 权限',
       404: '资源不存在',
       422: '请求数据无效',
-      500: '远程同步服务器错误，请稍后重试',
+      500: 'GitHub 服务器错误，请稍后重试',
     };
 
     if (messages[status]) {

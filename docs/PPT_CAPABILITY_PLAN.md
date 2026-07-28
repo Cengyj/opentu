@@ -1,6 +1,6 @@
 # Opentu (开图) PPT 能力规划与实现方案
 
-> 基于 AiPPT (docmee.cn) + [ai-to-pptx](https://github.com/SmartSchoolAI/ai-to-pptx) + [banana-slides](https://github.com/snakeying/banana-slides)（蕉幻）+ [LandPPT](https://github.com/sligter/LandPPT) + [NanoBanana-PPT-Skills](https://github.com/op7418/NanoBanana-PPT-Skills) 项目 Review 结合 aitu 现有架构梳理
+> 基于 AiPPT (docmee.cn) + ai-to-pptx + banana-slides（蕉幻）+ LandPPT + NanoBanana-PPT-Skills 项目 Review 结合 aitu 现有架构梳理
 
 ## 现有基础
 
@@ -70,7 +70,7 @@ interface PPTPageSpec {
 
 #### ai-to-pptx 借鉴补充
 
-> 以下内容借鉴自 [ai-to-pptx](https://github.com/SmartSchoolAI/ai-to-pptx) 项目分析
+> 以下内容借鉴自 ai-to-pptx 项目分析
 
 **1. 多种输入源支持**
 
@@ -122,7 +122,7 @@ ai-to-pptx 使用 `pako` (gzip) + base64 编码传输大体量 PPT JSON 数据�
 
 #### banana-slides 借鉴补充
 
-> 以下内容借鉴自 [banana-slides](https://github.com/snakeying/banana-slides)（蕉幻）项目分析
+> 以下内容借鉴自 banana-slides（蕉幻）项目分析
 
 **1. 三种创建模式**
 
@@ -243,7 +243,7 @@ aitu 建议：
 
 #### LandPPT 借鉴补充
 
-> 以下内容借鉴自 [LandPPT](https://github.com/sligter/LandPPT) 项目分析（Python 3.11 + FastAPI + SQLAlchemy 全栈 AI PPT 平台）
+> 以下内容借鉴自 LandPPT 项目分析（Python 3.11 + FastAPI + SQLAlchemy 全栈 AI PPT 平台）
 
 **1. 深度研究驱动生成（DEEP 方法论）**
 
@@ -431,7 +431,7 @@ aitu 建议：
 
 #### NanoBanana-PPT-Skills 借鉴补充
 
-> 以下内容借鉴自 [NanoBanana-PPT-Skills](https://github.com/op7418/NanoBanana-PPT-Skills) 项目分析（Python + Gemini 3 Pro + 可灵 AI 全图片/视频 PPT 生成工具，by 歸藏 @op7418）
+> 以下内容借鉴自 NanoBanana-PPT-Skills 项目分析（Python + Gemini 3 Pro + 可灵 AI 全图片/视频 PPT 生成工具，by 歸藏 @op7418）
 
 **1. AI 图片直出 PPT 方案**
 
@@ -549,7 +549,7 @@ aitu 建议：
 
 #### banana-slides 借鉴补充
 
-> 以下内容借鉴自 [banana-slides](https://github.com/snakeying/banana-slides)（蕉幻）项目分析
+> 以下内容借鉴自 banana-slides（蕉幻）项目分析
 
 **1. 三种导出格式**
 
@@ -592,7 +592,7 @@ aitu 实现建议：
 
 #### LandPPT 借鉴补充
 
-> 以下内容借鉴自 [LandPPT](https://github.com/sligter/LandPPT) 项目分析
+> 以下内容借鉴自 LandPPT 项目分析
 
 **1. 五种导出格式**
 
@@ -714,7 +714,7 @@ aitu 建议：
 
 #### banana-slides 借鉴补充
 
-> 以下内容借鉴自 [banana-slides](https://github.com/snakeying/banana-slides)（蕉幻）项目分析
+> 以下内容借鉴自 banana-slides（蕉幻）项目分析
 
 **1. 预设风格系统（AI 风格描述替代传统 JSON 模板）**
 
@@ -766,7 +766,7 @@ aitu 实现建议：
 
 #### LandPPT 借鉴补充
 
-> 以下内容借鉴自 [LandPPT](https://github.com/sligter/LandPPT) 项目分析
+> 以下内容借鉴自 LandPPT 项目分析
 
 **1. AI 自动生成母版模板**
 
@@ -935,7 +935,7 @@ const pieData = [
 
 #### LandPPT 借鉴补充
 
-> 以下内容借鉴自 [LandPPT](https://github.com/sligter/LandPPT) 项目分析
+> 以下内容借鉴自 LandPPT 项目分析
 
 **1. 16+ 种图表类型（含专业图表）**
 
@@ -1073,7 +1073,7 @@ interface PlaitFrame extends PlaitElement {
 
 #### NanoBanana-PPT-Skills 借鉴补充
 
-> 以下内容借鉴自 [NanoBanana-PPT-Skills](https://github.com/op7418/NanoBanana-PPT-Skills) 项目分析
+> 以下内容借鉴自 NanoBanana-PPT-Skills 项目分析
 
 **1. AI 视频转场（图生视频方案）**
 
@@ -1156,7 +1156,7 @@ aitu 实现建议：
 
 #### LandPPT 借鉴补充
 
-> 以下内容借鉴自 [LandPPT](https://github.com/sligter/LandPPT) 项目分析
+> 以下内容借鉴自 LandPPT 项目分析
 
 **1. 完整的 AI 演讲稿生成系统**
 
@@ -1359,7 +1359,7 @@ ai-to-pptx 的 `cover.js` 实现了自动生成 PPT 封面缩略图的功能：
 
 **1. PPT JSON 中间格式**
 
-ai-to-pptx 使用 JSON 作为 PPT 数据的统一中间表示（由 [ppt2json](https://github.com/veasion/ppt2json) 工具转换），包含完整的页面、元素、样式定义。aitu 可建立类似的中间格式标准：
+ai-to-pptx 使用 JSON 作为 PPT 数据的统一中间表示（由 ppt2json 工具转换），包含完整的页面、元素、样式定义。aitu 可建立类似的中间格式标准：
 
 ```typescript
 interface PPTJsonDocument {
@@ -2157,7 +2157,7 @@ Phase 9 (P21)                  → PPT 视频导出 + AI 图片直出           
 
 ## 附录：ai-to-pptx 项目能力对照表
 
-> 以下汇总了从 [ai-to-pptx](https://github.com/SmartSchoolAI/ai-to-pptx) 项目中识别的所有可借鉴能力及其在本文档中的对应位置。
+> 以下汇总了从 ai-to-pptx 项目中识别的所有可借鉴能力及其在本文档中的对应位置。
 
 | ai-to-pptx 能力 | 源文件 | aitu 对应规划 | 状态 |
 |-----------------|--------|-------------|------|
@@ -2191,7 +2191,7 @@ Phase 9 (P21)                  → PPT 视频导出 + AI 图片直出           
 
 ## 附录：banana-slides 项目能力对照表
 
-> 以下汇总了从 [banana-slides](https://github.com/snakeying/banana-slides)（蕉幻）项目中识别的所有可借鉴能力及其在本文档中的对应位置。
+> 以下汇总了从 banana-slides（蕉幻）项目中识别的所有可借鉴能力及其在本文档中的对应位置。
 
 | banana-slides 能力 | 源文件 | aitu 对应规划 | 状态 |
 |-------------------|--------|-------------|------|
@@ -2223,7 +2223,7 @@ Phase 9 (P21)                  → PPT 视频导出 + AI 图片直出           
 
 ## 附录：LandPPT 项目能力对照表
 
-> 以下汇总了从 [LandPPT](https://github.com/sligter/LandPPT) 项目中识别的所有可借鉴能力及其在本文档中的对应位置。
+> 以下汇总了从 LandPPT 项目中识别的所有可借鉴能力及其在本文档中的对应位置。
 
 | LandPPT 能力 | 源文件 | aitu 对应规划 | 状态 |
 |-------------|--------|-------------|------|
@@ -2262,7 +2262,7 @@ Phase 9 (P21)                  → PPT 视频导出 + AI 图片直出           
 
 ## 附录：NanoBanana-PPT-Skills 项目能力对照表
 
-> 以下汇总了从 [NanoBanana-PPT-Skills](https://github.com/op7418/NanoBanana-PPT-Skills) 项目中识别的所有可借鉴能力及其在本文档中的对应位置。
+> 以下汇总了从 NanoBanana-PPT-Skills 项目中识别的所有可借鉴能力及其在本文档中的对应位置。
 > 
 > 项目特点：与其他项目（ai-to-pptx / banana-slides / LandPPT）生成可编辑元素不同，NanoBanana 采用 **AI 图片直接生成整页 PPT** 的范式，并首创了 **AI 视频转场** 能力。
 

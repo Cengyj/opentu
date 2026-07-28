@@ -38,17 +38,10 @@ function mockSettingsManagerDeps() {
 
   vi.doMock('../config-indexeddb-writer', () => ({
     configIndexedDBWriter: {
-      saveConfig: async () => undefined,
+      saveConfig: async () => {},
     },
   }));
 }
-
-const LEGACY_FOROPENCODE_GROUP_PROFILE_IDS = [
-  'tuzi-origin',
-  'tuzi-mix',
-  'tuzi-codex',
-  'tuzi-business',
-];
 
 describe('settings-manager', () => {
   beforeEach(() => {
@@ -68,7 +61,7 @@ describe('settings-manager', () => {
           href: 'https://example.com/app',
         },
         history: {
-          replaceState: () => undefined,
+          replaceState: () => {},
         },
         dispatchEvent: () => true,
       });
@@ -79,7 +72,7 @@ describe('settings-manager', () => {
           href: 'https://example.com/app',
         },
         history: {
-          replaceState: () => undefined,
+          replaceState: () => {},
         },
         dispatchEvent: () => true,
       });
@@ -88,45 +81,126 @@ describe('settings-manager', () => {
     localStorage.clear();
   });
 
-  it('initializes only the legacy default provider profile and catalog', async () => {
+  it('preserves stored legacy text model IDs without migration', async () => {
     mockSettingsManagerDeps();
 
-    const {
-      providerProfilesSettings,
-      providerCatalogsSettings,
-      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-      FOROPENCODE_DEFAULT_PROVIDER_NAME,
-      LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
-    } = await import('../settings-manager');
+    localStorage.setItem(
+      DRAWNIX_SETTINGS_KEY,
+      JSON.stringify({
+        gemini: {
+          apiKey: 'legacy-key',
+          baseUrl: 'https://foropencode.com/v1',
+          textModelName: 'gpt-5.4',
+          chatModel: 'gpt-5.4',
+        },
+      })
+    );
 
-    const profiles = providerProfilesSettings.get();
-    const catalogs = providerCatalogsSettings.get();
+    const { settingsManager } = await import('../settings-manager');
+    const settings = settingsManager.getSettings();
 
-    expect(profiles.map((profile) => profile.id)).toEqual([
-      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-    ]);
-    expect(catalogs.map((catalog) => catalog.profileId)).toEqual([
-      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-    ]);
-    expect(profiles[0]).toMatchObject({
-      id: LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-      name: FOROPENCODE_DEFAULT_PROVIDER_NAME,
-      imageApiCompatibility: LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+    expect(settings.gemini.textModelName).toBe('gpt-5.4');
+    expect(settings.gemini.chatModel).toBe('gpt-5.4');
+    expect(settings.invocationPresets[0]?.text.defaultModelRef).toEqual({
+      profileId: 'legacy-default',
+      modelId: 'gpt-5.4',
     });
-    expect(profiles[0].pricingGroup).toBeUndefined();
-    expect(
-      profiles.some((profile) =>
-        LEGACY_FOROPENCODE_GROUP_PROFILE_IDS.includes(profile.id)
-      )
-    ).toBe(false);
-    expect(
-      catalogs.some((catalog) =>
-        LEGACY_FOROPENCODE_GROUP_PROFILE_IDS.includes(catalog.profileId)
-      )
-    ).toBe(false);
+    expect(settings.migrations).not.toHaveProperty('defaultTextModelsV1');
   });
 
-  it('does not rebuild historical system ForOpenCode group profiles/catalogs and preserves custom providers', async () => {
+  it('routes stale preset model references to a model selected for the current credential', async () => {
+    mockSettingsManagerDeps();
+
+    localStorage.setItem(
+      DRAWNIX_SETTINGS_KEY,
+      JSON.stringify({
+        gemini: {
+          apiKey: 'legacy-key',
+          baseUrl: 'https://legacy.example.com/v1',
+          textModelName: 'gpt-5.6-sol',
+        },
+        providerProfiles: [
+          {
+            id: 'custom-provider',
+            name: 'Custom Provider',
+            providerType: 'openai-compatible',
+            baseUrl: 'https://new-key.example.com/v1',
+            apiKey: 'new-key',
+            authType: 'bearer',
+            enabled: true,
+            capabilities: { supportsText: true },
+          },
+        ],
+        providerCatalogs: [
+          {
+            profileId: 'custom-provider',
+            discoveredAt: Date.now(),
+            signature: 'new-key-signature',
+            discoveredModels: [
+              {
+                id: 'new-key-text-model',
+                label: 'New Key Text Model',
+                type: 'text',
+                vendor: 'OTHER',
+              },
+            ],
+            selectedModelIds: ['new-key-text-model'],
+          },
+        ],
+        invocationPresets: [
+          {
+            id: 'default',
+            name: 'Default',
+            isDefault: true,
+            image: { defaultModelRef: null },
+            video: { defaultModelRef: null },
+            audio: { defaultModelRef: null },
+            text: {
+              defaultModelRef: {
+                profileId: 'custom-provider',
+                modelId: 'old-key-text-model',
+              },
+            },
+          },
+        ],
+        activePresetId: 'default',
+      })
+    );
+
+    const { hasInvocationRouteCredentials, resolveInvocationRoute } =
+      await import('../settings-manager');
+
+    expect(resolveInvocationRoute('text')).toMatchObject({
+      modelId: 'new-key-text-model',
+      profileId: 'custom-provider',
+      baseUrl: 'https://new-key.example.com/v1',
+      apiKey: 'new-key',
+    });
+    expect(
+      resolveInvocationRoute('text', {
+        profileId: 'custom-provider',
+        modelId: 'old-key-text-model',
+      })
+    ).toMatchObject({
+      modelId: 'new-key-text-model',
+      profileId: 'custom-provider',
+    });
+    expect(resolveInvocationRoute('text', 'gpt-5.6-sol')).toMatchObject({
+      modelId: 'new-key-text-model',
+      profileId: 'custom-provider',
+      baseUrl: 'https://new-key.example.com/v1',
+      apiKey: 'new-key',
+    });
+    expect(resolveInvocationRoute('image')).toMatchObject({
+      modelId: '',
+      profileId: null,
+      baseUrl: '',
+      apiKey: '',
+    });
+    expect(hasInvocationRouteCredentials('image')).toBe(false);
+  });
+
+  it('keeps only default and codex built-in profiles while preserving custom providers', async () => {
     mockSettingsManagerDeps();
 
     localStorage.setItem(
@@ -139,62 +213,117 @@ describe('settings-manager', () => {
         providerProfiles: [
           {
             id: 'legacy-default',
-            name: 'Default Provider',
-            providerType: 'openai-compatible',
+            name: 'For AI',
+            providerType: 'custom',
             baseUrl: 'https://foropencode.com/v1',
             apiKey: 'legacy-key',
+            authType: 'query',
+            enabled: true,
+            capabilities: {},
+          },
+          {
+            id: 'for-codex',
+            name: 'codex 分组',
+            providerType: 'openai-compatible',
+            baseUrl: 'https://codex.example.com/v1',
+            apiKey: 'codex-key',
+            authType: 'bearer',
+            imageApiCompatibility: 'openai-gpt-image',
+            preferAsyncImageEndpoint: true,
+            enabled: true,
+            capabilities: {},
+            pricingGroup: 'codex-custom',
+          },
+          {
+            id: 'custom-auto',
+            name: '自定义自动',
+            providerType: 'openai-compatible',
+            baseUrl: 'https://gateway-auto.example.com/v1',
+            apiKey: 'auto-key',
+            authType: 'bearer',
+            imageApiCompatibility: 'auto',
+            enabled: true,
+            capabilities: {},
+          },
+          {
+            id: 'custom-missing',
+            name: '自定义缺省',
+            providerType: 'openai-compatible',
+            baseUrl: 'https://gateway-missing.example.com/v1',
+            apiKey: 'missing-key',
             authType: 'bearer',
             enabled: true,
             capabilities: {},
           },
-          ...LEGACY_FOROPENCODE_GROUP_PROFILE_IDS.map((id) => ({
-            id,
-            name: `system ${id}`,
-            providerType: 'openai-compatible',
-            baseUrl: 'https://foropencode.com/v1',
-            apiKey: `${id}-key`,
-            authType: 'bearer',
-            enabled: true,
-            capabilities: {},
-            pricingGroup: id.replace('tuzi-', '') || 'default',
-          })),
           {
             id: 'custom-provider',
-            name: 'Custom Provider',
+            name: '自定义供应商',
             providerType: 'openai-compatible',
             baseUrl: 'https://gateway.example.com/v1',
             apiKey: 'custom-key',
             authType: 'bearer',
-            imageApiCompatibility: 'tuzi-compatible',
+            imageApiCompatibility: 'removed-image-format',
             enabled: true,
             capabilities: {},
-            pricingGroup: 'codex',
+          },
+          {
+            id: 'invalid-provider',
+            name: '错误配置供应商',
+            providerType: 'openai-compatible',
+            baseUrl: 'https://invalid.example.com/v1',
+            apiKey: 'invalid-key',
+            authType: 'bearer',
+            imageApiCompatibility: 'unknown-mode',
+            enabled: true,
+            capabilities: {},
           },
         ],
         providerCatalogs: [
           {
-            profileId: 'legacy-default',
-            discoveredAt: null,
+            profileId: 'missing-provider',
+            discoveredAt: '2026-01-01T00:00:00.000Z',
             discoveredModels: [],
-            selectedModelIds: [],
+            selectedModelIds: ['orphan-model'],
             sourceBaseUrl: 'https://foropencode.com/v1',
             error: null,
           },
-          ...LEGACY_FOROPENCODE_GROUP_PROFILE_IDS.map((profileId) => ({
-            profileId,
-            discoveredAt: null,
-            discoveredModels: [],
-            selectedModelIds: [],
-            sourceBaseUrl: 'https://foropencode.com/v1',
-            error: null,
-          })),
           {
-            profileId: 'custom-provider',
-            discoveredAt: 123,
+            profileId: 'custom-auto',
+            discoveredAt: '2026-01-01T00:00:00.000Z',
             discoveredModels: [],
             selectedModelIds: ['custom-model'],
-            sourceBaseUrl: 'https://gateway.example.com/v1',
+            sourceBaseUrl: 'https://gateway-auto.example.com/v1',
             error: null,
+          },
+        ],
+        invocationPresets: [
+          {
+            id: 'custom-preset',
+            name: '自定义预设',
+            text: {
+              defaultModelRef: {
+                profileId: 'missing-provider',
+                modelId: 'orphan-text-model',
+              },
+            },
+            image: {
+              defaultModelRef: {
+                profileId: 'for-codex',
+                modelId: 'gpt-image-2',
+              },
+            },
+            video: {
+              defaultModelRef: {
+                profileId: 'custom-auto',
+                modelId: 'custom-video-model',
+              },
+            },
+            audio: {
+              defaultModelRef: {
+                profileId: 'missing-provider',
+                modelId: 'orphan-audio-model',
+              },
+            },
           },
         ],
       })
@@ -203,59 +332,81 @@ describe('settings-manager', () => {
     const {
       providerProfilesSettings,
       providerCatalogsSettings,
-      LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+      invocationPresetsSettings,
+      DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
+      FOR_CODEX_PROVIDER_PROFILE_ID,
+      isBuiltInDefaultProviderProfileId,
     } = await import('../settings-manager');
 
     const profiles = providerProfilesSettings.get();
-    const catalogs = providerCatalogsSettings.get();
+    const profileIds = profiles.map((profile) => profile.id);
+    const legacyProfile = profiles.find(
+      (profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
+    );
+    const forCodexProfile = profiles.find(
+      (profile) => profile.id === FOR_CODEX_PROVIDER_PROFILE_ID
+    );
 
-    expect(profiles.map((profile) => profile.id)).toEqual([
+    expect(profileIds).toEqual([
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
+      FOR_CODEX_PROVIDER_PROFILE_ID,
+      'custom-auto',
+      'custom-missing',
       'custom-provider',
-    ]);
-    expect(catalogs.map((catalog) => catalog.profileId)).toEqual([
-      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-      'custom-provider',
+      'invalid-provider',
     ]);
     expect(
-      profiles.some((profile) =>
-        LEGACY_FOROPENCODE_GROUP_PROFILE_IDS.includes(profile.id)
-      )
-    ).toBe(false);
+      isBuiltInDefaultProviderProfileId(LEGACY_DEFAULT_PROVIDER_PROFILE_ID)
+    ).toBe(true);
     expect(
-      catalogs.some((catalog) =>
-        LEGACY_FOROPENCODE_GROUP_PROFILE_IDS.includes(catalog.profileId)
-      )
-    ).toBe(false);
-    expect(profiles.find((profile) => profile.id === 'custom-provider')).toMatchObject({
-      name: 'Custom Provider',
-      pricingGroup: 'codex',
+      isBuiltInDefaultProviderProfileId(FOR_CODEX_PROVIDER_PROFILE_ID)
+    ).toBe(true);
+    expect(isBuiltInDefaultProviderProfileId('missing-provider')).toBe(false);
+    expect(isBuiltInDefaultProviderProfileId('custom-auto')).toBe(false);
+
+    expect(legacyProfile).toMatchObject({
+      providerType: 'custom',
+      authType: 'query',
+      imageApiCompatibility: DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+    });
+    expect(forCodexProfile).toMatchObject({
+      baseUrl: 'https://codex.example.com/v1',
+      pricingGroup: 'codex-custom',
       imageApiCompatibility: 'openai-gpt-image',
+      preferAsyncImageEndpoint: true,
     });
-    expect(catalogs.find((catalog) => catalog.profileId === 'custom-provider')).toMatchObject({
-      selectedModelIds: ['custom-model'],
-      sourceBaseUrl: 'https://gateway.example.com/v1',
+    expect(
+      profiles.find((profile) => profile.id === 'custom-auto')
+    ).toMatchObject({
+      imageApiCompatibility: 'auto',
     });
-    expect(profiles.find((profile) => profile.id === 'legacy-default')).toMatchObject({
-      imageApiCompatibility: LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+    expect(
+      profiles.find((profile) => profile.id === 'custom-missing')
+    ).toMatchObject({
+      imageApiCompatibility: DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
     });
-  });
+    expect(
+      profiles.find((profile) => profile.id === 'custom-provider')
+    ).toMatchObject({
+      imageApiCompatibility: DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+    });
+    expect(
+      profiles.find((profile) => profile.id === 'invalid-provider')
+    ).toMatchObject({
+      imageApiCompatibility: DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+    });
 
-  it('preserves a user-selected non-default pricingGroup after save and reload', async () => {
-    mockSettingsManagerDeps();
-
-    const { providerProfilesSettings } = await import('../settings-manager');
     await providerProfilesSettings.update([
-      ...providerProfilesSettings.get(),
+      ...profiles.filter((profile) => profile.id !== 'custom-provider'),
       {
-        id: 'user-provider',
-        name: 'User Provider',
+        id: 'custom-provider',
+        name: '自定义供应商',
         providerType: 'openai-compatible',
         baseUrl: 'https://gateway.example.com/v1',
-        apiKey: 'user-key',
+        apiKey: 'custom-key',
         authType: 'bearer',
-        imageApiCompatibility: 'openai-gpt-image',
+        imageApiCompatibility: 'removed-image-format' as any,
         enabled: true,
         capabilities: {
           supportsModelsEndpoint: true,
@@ -265,72 +416,47 @@ describe('settings-manager', () => {
           supportsAudio: true,
           supportsTools: true,
         },
-        pricingGroup: 'business',
       },
     ]);
 
-    vi.resetModules();
-    mockSettingsManagerDeps();
+    const updatedCustomProfile = providerProfilesSettings
+      .get()
+      .find((profile) => profile.id === 'custom-provider');
 
-    const reloaded = await import('../settings-manager');
+    expect(updatedCustomProfile).toMatchObject({
+      imageApiCompatibility: DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
+    });
+
     expect(
-      reloaded.providerProfilesSettings
-        .get()
-        .find((profile) => profile.id === 'user-provider')
-    ).toMatchObject({
-      pricingGroup: 'business',
+      providerCatalogsSettings.get().map((catalog) => catalog.profileId)
+    ).toEqual([
+      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
+      'custom-auto',
+      FOR_CODEX_PROVIDER_PROFILE_ID,
+    ]);
+
+    const customPreset = invocationPresetsSettings
+      .get()
+      .find((preset) => preset.id === 'custom-preset');
+    expect(customPreset?.text.defaultModelRef).toEqual({
+      profileId: null,
+      modelId: 'orphan-text-model',
+    });
+    expect(customPreset?.audio.defaultModelRef).toEqual({
+      profileId: null,
+      modelId: 'orphan-audio-model',
+    });
+    expect(customPreset?.image.defaultModelRef).toEqual({
+      profileId: FOR_CODEX_PROVIDER_PROFILE_ID,
+      modelId: 'gpt-image-2',
+    });
+    expect(customPreset?.video.defaultModelRef).toEqual({
+      profileId: 'custom-auto',
+      modelId: 'custom-video-model',
     });
   });
 
-  it('migrates legacy For GPT image compatibility values to OpenAI GPT Image', async () => {
-    mockSettingsManagerDeps();
-
-    localStorage.setItem(
-      DRAWNIX_SETTINGS_KEY,
-      JSON.stringify({
-        providerProfiles: [
-          {
-            id: 'legacy-for-profile',
-            name: 'Legacy For Profile',
-            providerType: 'openai-compatible',
-            baseUrl: 'https://foropencode.com/v1',
-            apiKey: 'legacy-key',
-            authType: 'bearer',
-            imageApiCompatibility: 'tuzi-gpt-image',
-            enabled: true,
-            capabilities: {},
-          },
-          {
-            id: 'legacy-compatible-profile',
-            name: 'Legacy Compatible Profile',
-            providerType: 'openai-compatible',
-            baseUrl: 'https://foropencode.com/v1',
-            apiKey: 'legacy-key',
-            authType: 'bearer',
-            imageApiCompatibility: 'tuzi-compatible',
-            enabled: true,
-            capabilities: {},
-          },
-        ],
-      })
-    );
-
-    const { providerProfilesSettings } = await import('../settings-manager');
-    const profiles = providerProfilesSettings.get();
-
-    expect(
-      profiles.find((profile) => profile.id === 'legacy-for-profile')
-    ).toMatchObject({
-      imageApiCompatibility: 'openai-gpt-image',
-    });
-    expect(
-      profiles.find((profile) => profile.id === 'legacy-compatible-profile')
-    ).toMatchObject({
-      imageApiCompatibility: 'openai-gpt-image',
-    });
-  });
-
-  it('keeps the legacy default profile on OpenAI GPT Image compatibility', async () => {
+  it('normalizes stored default-profile image compatibility to the current default', async () => {
     mockSettingsManagerDeps();
 
     localStorage.setItem(
@@ -343,7 +469,7 @@ describe('settings-manager', () => {
         providerProfiles: [
           {
             id: 'legacy-default',
-            name: 'default group',
+            name: 'default 分组',
             providerType: 'openai-compatible',
             baseUrl: 'https://foropencode.com/v1',
             apiKey: 'legacy-key',
@@ -362,15 +488,15 @@ describe('settings-manager', () => {
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
     } = await import('../settings-manager');
 
-    const migratedProfile = providerProfilesSettings
+    const normalizedProfile = providerProfilesSettings
       .get()
       .find((profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID);
 
-    expect(migratedProfile).toMatchObject({
+    expect(normalizedProfile).toMatchObject({
       imageApiCompatibility: 'openai-gpt-image',
     });
-    expect(settingsManager.getSettings().migrations).toMatchObject({
-      legacyDefaultImageApiCompatibilityV1: true,
+    expect(settingsManager.getSettings().migrations).toEqual({
+      legacyDefaultImageModelV1: true,
     });
 
     await providerProfilesSettings.update(
@@ -397,12 +523,92 @@ describe('settings-manager', () => {
     expect(reloadedLegacyProfile).toMatchObject({
       imageApiCompatibility: 'openai-gpt-image',
     });
-    expect(reloaded.settingsManager.getSettings().migrations).toMatchObject({
-      legacyDefaultImageApiCompatibilityV1: true,
+    expect(reloaded.settingsManager.getSettings().migrations).toEqual({
+      legacyDefaultImageModelV1: true,
     });
   });
 
-  it('does not migrate legacy default compatibility when the default baseUrl is not ForOpenCode', async () => {
+  it('migrates legacy default image model only once', async () => {
+    mockSettingsManagerDeps();
+
+    localStorage.setItem(
+      DRAWNIX_SETTINGS_KEY,
+      JSON.stringify({
+        gemini: {
+          apiKey: 'legacy-key',
+          baseUrl: 'https://foropencode.com/v1',
+          imageModelName: 'gpt-image-2-vip',
+        },
+        invocationPresets: [
+          {
+            id: 'default',
+            name: '默认方案',
+            isDefault: true,
+            text: {
+              defaultModelRef: {
+                profileId: 'legacy-default',
+                modelId: 'gemini-2.5-pro-all',
+              },
+            },
+            audio: {
+              defaultModelRef: {
+                profileId: 'legacy-default',
+                modelId: 'suno_music',
+              },
+            },
+            image: {
+              defaultModelRef: {
+                profileId: 'legacy-default',
+                modelId: 'gpt-image-2-vip',
+              },
+            },
+            video: {
+              defaultModelRef: {
+                profileId: 'legacy-default',
+                modelId: 'seedance-1.5-pro',
+              },
+            },
+          },
+        ],
+      })
+    );
+
+    const { settingsManager } = await import('../settings-manager');
+    const settings = settingsManager.getSettings();
+
+    expect(settings.gemini.imageModelName).toBe('gpt-image-2');
+    expect(settings.invocationPresets[0]?.image.defaultModelRef).toMatchObject({
+      profileId: 'legacy-default',
+      modelId: 'gpt-image-2',
+    });
+    expect(settings.migrations).toMatchObject({
+      legacyDefaultImageModelV1: true,
+    });
+
+    await settingsManager.updateActiveInvocationRouteModel('image', {
+      profileId: 'legacy-default',
+      modelId: 'gpt-image-2-vip',
+    });
+
+    vi.resetModules();
+    mockSettingsManagerDeps();
+
+    const reloaded = await import('../settings-manager');
+    const reloadedSettings = reloaded.settingsManager.getSettings();
+
+    expect(reloadedSettings.gemini.imageModelName).toBe('gpt-image-2-vip');
+    expect(
+      reloadedSettings.invocationPresets[0]?.image.defaultModelRef
+    ).toMatchObject({
+      profileId: 'legacy-default',
+      modelId: 'gpt-image-2-vip',
+    });
+    expect(reloadedSettings.migrations).toMatchObject({
+      legacyDefaultImageModelV1: true,
+    });
+  });
+
+  it('keeps current default compatibility for OpenAI legacy profiles', async () => {
     mockSettingsManagerDeps();
 
     localStorage.setItem(
@@ -415,7 +621,7 @@ describe('settings-manager', () => {
         providerProfiles: [
           {
             id: 'legacy-default',
-            name: 'default group',
+            name: 'default 分组',
             providerType: 'openai-compatible',
             baseUrl: 'https://api.openai.com/v1',
             apiKey: 'openai-key',
@@ -441,12 +647,12 @@ describe('settings-manager', () => {
     expect(legacyProfile).toMatchObject({
       imageApiCompatibility: 'openai-gpt-image',
     });
-    expect(settingsManager.getSettings().migrations).toMatchObject({
-      legacyDefaultImageApiCompatibilityV1: true,
+    expect(settingsManager.getSettings().migrations).toEqual({
+      legacyDefaultImageModelV1: true,
     });
   });
 
-  it('migrates retired gpt-image-2-vip defaults to gpt-image-2', async () => {
+  it('preserves managed profile compatibility overrides after reload', async () => {
     mockSettingsManagerDeps();
 
     localStorage.setItem(
@@ -455,92 +661,146 @@ describe('settings-manager', () => {
         gemini: {
           apiKey: 'legacy-key',
           baseUrl: 'https://foropencode.com/v1',
-          imageModelName: 'gpt-image-2-vip',
         },
-        providerCatalogs: [
+      })
+    );
+
+    const {
+      providerProfilesSettings,
+      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
+      FOR_CODEX_PROVIDER_PROFILE_ID,
+    } = await import('../settings-manager');
+
+    const profiles = providerProfilesSettings.get();
+
+    await providerProfilesSettings.update(
+      profiles.map((profile) => {
+        if (profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID) {
+          return {
+            ...profile,
+            imageApiCompatibility: 'openai-gpt-image' as const,
+          };
+        }
+
+        if (profile.id === FOR_CODEX_PROVIDER_PROFILE_ID) {
+          return {
+            ...profile,
+            imageApiCompatibility: 'openai-gpt-image' as const,
+          };
+        }
+
+        return profile;
+      })
+    );
+
+    vi.resetModules();
+    mockSettingsManagerDeps();
+
+    const reloaded = await import('../settings-manager');
+    const reloadedProfiles = reloaded.providerProfilesSettings.get();
+
+    expect(
+      reloadedProfiles.find(
+        (profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
+      )
+    ).toMatchObject({
+      imageApiCompatibility: 'openai-gpt-image',
+    });
+    expect(
+      reloadedProfiles.find(
+        (profile) => profile.id === FOR_CODEX_PROVIDER_PROFILE_ID
+      )
+    ).toMatchObject({
+      imageApiCompatibility: 'openai-gpt-image',
+    });
+  });
+
+  it('preserves managed profile async image preferences after reload', async () => {
+    mockSettingsManagerDeps();
+
+    localStorage.setItem(
+      DRAWNIX_SETTINGS_KEY,
+      JSON.stringify({
+        gemini: {
+          apiKey: 'legacy-key',
+          baseUrl: 'https://foropencode.com/v1',
+        },
+        providerProfiles: [
           {
-            profileId: 'legacy-default',
-            discoveredAt: 123,
-            discoveredModels: [
-              {
-                id: 'gpt-image-2',
-                label: 'gpt-image-2',
-                type: 'image',
-                vendor: 'GPT',
-              },
-              {
-                id: 'gpt-image-2-vip',
-                label: 'gpt-image-2-vip',
-                type: 'image',
-                vendor: 'GPT',
-              },
-            ],
-            selectedModelIds: ['gpt-image-2-vip'],
-            sourceBaseUrl: 'https://foropencode.com/v1',
-            error: null,
+            id: 'legacy-default',
+            name: 'default 分组',
+            providerType: 'openai-compatible',
+            baseUrl: 'https://foropencode.com/v1',
+            apiKey: 'legacy-key',
+            authType: 'bearer',
+            imageApiCompatibility: 'openai-gpt-image',
+            preferAsyncImageEndpoint: true,
+            enabled: true,
+            capabilities: {},
           },
-        ],
-        invocationPresets: [
           {
-            id: 'default',
-            name: 'Default',
-            isDefault: true,
-            text: {
-              defaultModelRef: {
-                profileId: 'legacy-default',
-                modelId: 'gpt-5.5',
-              },
-            },
-            image: {
-              defaultModelRef: {
-                profileId: 'legacy-default',
-                modelId: 'gpt-image-2-vip',
-              },
-            },
-            video: {
-              defaultModelRef: {
-                profileId: 'legacy-default',
-                modelId: 'seedance-1.5-pro',
-              },
-            },
-            audio: {
-              defaultModelRef: {
-                profileId: 'legacy-default',
-                modelId: 'suno_music',
-              },
-            },
+            id: 'for-codex',
+            name: 'codex 分组',
+            providerType: 'openai-compatible',
+            baseUrl: 'https://foropencode.com/v1',
+            apiKey: 'codex-key',
+            authType: 'bearer',
+            imageApiCompatibility: 'openai-gpt-image',
+            preferAsyncImageEndpoint: true,
+            enabled: true,
+            capabilities: {},
+            pricingGroup: 'codex',
           },
         ],
       })
     );
 
     const {
-      geminiSettings,
-      getActiveInvocationPreset,
-      getRouteModelId,
-      providerCatalogsSettings,
-      settingsManager,
+      providerProfilesSettings,
+      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
+      FOR_CODEX_PROVIDER_PROFILE_ID,
     } = await import('../settings-manager');
 
-    expect(geminiSettings.get().imageModelName).toBe('gpt-image-2');
-    expect(getRouteModelId(getActiveInvocationPreset()?.image)).toBe(
-      'gpt-image-2'
+    const profiles = providerProfilesSettings.get();
+    const legacyProfile = profiles.find(
+      (profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
     );
-    expect(
-      providerCatalogsSettings.get()[0]?.selectedModelIds
-    ).toEqual(['gpt-image-2']);
-
-    await settingsManager.waitForInitialization();
-
-    const storedSettings = JSON.parse(
-      localStorage.getItem(DRAWNIX_SETTINGS_KEY) || '{}'
+    const forCodexProfile = profiles.find(
+      (profile) => profile.id === FOR_CODEX_PROVIDER_PROFILE_ID
     );
-    expect(storedSettings.gemini?.imageModelName).toBe('gpt-image-2');
-    expect(
-      storedSettings.providerCatalogs?.[0]?.selectedModelIds
-    ).toEqual(['gpt-image-2']);
-    expect(
-      storedSettings.invocationPresets?.[0]?.image?.defaultModelRef?.modelId
-    ).toBe('gpt-image-2');
+
+    expect(legacyProfile).toMatchObject({
+      preferAsyncImageEndpoint: true,
+    });
+    expect(forCodexProfile).toMatchObject({
+      preferAsyncImageEndpoint: true,
+    });
+
+    await providerProfilesSettings.update(
+      profiles.map((profile) => ({
+        ...profile,
+        preferAsyncImageEndpoint: false,
+      }))
+    );
+
+    vi.resetModules();
+    mockSettingsManagerDeps();
+
+    const reloaded = await import('../settings-manager');
+    const reloadedLegacyProfile = reloaded.providerProfilesSettings
+      .get()
+      .find(
+        (profile) => profile.id === reloaded.LEGACY_DEFAULT_PROVIDER_PROFILE_ID
+      );
+    const reloadedForCodexProfile = reloaded.providerProfilesSettings
+      .get()
+      .find((profile) => profile.id === reloaded.FOR_CODEX_PROVIDER_PROFILE_ID);
+
+    expect(reloadedLegacyProfile).toMatchObject({
+      preferAsyncImageEndpoint: false,
+    });
+    expect(reloadedForCodexProfile).toMatchObject({
+      preferAsyncImageEndpoint: false,
+    });
   });
 });

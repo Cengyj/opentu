@@ -520,7 +520,7 @@
     width: 100%; // 填充容器宽度
     display: flex;
     flex-direction: column;
-    align-items: center; // 让所有直接子元素居中
+    align-items: center; // 让所有直接子元素（包括 GitHub 按钮）居中
 
     // 调整 Island 容器
     .island {
@@ -719,10 +719,6 @@
   }
   textarea {
     outline: none;
-    &:hover,
-    &:focus {
-      border: 1px solid var(--color-primary);
-    }
   }
   .drawnix-button {
     @include outlineButtonStyles;

@@ -386,8 +386,8 @@ describe('provider routing', () => {
     );
     const forBindings = inferBindingsForProviderModel(
       {
-        id: 'provider-foropencode',
-        name: 'ForOpenCode',
+        id: 'provider-for',
+        name: 'For',
         providerType: 'openai-compatible',
         baseUrl: 'https://foropencode.com/v1',
         apiKey: 'for-key',
@@ -426,27 +426,20 @@ describe('provider routing', () => {
       resolvedImageApiCompatibility: 'openai-gpt-image',
     });
     expect(forBindings.map((binding) => binding.requestSchema)).toEqual([
-      'openai.image.gpt-generation-json',
-      'openai.image.gpt-edit-form',
+      'openai.image.basic-json',
     ]);
     expect(forBindings[0]?.metadata?.image).toMatchObject({
       action: 'generation',
       imageApiCompatibility: 'auto',
-      resolvedImageApiCompatibility: 'openai-gpt-image',
+      resolvedImageApiCompatibility: 'openai-compatible-basic',
     });
-    expect(forBindings[1]?.metadata?.image).toMatchObject({
-      action: 'edit',
-      maxImageCount: 16,
-      supportsMask: true,
-      imageApiCompatibility: 'auto',
-      resolvedImageApiCompatibility: 'openai-gpt-image',
-    });
-    expect(genericBindings[0]?.requestSchema).toBe(
-      'openai.image.gpt-generation-json'
-    );
+    expect(genericBindings.map((binding) => binding.requestSchema)).toEqual([
+      'openai.image.gpt-generation-json',
+      'openai.image.gpt-edit-form',
+    ]);
   });
 
-  it('routes ForOpenCode gemini image models through generateContent', () => {
+  it('routes for gemini image models through generateContent', () => {
     const profile = {
       id: 'provider-b',
       name: 'Provider B',
@@ -486,7 +479,7 @@ describe('provider routing', () => {
     );
   });
 
-  it('keeps third-party ForOpenCode gemini image models on generateContent', () => {
+  it('keeps third-party for gemini image models on generateContent', () => {
     const profile = {
       id: 'provider-c',
       name: 'Provider C',
@@ -526,7 +519,7 @@ describe('provider routing', () => {
     );
   });
 
-  it('routes business GPT Image models to OpenAI GPT Image compatibility in auto mode', () => {
+  it('routes third-party GPT Image models in auto mode through the generic fallback', () => {
     const model: ModelConfig = {
       id: 'gpt-image-2',
       label: 'GPT Image 2',
@@ -536,8 +529,8 @@ describe('provider routing', () => {
 
     const bindings = inferBindingsForProviderModel(
       {
-        id: 'provider-business',
-        name: 'Business',
+        id: 'provider-third-party',
+        name: 'Third-party Provider',
         providerType: 'openai-compatible',
         baseUrl: 'https://foropencode.com/v1',
         apiKey: 'business-key',
@@ -548,16 +541,15 @@ describe('provider routing', () => {
     );
 
     expect(bindings.map((binding) => binding.requestSchema)).toEqual([
-      'openai.image.gpt-generation-json',
-      'openai.image.gpt-edit-form',
+      'openai.image.basic-json',
     ]);
     expect(bindings[0]?.metadata?.image).toMatchObject({
       imageApiCompatibility: 'auto',
-      resolvedImageApiCompatibility: 'openai-gpt-image',
+      resolvedImageApiCompatibility: 'openai-compatible-basic',
     });
   });
 
-  it('keeps discovered generateContent bindings below template image bindings for ForOpenCode image endpoints', () => {
+  it('keeps discovered generateContent bindings below template image bindings for For endpoints', () => {
     const profile = {
       id: 'provider-b',
       name: 'Provider B',
@@ -599,15 +591,15 @@ describe('provider routing', () => {
     expect(plan.binding.submitPath).toBe('/images/generations');
   });
 
-  it('uses official GPT edit bindings after legacy For GPT compatibility migration', () => {
+  it('does not infer discovered official GPT edit bindings for generic compatibility profiles', () => {
     const profile = {
-      id: 'provider-foropencode',
-      name: 'Provider ForOpenCode',
+      id: 'provider-for',
+      name: 'Provider For',
       providerType: 'openai-compatible' as const,
       baseUrl: 'https://foropencode.com/v1',
       apiKey: 'key-b',
       authType: 'bearer' as const,
-      imageApiCompatibility: 'openai-gpt-image' as const,
+      imageApiCompatibility: 'openai-compatible-basic' as const,
     };
     const model: ModelConfig = {
       id: 'gpt-image-2',
@@ -623,19 +615,19 @@ describe('provider routing', () => {
     });
 
     expect(bindings.map((binding) => binding.requestSchema)).toEqual([
-      'openai.image.gpt-generation-json',
-      'openai.image.gpt-edit-form',
+      'openai.image.basic-json',
     ]);
   });
 
   it('prefers pricing async-image /v1/videos binding for image models', () => {
     const profile = {
-      id: 'provider-business',
-      name: 'Business Provider',
+      id: 'provider-async',
+      name: 'Async Provider',
       providerType: 'openai-compatible' as const,
-      baseUrl: 'https://example-business.test/v1',
+      baseUrl: 'https://foropencode.com/v1',
       apiKey: 'key-a',
       authType: 'bearer' as const,
+      preferAsyncImageEndpoint: true,
     };
     const model: ModelConfig = {
       id: 'gpt-image-1-vip',
@@ -680,19 +672,19 @@ describe('provider routing', () => {
 
   it('keeps async-image binding ahead of GPT edit preference for reference images', () => {
     const profile = {
-      id: 'provider-business',
-      name: 'Business Provider',
+      id: 'provider-async',
+      name: 'Async Provider',
       providerType: 'openai-compatible' as const,
-      baseUrl: 'https://example-business.test/v1',
+      baseUrl: 'https://foropencode.com/v1',
       apiKey: 'key-a',
       authType: 'bearer' as const,
-      imageApiCompatibility: 'openai-gpt-image' as const,
+      preferAsyncImageEndpoint: true,
     };
     const model: ModelConfig = {
-      id: 'gpt-image-2',
-      label: 'GPT Image 2',
+      id: 'gemini-3-pro-image-preview-async',
+      label: 'Gemini Async Image',
       type: 'image',
-      vendor: ModelVendor.GPT,
+      vendor: ModelVendor.GEMINI,
     };
     const bindings = inferBindingsForProviderModel(profile, model, {
       'openai-video': {
@@ -718,7 +710,132 @@ describe('provider routing', () => {
     });
 
     expect(bindings.map((binding) => binding.requestSchema)).toContain(
-      'openai.image.gpt-edit-form'
+      'openai.async.image.form'
+    );
+    expect(plan.binding.protocol).toBe('openai.async.media');
+    expect(plan.binding.requestSchema).toBe('openai.async.image.form');
+    expect(plan.binding.submitPath).toBe('/videos');
+  });
+
+  it('prefers async image binding for async-listed image models when enabled', () => {
+    const profile = {
+      id: 'provider-async',
+      name: 'Async Provider',
+      providerType: 'openai-compatible' as const,
+      baseUrl: 'https://foropencode.com/v1',
+      apiKey: 'key-a',
+      authType: 'bearer' as const,
+      preferAsyncImageEndpoint: true,
+    };
+    const model: ModelConfig = {
+      id: 'gemini-3-pro-image-preview-async',
+      label: 'Gemini Async Image',
+      type: 'image',
+      vendor: ModelVendor.GEMINI,
+    };
+    const bindings = inferBindingsForProviderModel(profile, model, {
+      'openai-video': {
+        path: '/v1/videos',
+        method: 'POST',
+        scenario: 'async-image',
+      },
+    });
+    const plan = new InvocationPlanner(
+      createRepositories({
+        profiles: [profile],
+        bindings,
+      })
+    ).plan({
+      operation: 'image',
+      modelRef: {
+        profileId: profile.id,
+        modelId: model.id,
+      },
+    });
+
+    expect(plan.binding.protocol).toBe('openai.async.media');
+    expect(plan.binding.submitPath).toBe('/videos');
+  });
+
+  it('routes generic image models through /v1/videos when async image is enabled', () => {
+    const profile = {
+      id: 'provider-async',
+      name: 'Async Provider',
+      providerType: 'openai-compatible' as const,
+      baseUrl: 'https://foropencode.com/v1',
+      apiKey: 'key-a',
+      authType: 'bearer' as const,
+      preferAsyncImageEndpoint: true,
+    };
+    const model: ModelConfig = {
+      id: 'qwen-image-2.0',
+      label: 'Qwen Image 2.0',
+      type: 'image',
+      vendor: ModelVendor.QWEN,
+    };
+    const bindings = inferBindingsForProviderModel(profile, model, {
+      'openai-video': {
+        path: '/v1/videos',
+        method: 'POST',
+        scenario: 'async-image',
+      },
+    });
+    const plan = new InvocationPlanner(
+      createRepositories({
+        profiles: [profile],
+        bindings,
+      })
+    ).plan({
+      operation: 'image',
+      modelRef: {
+        profileId: profile.id,
+        modelId: model.id,
+      },
+    });
+
+    expect(plan.binding.protocol).toBe('openai.async.media');
+    expect(plan.binding.submitPath).toBe('/videos');
+  });
+
+  it('routes mj-imagine through /v1/videos when async image is enabled', () => {
+    const profile = {
+      id: 'provider-async',
+      name: 'Async Provider',
+      providerType: 'openai-compatible' as const,
+      baseUrl: 'https://foropencode.com/v1',
+      apiKey: 'key-a',
+      authType: 'bearer' as const,
+      preferAsyncImageEndpoint: true,
+    };
+    const model: ModelConfig = {
+      id: 'mj-imagine',
+      label: 'Midjourney',
+      type: 'image',
+      vendor: ModelVendor.MIDJOURNEY,
+      tags: ['mj'],
+    };
+    const bindings = inferBindingsForProviderModel(profile, model, {
+      'openai-video': {
+        path: '/v1/videos',
+        method: 'POST',
+        scenario: 'async-image',
+      },
+    });
+    const plan = new InvocationPlanner(
+      createRepositories({
+        profiles: [profile],
+        bindings,
+      })
+    ).plan({
+      operation: 'image',
+      modelRef: {
+        profileId: profile.id,
+        modelId: model.id,
+      },
+    });
+
+    expect(bindings.map((binding) => binding.protocol)).toContain(
+      'openai.async.media'
     );
     expect(plan.binding.protocol).toBe('openai.async.media');
     expect(plan.binding.requestSchema).toBe('openai.async.image.form');
@@ -948,11 +1065,11 @@ describe('provider routing', () => {
     expect(getTextBindingMaxImageCount(binding)).toBe(6);
   });
 
-  it('routes ForOpenCode gemini text models through google generateContent', () => {
+  it('routes for gemini text models through google generateContent', () => {
     const bindings = inferBindingsForProviderModel(
       {
-        id: 'provider-foropencode',
-        name: 'ForOpenCode Provider',
+        id: 'provider-for',
+        name: 'For Provider',
         providerType: 'openai-compatible',
         baseUrl: 'https://foropencode.com/v1',
         apiKey: 'key',

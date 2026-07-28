@@ -60,7 +60,7 @@ interface GitHubSyncContextValue {
   /** 以本地为准同步（上传本地数据，覆盖远程） */
   pushToRemote: () => Promise<SyncResult>;
   
-  // 远程数据管理
+  // Gist 管理
   listGists: () => Promise<GistInfo[]>;
   switchGist: (gistId: string) => Promise<SyncResult>;
   deleteGist: (gistId: string) => Promise<void>;

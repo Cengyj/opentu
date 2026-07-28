@@ -59,6 +59,7 @@ import {
   isAssetLibraryUrl,
   isLegacyCacheUrl,
 } from '../utils/virtual-media-url';
+import { isInternalLibraryExcludedCache } from '../utils/asset-utils';
 
 /**
  * Asset Provider Props
@@ -152,12 +153,6 @@ function buildCharacterMeta(input: {
       : undefined;
 
   return name || prompt ? { ...(name && { name }), ...(prompt && { prompt }) } : undefined;
-}
-
-function isInternalLibraryExcludedCache(
-  item: Pick<CachedMedia, 'metadata'>
-): boolean {
-  return item.metadata?.source === 'video-frame';
 }
 
 function getNormalizedClipId(asset: Pick<Asset, 'clipId'>): string | undefined {
@@ -793,11 +788,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
         const completedTasks = await taskStorageReader.getAssetTasks({
           includeArchived: true,
         });
-        // PSD 工作台图层/合成结果不作为素材展示（由 PSD 历史单独管理）。
-        // 仍保留其 id 进入 completedTaskIds，使下方 Cache Storage 补充阶段把
-        // 对应缓存图片视为「已属于完成任务」而跳过，避免从缓存侧漏入素材库。
-        const assetTasks = completedTasks.filter((task) => !task.isPsdInternal);
-        const preliminaryAiAssets = assetTasks.flatMap(taskToAssets);
+        const preliminaryAiAssets = completedTasks.flatMap(taskToAssets);
         const completedTaskIds = new Set(completedTasks.map((task) => task.id));
         const aiAssetUrls = new Set(
           preliminaryAiAssets.map((asset) => normalizeAssetUrl(asset.url))

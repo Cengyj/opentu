@@ -1,6 +1,6 @@
 # AI 图片蒙版编辑经验
 
-更新日期：2026-05-05
+更新日期：2026-05-17
 
 ## 背景
 
@@ -49,3 +49,44 @@ GPT Image 的局部编辑不是把蒙版笔迹合成到参考图里，而是通�
 - `pnpm --dir packages/drawnix exec tsc --noEmit --pretty false`
 - `pnpm --dir packages/drawnix exec vitest run src/services/__tests__/async-image-api-service.test.ts src/services/__tests__/default-image-adapter.test.ts src/services/__tests__/media-api-routing.test.ts src/services/__tests__/media-executor.test.ts`
 - 建议补充抽查：`ai-mask-brush.test.ts`、`selection-utils.test.ts`、`image-task-prefill.test.ts`、`gpt-image-adapter.test.ts`、`workflow-converter.test.ts`
+
+## 九、蒙版预览缓存不进入素材库
+
+这次还补了一条更底层的经验：**预览可以缓存，不能默认入库**。蒙版画笔导出的 PNG 只是编辑过程中的中间态，不应被素材库当成用户素材展示。
+
+### 问题表现
+
+- 蒙版预览图会出现在素材库网格里，和真正的图片素材混在一起。
+- 这些预览图并不是用户主动保存的资产，却会参与素材库排序、去重和浏览。
+- 从产品语义上看，这会把“编辑辅助资源”误当成“可管理素材”。
+
+### 根因
+
+- `exportImageMaskFromBrushes()` 会把预览 PNG 写入统一缓存。
+- `AssetContext` 加载素材时会扫统一缓存，并把可见缓存合并进素材库。
+- 之前只排除了 `video-frame` 这类内部缓存，没覆盖蒙版预览这一类新中间态。
+
+### 修复思路
+
+- 不改蒙版生成逻辑，保留预览缓存能力。
+- 在素材库侧新增内部缓存排除规则。
+- 把 `ai-mask-brush`、`ai-mask-reference-resize` 归为内部缓存，不参与素材库展示。
+
+### 架构变更
+
+- 统一缓存继续承担“预览/中间态/可复用资源”的底层存储。
+- 素材库不再把统一缓存全量当成业务素材全集，而是先做“可见性过滤”。
+- 资产边界被拆成两层：
+  - 用户素材：上传、AI 成果、可管理资源
+  - 内部缓存：蒙版预览、参考图缩放、视频帧等编辑辅助资源
+
+### 经验规则
+
+- 任何编辑辅助图都应先问一句：它是“展示给用户看的结果”，还是“给系统内部流程用的中间态”。
+- 如果是中间态，允许缓存，但不要直接进入素材库。
+- 以后新增内部缓存 source 时，优先补到排除名单，而不是改素材库主流程。
+
+### 关联代码
+
+- [asset-utils.ts](../packages/drawnix/src/utils/asset-utils.ts)
+- [AssetContext.tsx](../packages/drawnix/src/contexts/AssetContext.tsx)

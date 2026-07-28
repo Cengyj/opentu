@@ -17,7 +17,6 @@ import { createPortal } from 'react-dom';
 import { Input } from 'tdesign-react';
 import { ChevronDownIcon, SearchIcon } from 'tdesign-icons-react';
 import {
-  DEFAULT_TEXT_MODEL_ID,
   type ModelConfig,
   type ModelVendor,
   VENDOR_NAMES,
@@ -73,9 +72,7 @@ const ModelDescFallback: React.FC<{ model: ModelConfig }> = React.memo(
   ({ model }) => {
     const meta = useModelMeta(model.sourceProfileId, model.id);
     if (!meta?.description) return null;
-    return (
-      <div className="model-selector__item-desc">{meta.description}</div>
-    );
+    return <div className="model-selector__item-desc">{meta.description}</div>;
   }
 );
 
@@ -102,10 +99,12 @@ function getItemInitial(model: ModelConfig): string {
 export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
   ({ className, value, valueRef, onChange, variant = 'capsule' }) => {
     const baseSelectableModels = useSelectableModels('text');
-    const defaultModelId = baseSelectableModels[0]?.id || DEFAULT_TEXT_MODEL_ID;
+    const defaultModel = baseSelectableModels[0];
+    const defaultModelId = defaultModel?.id || '';
     const [internalModel, setInternalModel] = useState<string>(defaultModelId);
     const [internalModelRef, setInternalModelRef] = useState<ModelRef | null>(
-      () => createModelRef(null, defaultModelId)
+      () =>
+        createModelRef(defaultModel?.sourceProfileId || null, defaultModelId)
     );
     const selectedModel = value ?? internalModel;
     const selectedModelRef =
@@ -118,11 +117,22 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
     const triggerRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
-      if (!value && defaultModelId && internalModel !== defaultModelId) {
-        setInternalModel(defaultModelId);
-        setInternalModelRef(createModelRef(null, defaultModelId));
+      if (value !== undefined) {
+        return;
       }
-    }, [defaultModelId, internalModel, value]);
+      const currentKey = internalModel
+        ? getSelectionKey(internalModel, internalModelRef)
+        : '';
+      const defaultKey = defaultModel
+        ? getSelectionKeyForModel(defaultModel)
+        : '';
+      if (currentKey !== defaultKey) {
+        setInternalModel(defaultModelId);
+        setInternalModelRef(
+          createModelRef(defaultModel?.sourceProfileId || null, defaultModelId)
+        );
+      }
+    }, [defaultModel, defaultModelId, internalModel, internalModelRef, value]);
 
     useEffect(() => {
       if (!isOpen) return;
@@ -359,7 +369,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = React.memo(
           >
             <div className="model-selector__list">
               {filteredModels.length === 0 ? (
-                <div className="model-selector__empty">未找到匹配的模型</div>
+                <div className="model-selector__empty">
+                  {selectableModels.length === 0
+                    ? '还没有已选择的模型，请前往供应商设置添加'
+                    : '未找到匹配的模型'}
+                </div>
               ) : (
                 filteredModels.map((model) => {
                   const modelKey = getSelectionKeyForModel(model);

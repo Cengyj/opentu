@@ -249,7 +249,7 @@ export const authedProcedure = baseProcedure.use(oidcAuth).use(userAuth);
 
 ## 参考链接
 
-- LobeChat GitHub: https://github.com/lobehub/lobe-chat
+- LobeChat 项目资料
 - Zustand 文档: https://docs.pmnd.rs/zustand
 - Drizzle ORM: https://orm.drizzle.team
 - tRPC: https://trpc.io

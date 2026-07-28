@@ -34,7 +34,6 @@ import Menu from '../../menu/menu';
 import { useContext, useState, useCallback } from 'react';
 import { MenuContentPropsContext } from '../../menu/common';
 import { EVENT } from '../../../constants';
-import { openExternalLink } from '../../../utils/external-link-policy';
 
 export const SaveToFile = () => {
   const board = useBoard();
@@ -273,7 +272,7 @@ export const UserManual = () => {
       icon={<BookOpenIcon />}
       data-track="toolbar_click_menu_manual"
       onSelect={() => {
-        openExternalLink('./user-manual/index.html');
+        window.open('./user-manual/index.html', '_blank');
       }}
       aria-label={t('menu.userManual')}
     >
@@ -302,7 +301,7 @@ export const VersionInfo = () => {
             data-track="toolbar_click_menu_changelog"
             onClick={(e) => {
               e.stopPropagation();
-              openExternalLink('./versions.html');
+              window.open('./versions.html', '_blank');
             }}
           >
             {t('menu.changelog')}
@@ -312,7 +311,7 @@ export const VersionInfo = () => {
             data-track="toolbar_click_menu_more_versions"
             onClick={(e) => {
               e.stopPropagation();
-              openExternalLink('https://foropencode.com/');
+              window.open('https://release.opentu.ai/', '_blank');
             }}
           >
             {t('menu.more')}

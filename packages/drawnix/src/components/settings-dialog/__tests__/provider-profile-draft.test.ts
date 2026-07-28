@@ -9,15 +9,15 @@ describe('createProviderProfileDraft', () => {
         href: 'https://example.com/app',
       },
       history: {
-        replaceState: vi.fn(),
+        replaceState: () => {},
       },
       dispatchEvent: () => true,
     });
     vi.stubGlobal('localStorage', {
       getItem: () => null,
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-      clear: vi.fn(),
+      setItem: () => {},
+      removeItem: () => {},
+      clear: () => {},
     });
   });
 
@@ -45,17 +45,69 @@ describe('createProviderProfileDraft', () => {
     });
   });
 
-  it('shows OpenAI GPT Image compatibility for ForOpenCode auto image API mode', async () => {
-    const { getImageApiCompatibilityHint } = await import(
-      '../image-api-compatibility-display'
+  it('replaces stale provider preset routes with newly selected models', async () => {
+    const { reconcileProviderPresetModels } = await import(
+      '../provider-profile-draft'
+    );
+    const presets = [
+      {
+        id: 'preset-1',
+        name: 'Preset 1',
+        image: {
+          defaultModelRef: {
+            profileId: 'other-provider',
+            modelId: 'other-image-model',
+          },
+        },
+        video: {
+          defaultModelRef: {
+            profileId: 'changed-provider',
+            modelId: 'old-video-model',
+          },
+        },
+        audio: { defaultModelRef: null },
+        text: {
+          defaultModelRef: {
+            profileId: 'changed-provider',
+            modelId: 'old-text-model',
+          },
+        },
+      },
+    ];
+
+    const changedProviderModels = [
+      {
+        id: 'new-text-model',
+        label: 'New Text Model',
+        type: 'text' as const,
+        vendor: 'OTHER' as const,
+        sourceProfileId: 'changed-provider',
+      },
+    ];
+    const reconciled = reconcileProviderPresetModels(
+      presets,
+      'changed-provider',
+      changedProviderModels,
+      [
+        ...changedProviderModels,
+        {
+          id: 'other-image-model',
+          label: 'Other Image Model',
+          type: 'image',
+          vendor: 'OTHER',
+          sourceProfileId: 'other-provider',
+        },
+      ]
     );
 
-    const hint = getImageApiCompatibilityHint({
-      baseUrl: 'https://foropencode.com/v1',
-      imageApiCompatibility: 'auto',
+    expect(reconciled[0]?.text.defaultModelRef).toEqual({
+      profileId: 'changed-provider',
+      modelId: 'new-text-model',
     });
-
-    expect(hint).toContain('OpenAI GPT Image');
-    expect(hint).not.toMatch(/Tuzi\s+GPT/);
+    expect(reconciled[0]?.video.defaultModelRef).toBeNull();
+    expect(reconciled[0]?.image.defaultModelRef).toEqual({
+      profileId: 'other-provider',
+      modelId: 'other-image-model',
+    });
   });
 });

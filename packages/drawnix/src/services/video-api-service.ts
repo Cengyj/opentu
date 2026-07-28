@@ -2,7 +2,6 @@
  * Video API Service
  *
  * Handles video generation API calls with async polling support.
- * Uses tu-zi API for video generation.
  */
 
 import {
@@ -516,8 +515,8 @@ class VideoAPIService {
       await this.sleep(interval);
       attempts++;
 
-      // Flag to track if this is a business failure (should not retry)
-      let isBusinessFailure = false;
+      // Flag terminal task failures that should not be retried.
+      let isTerminalTaskFailure = false;
 
       try {
         const status = await this.queryVideoStatus(
@@ -562,13 +561,12 @@ class VideoAPIService {
                 (status.error as any).message || JSON.stringify(status.error);
             }
           }
-          // Mark as business failure so it won't be retried
-          isBusinessFailure = true;
+          isTerminalTaskFailure = true;
           throw new Error(errorMessage);
         }
       } catch (err: any) {
         // 业务失败（API 返回 status: failed）不应重试，直接抛出
-        if (isBusinessFailure) {
+        if (isTerminalTaskFailure) {
           throw err;
         }
 

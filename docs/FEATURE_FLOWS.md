@@ -6,6 +6,7 @@
 
 ---
 
+
 ## 目录
 
 - [AI 生成流程](#ai-生成流程service-worker-模式)
@@ -506,17 +507,14 @@ return withTextPastePlugin(withImagePlugin(newBoard));
 - `components/shared/model-health-badge.scss` - 样式文件
 
 **功能特点**：
-- 仅当 `baseUrl` 为 `foropencode.com` 时才启用
+- 仅当 `baseUrl` 对应内建健康状态供应商时才启用
 - 每 5 分钟自动刷新健康数据
 - 全局缓存避免重复请求
 - 彩色方块徽章显示状态，hover 显示状态文字
 - API 请求失败时静默处理，不显示健康状态
 
 **API 来源**：
-- 端点：通过 `VITE_MODEL_HEALTH_STATUS_BASE_URL` 显式配置独立状态服务后，请求
-  `${VITE_MODEL_HEALTH_STATUS_BASE_URL}/api/history/aggregated`
-- 默认不请求 `https://foropencode.com/api/history/aggregated`，因为 `foropencode.com`
-  本身可能只是 OpenAI 兼容模型网关，不一定提供后台历史聚合接口
+- 端点：`https://foropencode.com/api/history/aggregated`
 - 返回字段：`model_name`、`status_label`、`status_color`、`error_rate` 等
 
 **使用示例**：
@@ -535,7 +533,7 @@ const status = getHealthStatus('gemini-2.0-flash-exp-image-generation');
 ```
 
 **显示规则**：
-- `shouldShowHealth` 为 `true` 时才显示徽章；默认值为 `false`，只有配置了 `VITE_MODEL_HEALTH_STATUS_BASE_URL` 且当前模型使用 `foropencode.com` 供应商时才会请求/显示健康状态
+- `shouldShowHealth` 为 `true` 时（baseUrl 对应内建健康状态供应商）才显示徽章
 - 没有匹配模型的健康数据时不显示徽章
 - 徽章颜色由 API 返回的 `statusColor` 决定（绿/黄/红等）
 

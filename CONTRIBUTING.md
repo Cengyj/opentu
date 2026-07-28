@@ -12,7 +12,7 @@
 - pnpm 10.21.0
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/aitu.git
+# 获取项目源码后进入本地目录
 cd aitu
 corepack enable pnpm
 pnpm install
@@ -60,7 +60,7 @@ chore: 调整工具或配置
 - pnpm 10.21.0
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/aitu.git
+# Get the source code, then enter the local project directory.
 cd aitu
 corepack enable pnpm
 pnpm install

@@ -25,6 +25,7 @@ import {
 } from 'tdesign-icons-react';
 import { useGitHubSync, GistInfo } from '../../contexts/GitHubSyncContext';
 import { syncPasswordService } from '../../services/github-sync';
+import { TokenGuide } from './TokenGuide';
 import { RecycleBin } from './RecycleBin';
 import { ConfirmDialog, useConfirmDialog } from '../dialog/ConfirmDialog';
 import { LockOnIcon, LockOffIcon } from 'tdesign-icons-react';
@@ -102,10 +103,11 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
 
   const [tokenInput, setTokenInput] = useState('');
   const [isSettingToken, setIsSettingToken] = useState(false);
+  const [showTokenGuide, setShowTokenGuide] = useState(false);
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [isLocalSyncing, setIsLocalSyncing] = useState(false);
 
-  // 远程数据管理状态
+  // Gist 管理状态
   const [showGistManager, setShowGistManager] = useState(false);
   const [gists, setGists] = useState<GistInfo[]>([]);
   const [isLoadingGists, setIsLoadingGists] = useState(false);
@@ -137,7 +139,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
     ? storedPassword
     : maskPassword(storedPassword);
 
-  // 加载远程数据列表
+  // 加载 Gist 列表
   const loadGists = useCallback(async () => {
     if (!isConnected) return;
 
@@ -147,13 +149,13 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
       setGists(gistList);
     } catch (err) {
       console.error('Failed to load gists:', err);
-      MessagePlugin.error('获取远程数据列表失败');
+      MessagePlugin.error('获取 Gist 列表失败');
     } finally {
       setIsLoadingGists(false);
     }
   }, [isConnected, listGists]);
 
-  // 当展开远程数据管理器时加载列表
+  // 当展开 Gist 管理器时加载列表
   useEffect(() => {
     if (showGistManager && isConnected) {
       loadGists();
@@ -268,7 +270,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
 
         MessagePlugin.success(parts.join(''));
 
-        // 刷新远程数据列表
+        // 刷新 Gist 列表
         if (showGistManager) {
           loadGists();
         }
@@ -378,7 +380,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
           result.uploaded.tasks;
         MessagePlugin.success(`上传完成 (${uploaded} 项)`);
 
-        // 刷新远程数据列表
+        // 刷新 Gist 列表
         if (showGistManager) {
           loadGists();
         }
@@ -422,12 +424,12 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
     [updateConfig]
   );
 
-  // 删除远程数据
+  // 删除 Gist
   const handleDeleteGist = useCallback(
     async (gist: GistInfo) => {
       try {
         await deleteGist(gist.id);
-        MessagePlugin.success('远程数据已删除');
+        MessagePlugin.success('Gist 已删除');
         setDeleteConfirmGist(null);
         loadGists();
       } catch (err) {
@@ -457,7 +459,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                     <Avatar image={userInfo.avatar_url} size="24px" />
                   )}
                   <span className="sync-settings__username">
-                    {userInfo?.name || userInfo?.login || '远程账户'}
+                    {userInfo?.name || userInfo?.login || 'GitHub 用户'}
                   </span>
                   <span className="sync-settings__status-badge">
                     <CheckCircleFilledIcon className="sync-settings__status-icon--success" />
@@ -476,7 +478,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
             ) : (
               <div className="sync-settings__not-connected">
                 <CloudIcon className="sync-settings__cloud-icon" />
-                <span>使用远程同步数据</span>
+                <span>使用 GitHub Gist 同步数据</span>
               </div>
             )}
           </div>
@@ -485,7 +487,15 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
           {!isConnected && (
             <div className="sync-settings__token-section">
               <div className="sync-settings__token-label">
-                <span>同步访问令牌</span>
+                <span>GitHub Token</span>
+                <Button
+                  variant="text"
+                  size="small"
+                  icon={<HelpCircleIcon />}
+                  onClick={() => setShowTokenGuide(true)}
+                >
+                  权限说明
+                </Button>
               </div>
               <form
                 className="sync-settings__token-input-row"
@@ -499,7 +509,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                   className="sync-settings__token-input"
                   value={tokenInput}
                   onChange={(e) => setTokenInput(e.target.value)}
-                  placeholder="输入同步访问令牌"
+                  placeholder="ghp_xxxxxxxxxxxx"
                   autoComplete="off"
                 />
                 <Button
@@ -595,14 +605,14 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                 )}
               </div>
 
-              {/* 远程数据管理器 */}
+              {/* Gist 管理器 */}
               <div className="sync-settings__gist-manager">
                 <div
                   className="sync-settings__gist-manager-header"
                   onClick={() => setShowGistManager(!showGistManager)}
                 >
                   {showGistManager ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                  <span>远程数据管理</span>
+                  <span>Gist 管理</span>
                   {config?.gistId && !showGistManager && (
                     <span className="sync-settings__gist-mini-id">
                       {config?.gistId?.substring(0, 6)}...
@@ -619,7 +629,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                       </div>
                     ) : gists.length === 0 ? (
                       <div className="sync-settings__gist-empty">
-                        暂无远程同步数据
+                        暂无同步 Gist
                       </div>
                     ) : (
                       gists.map((gist) => (
@@ -730,7 +740,7 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                   )}
                 </div>
                 <p className="sync-settings__password-desc">
-                  默认使用远程数据 ID
+                  默认使用 Gist ID
                   加密数据。设置自定义密码后，需在其他设备输入相同密码才能解密。
                 </p>
                 <div className="sync-settings__password-input-row">
@@ -777,7 +787,8 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                   )}
                 </div>
                 <p className="sync-settings__security-hint">
-                  ⚠️ 远程私有数据不公开但仍可能被持有访问凭据的人读取，建议设置加密密码保护隐私。
+                  ⚠️ Secret Gist
+                  不公开但知道链接的人仍可访问，建议设置加密密码保护隐私。
                 </p>
               </div>
             </>
@@ -791,13 +802,20 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
                 <span>同步说明</span>
               </div>
               <p>
-                数据存储在远程同步空间中，并使用 AES-256 加密。
+                数据存储在 <strong>Secret Gist</strong> 中，并使用 AES-256
+                加密。
                 同步包括画板、提示词和任务记录。媒体文件需在素材库中手动同步。
               </p>
             </div>
           </div>
         </div>
       </Dialog>
+
+      {/* Token 权限说明 */}
+      <TokenGuide
+        visible={showTokenGuide}
+        onClose={() => setShowTokenGuide(false)}
+      />
 
       {/* 断开连接确认 */}
       <ConfirmDialog
@@ -813,10 +831,10 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
         <p>您可以随时重新连接恢复同步。</p>
       </ConfirmDialog>
 
-      {/* 删除远程数据确认 */}
+      {/* 删除 Gist 确认 */}
       <ConfirmDialog
         open={!!deleteConfirmGist}
-        title="删除远程数据"
+        title="删除 Gist"
         confirmText="确认删除"
         cancelText="取消"
         danger
@@ -829,11 +847,11 @@ export function SyncSettings({ visible, onClose }: SyncSettingsProps) {
           deleteConfirmGist ? handleDeleteGist(deleteConfirmGist) : undefined
         }
       >
-        <p>确定要删除此远程同步数据吗？</p>
-        <p>此操作不可撤销，远程数据将被永久删除。</p>
+        <p>确定要删除此 Gist 吗？</p>
+        <p>此操作不可撤销，Gist 中的数据将被永久删除。</p>
         {deleteConfirmGist?.isCurrent && (
           <p style={{ color: '#e34d59' }}>
-            警告：您正在删除当前使用的远程数据，删除后需要重新选择或创建新的同步数据。
+            警告：您正在删除当前使用的 Gist，删除后需要重新选择或创建新的 Gist。
           </p>
         )}
       </ConfirmDialog>

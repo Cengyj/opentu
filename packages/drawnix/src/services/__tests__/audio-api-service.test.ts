@@ -52,6 +52,7 @@ describe('audio-api-service', () => {
     });
 
     vi.doMock('../../utils/settings-manager', () => ({
+      providerPricingCacheSettings: { get: () => [] },
       resolveInvocationRoute: () => ({
         profileId: 'runtime',
         profileName: 'Runtime',
@@ -112,6 +113,7 @@ describe('audio-api-service', () => {
     });
 
     vi.doMock('../../utils/settings-manager', () => ({
+      providerPricingCacheSettings: { get: () => [] },
       resolveInvocationRoute: () => ({
         profileId: 'runtime',
         profileName: 'Runtime',
@@ -187,6 +189,7 @@ describe('audio-api-service', () => {
     });
 
     vi.doMock('../../utils/settings-manager', () => ({
+      providerPricingCacheSettings: { get: () => [] },
       resolveInvocationRoute: () => ({
         profileId: 'runtime',
         profileName: 'Runtime',
@@ -261,6 +264,7 @@ describe('audio-api-service', () => {
     });
 
     vi.doMock('../../utils/settings-manager', () => ({
+      providerPricingCacheSettings: { get: () => [] },
       resolveInvocationRoute: () => ({
         profileId: 'runtime',
         profileName: 'Runtime',
@@ -389,6 +393,7 @@ describe('audio-api-service', () => {
     });
 
     vi.doMock('../../utils/settings-manager', () => ({
+      providerPricingCacheSettings: { get: () => [] },
       resolveInvocationRoute: () => ({
         profileId: 'runtime',
         profileName: 'Runtime',
@@ -469,6 +474,7 @@ describe('audio-api-service', () => {
     });
 
     vi.doMock('../../utils/settings-manager', () => ({
+      providerPricingCacheSettings: { get: () => [] },
       resolveInvocationRoute: () => ({
         profileId: 'runtime',
         profileName: 'Runtime',
@@ -570,6 +576,7 @@ describe('audio-api-service', () => {
     });
 
     vi.doMock('../../utils/settings-manager', () => ({
+      providerPricingCacheSettings: { get: () => [] },
       resolveInvocationRoute: () => ({
         profileId: 'runtime',
         profileName: 'Runtime',
@@ -654,6 +661,7 @@ describe('audio-api-service', () => {
     });
 
     vi.doMock('../../utils/settings-manager', () => ({
+      providerPricingCacheSettings: { get: () => [] },
       resolveInvocationRoute: () => ({
         profileId: 'runtime',
         profileName: 'Runtime',

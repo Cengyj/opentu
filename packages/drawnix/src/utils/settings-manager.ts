@@ -12,7 +12,6 @@ import type { VideoAPIConfig } from './config-indexeddb-writer';
 import type { ProviderPricingCache } from './model-pricing-types';
 import {
   DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
-  LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
   type AppSettings,
   type GeminiSettings,
   type ImageApiCompatibility,
@@ -29,7 +28,6 @@ import {
   type TtsSettings,
 } from './settings-types';
 import {
-  DEFAULT_IMAGE_MODEL_ID,
   getDefaultAudioModel,
   getDefaultImageModel,
   getModelConfig,
@@ -41,7 +39,6 @@ import {
 
 export {
   DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
-  LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
   type AppSettings,
   type GeminiSettings,
   type ImageApiCompatibility,
@@ -62,30 +59,19 @@ export {
 
 export const LEGACY_DEFAULT_PROVIDER_PROFILE_ID = 'legacy-default';
 export const DEFAULT_INVOCATION_PRESET_ID = 'default';
-export const FOROPENCODE_ORIGINAL_PROVIDER_PROFILE_ID = 'foropencode-origin';
-export const FOROPENCODE_MIX_PROVIDER_PROFILE_ID = 'foropencode-mix';
-export const FOROPENCODE_CODEX_PROVIDER_PROFILE_ID = 'foropencode-codex';
-export const FOROPENCODE_BUSINESS_PROVIDER_PROFILE_ID = 'foropencode-business';
-export const FOROPENCODE_PROVIDER_ICON_URL = '/logo-foropencode.png';
-export const FOROPENCODE_PROVIDER_DEFAULT_BASE_URL = 'https://foropencode.com/v1';
-export const FOROPENCODE_BUSINESS_PROVIDER_DEFAULT_BASE_URL =
-  'https://foropencode.com/v1';
-export const FOROPENCODE_DEFAULT_PROVIDER_NAME = 'default 分组';
-export const FOROPENCODE_ORIGINAL_PROVIDER_NAME = '原价分组';
-export const FOROPENCODE_MIX_PROVIDER_NAME = 'gemini-mix 分组';
-export const FOROPENCODE_CODEX_PROVIDER_NAME = 'codex 分组';
-export const FOROPENCODE_BUSINESS_PROVIDER_NAME = 'Business';
+export const FOR_CODEX_PROVIDER_PROFILE_ID = 'for-codex';
+export const FOR_PROVIDER_ICON_URL = '/logo-for.png';
+export const FOR_PROVIDER_DEFAULT_BASE_URL = 'https://foropencode.com/v1';
+export const FOR_DEFAULT_PROVIDER_NAME = 'default 分组';
+export const FOR_CODEX_PROVIDER_NAME = 'codex 分组';
+const LEGACY_DEFAULT_IMAGE_MODEL_ID = 'gpt-image-2-vip';
 
-const SYSTEM_FOROPENCODE_GROUP_PROVIDER_PROFILE_IDS = new Set([
-  FOROPENCODE_ORIGINAL_PROVIDER_PROFILE_ID,
-  FOROPENCODE_MIX_PROVIDER_PROFILE_ID,
-  FOROPENCODE_CODEX_PROVIDER_PROFILE_ID,
-  FOROPENCODE_BUSINESS_PROVIDER_PROFILE_ID,
-  'tuzi-origin',
-  'tuzi-mix',
-  'tuzi-codex',
-  'tuzi-business',
-]);
+export function isBuiltInDefaultProviderProfileId(profileId: string): boolean {
+  return (
+    profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID ||
+    profileId === FOR_CODEX_PROVIDER_PROFILE_ID
+  );
+}
 
 const DEFAULT_PROVIDER_CAPABILITIES: ProviderCapabilities = {
   supportsModelsEndpoint: true,
@@ -100,10 +86,10 @@ const DEFAULT_PROVIDER_CAPABILITIES: ProviderCapabilities = {
 const DEFAULT_SETTINGS: AppSettings = {
   gemini: {
     apiKey: '',
-    baseUrl: FOROPENCODE_PROVIDER_DEFAULT_BASE_URL,
+    baseUrl: FOR_PROVIDER_DEFAULT_BASE_URL,
     chatModel: getDefaultTextModel(),
     audioModelName: 'suno_music',
-    imageModelName: DEFAULT_IMAGE_MODEL_ID,
+    imageModelName: getDefaultImageModel(),
     videoModelName: 'seedance-1.5-pro',
     textModelName: getDefaultTextModel(),
   },
@@ -130,35 +116,12 @@ function normalizeNullableString(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
-const RETIRED_MODEL_ID_REPLACEMENTS: Readonly<Record<string, string>> = {
-  'gpt-image-2-vip': DEFAULT_IMAGE_MODEL_ID,
-};
-
-function getRetiredModelReplacement(modelId: string): string | undefined {
-  return RETIRED_MODEL_ID_REPLACEMENTS[modelId.toLowerCase()];
-}
-
-function isRetiredModelId(value: unknown): boolean {
-  const modelId = normalizeNullableString(value);
-  return !!modelId && !!getRetiredModelReplacement(modelId);
-}
-
-export function normalizeRetiredModelId(
-  modelId?: string | null
-): string | null {
-  const normalizedModelId = normalizeNullableString(modelId);
-  if (!normalizedModelId) {
-    return null;
-  }
-  return getRetiredModelReplacement(normalizedModelId) || normalizedModelId;
-}
-
 export function createModelRef(
   profileId?: string | null,
   modelId?: string | null
 ): ModelRef | null {
   const normalizedProfileId = normalizeNullableString(profileId);
-  const normalizedModelId = normalizeRetiredModelId(modelId);
+  const normalizedModelId = normalizeNullableString(modelId);
 
   if (!normalizedProfileId && !normalizedModelId) {
     return null;
@@ -340,7 +303,7 @@ class SettingsManager {
       normalizedBaseUrl.includes('/openai') ||
       normalizedBaseUrl.endsWith('/v1') ||
       normalizedBaseUrl.includes('api.openai.com') ||
-      this.isForOpenCodeProviderBaseUrl(normalizedBaseUrl)
+      this.isBuiltInProviderBaseUrl(normalizedBaseUrl)
     ) {
       return 'openai-compatible';
     }
@@ -397,16 +360,7 @@ class SettingsManager {
       return value;
     }
 
-    if (
-      value === 'for-gpt-image' ||
-      value === 'tuzi-gpt-image' ||
-      value === 'tuzi-compatible'
-    ) {
-      this.shouldPersistSettingsAfterInitialization = true;
-      return 'openai-gpt-image';
-    }
-
-    return 'auto';
+    return DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY;
   }
 
   private normalizeStoredImageApiCompatibility(
@@ -427,40 +381,11 @@ class SettingsManager {
         : {};
 
     return {
-      legacyDefaultImageApiCompatibilityV1:
-        migrations.legacyDefaultImageApiCompatibilityV1 === true,
+      legacyDefaultImageModelV1: migrations.legacyDefaultImageModelV1 === true,
     };
   }
 
-  private normalizeStoredModelId(value: unknown): string | null {
-    const modelId = normalizeNullableString(value);
-    if (!modelId) {
-      return null;
-    }
-
-    const normalizedModelId = normalizeRetiredModelId(modelId) || modelId;
-    if (normalizedModelId !== modelId) {
-      this.shouldPersistSettingsAfterInitialization = true;
-    }
-    return normalizedModelId;
-  }
-
-  private normalizeGeminiSettings(gemini: GeminiSettings): GeminiSettings {
-    const normalizeModelSetting = (value: unknown): string | undefined =>
-      this.normalizeStoredModelId(value) || undefined;
-
-    return {
-      ...gemini,
-      chatModel: normalizeModelSetting(gemini.chatModel),
-      audioModelName: normalizeModelSetting(gemini.audioModelName),
-      imageModelName:
-        normalizeModelSetting(gemini.imageModelName) || DEFAULT_IMAGE_MODEL_ID,
-      videoModelName: normalizeModelSetting(gemini.videoModelName),
-      textModelName: normalizeModelSetting(gemini.textModelName),
-    };
-  }
-
-  private isForOpenCodeProviderBaseUrl(baseUrl: string): boolean {
+  private isBuiltInProviderBaseUrl(baseUrl: string): boolean {
     const trimmed = baseUrl.trim().toLowerCase();
     if (!trimmed) {
       return false;
@@ -497,28 +422,17 @@ class SettingsManager {
     }
   }
 
-  private shouldMigrateLegacyDefaultImageApiCompatibility(
-    profile: Partial<ProviderProfile> | undefined,
-    baseUrl: string
-  ): boolean {
-    if (!this.isForOpenCodeProviderBaseUrl(baseUrl)) {
-      return false;
+  private migrateLegacyDefaultImageModel(
+    gemini: GeminiSettings
+  ): GeminiSettings {
+    if (gemini.imageModelName !== LEGACY_DEFAULT_IMAGE_MODEL_ID) {
+      return gemini;
     }
 
-    const value = profile?.imageApiCompatibility;
-    return (
-      value === undefined ||
-      value === null ||
-      value === DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
-    );
-  }
-
-  private getLegacyDefaultImageApiCompatibilityFallback(
-    baseUrl: string
-  ): ImageApiCompatibility {
-    return this.isForOpenCodeProviderBaseUrl(baseUrl)
-      ? LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
-      : DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY;
+    return {
+      ...gemini,
+      imageModelName: getDefaultImageModel(),
+    };
   }
 
   private normalizeCapabilities(value: unknown): ProviderCapabilities {
@@ -562,8 +476,8 @@ class SettingsManager {
     );
     return {
       id: LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-      name: FOROPENCODE_DEFAULT_PROVIDER_NAME,
-      iconUrl: FOROPENCODE_PROVIDER_ICON_URL,
+      name: FOR_DEFAULT_PROVIDER_NAME,
+      iconUrl: FOR_PROVIDER_ICON_URL,
       homepageUrl: this.normalizeHomepageUrl(profile?.homepageUrl),
       providerType,
       baseUrl,
@@ -574,30 +488,30 @@ class SettingsManager {
         profile?.authType
       ),
       imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
-        profile?.imageApiCompatibility,
-        this.getLegacyDefaultImageApiCompatibilityFallback(baseUrl)
+        profile?.imageApiCompatibility
       ),
+      preferAsyncImageEndpoint: profile?.preferAsyncImageEndpoint === true,
       enabled: true,
       capabilities: { ...DEFAULT_PROVIDER_CAPABILITIES },
     };
   }
 
-  private buildForOpenCodeOriginalProfile(
+  private buildForCodexProfile(
     profile?: Partial<ProviderProfile>
   ): ProviderProfile {
     const baseUrl =
       typeof profile?.baseUrl === 'string' && profile.baseUrl.trim()
         ? profile.baseUrl
-        : FOROPENCODE_PROVIDER_DEFAULT_BASE_URL;
+        : FOR_PROVIDER_DEFAULT_BASE_URL;
     const providerType = this.normalizeProviderType(
       baseUrl,
       profile?.providerType
     );
 
     return {
-      id: FOROPENCODE_ORIGINAL_PROVIDER_PROFILE_ID,
-      name: FOROPENCODE_ORIGINAL_PROVIDER_NAME,
-      iconUrl: FOROPENCODE_PROVIDER_ICON_URL,
+      id: FOR_CODEX_PROVIDER_PROFILE_ID,
+      name: FOR_CODEX_PROVIDER_NAME,
+      iconUrl: FOR_PROVIDER_ICON_URL,
       homepageUrl:
         this.normalizeHomepageUrl(profile?.homepageUrl) ||
         'https://foropencode.com/',
@@ -612,86 +526,7 @@ class SettingsManager {
       imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
         profile?.imageApiCompatibility
       ),
-      extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
-      enabled: profile?.enabled !== false,
-      capabilities: this.normalizeCapabilities(profile?.capabilities),
-      pricingGroup:
-        typeof profile?.pricingGroup === 'string' && profile.pricingGroup.trim()
-          ? profile.pricingGroup.trim()
-          : 'default',
-    };
-  }
-
-  private buildForOpenCodeMixProfile(
-    profile?: Partial<ProviderProfile>
-  ): ProviderProfile {
-    const baseUrl =
-      typeof profile?.baseUrl === 'string' && profile.baseUrl.trim()
-        ? profile.baseUrl
-        : FOROPENCODE_PROVIDER_DEFAULT_BASE_URL;
-    const providerType = this.normalizeProviderType(
-      baseUrl,
-      profile?.providerType
-    );
-
-    return {
-      id: FOROPENCODE_MIX_PROVIDER_PROFILE_ID,
-      name: FOROPENCODE_MIX_PROVIDER_NAME,
-      iconUrl: FOROPENCODE_PROVIDER_ICON_URL,
-      homepageUrl:
-        this.normalizeHomepageUrl(profile?.homepageUrl) ||
-        'https://foropencode.com/',
-      providerType,
-      baseUrl,
-      apiKey: typeof profile?.apiKey === 'string' ? profile.apiKey : '',
-      authType: this.normalizeProviderAuthType(
-        baseUrl,
-        providerType,
-        profile?.authType
-      ),
-      imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
-        profile?.imageApiCompatibility
-      ),
-      extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
-      enabled: profile?.enabled !== false,
-      capabilities: this.normalizeCapabilities(profile?.capabilities),
-      pricingGroup:
-        typeof profile?.pricingGroup === 'string' && profile.pricingGroup.trim()
-          ? profile.pricingGroup.trim()
-          : 'gemini-mix',
-    };
-  }
-
-  private buildForOpenCodeCodexProfile(
-    profile?: Partial<ProviderProfile>
-  ): ProviderProfile {
-    const baseUrl =
-      typeof profile?.baseUrl === 'string' && profile.baseUrl.trim()
-        ? profile.baseUrl
-        : FOROPENCODE_PROVIDER_DEFAULT_BASE_URL;
-    const providerType = this.normalizeProviderType(
-      baseUrl,
-      profile?.providerType
-    );
-
-    return {
-      id: FOROPENCODE_CODEX_PROVIDER_PROFILE_ID,
-      name: FOROPENCODE_CODEX_PROVIDER_NAME,
-      iconUrl: FOROPENCODE_PROVIDER_ICON_URL,
-      homepageUrl:
-        this.normalizeHomepageUrl(profile?.homepageUrl) ||
-        'https://foropencode.com/',
-      providerType,
-      baseUrl,
-      apiKey: typeof profile?.apiKey === 'string' ? profile.apiKey : '',
-      authType: this.normalizeProviderAuthType(
-        baseUrl,
-        providerType,
-        profile?.authType
-      ),
-      imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
-        profile?.imageApiCompatibility
-      ),
+      preferAsyncImageEndpoint: profile?.preferAsyncImageEndpoint === true,
       extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
       enabled: profile?.enabled !== false,
       capabilities: this.normalizeCapabilities(profile?.capabilities),
@@ -699,56 +534,6 @@ class SettingsManager {
         typeof profile?.pricingGroup === 'string' && profile.pricingGroup.trim()
           ? profile.pricingGroup.trim()
           : 'codex',
-    };
-  }
-
-  private buildForOpenCodeBusinessProfile(
-    profile?: Partial<ProviderProfile>
-  ): ProviderProfile {
-    const baseUrl =
-      typeof profile?.baseUrl === 'string' && profile.baseUrl.trim()
-        ? profile.baseUrl
-        : FOROPENCODE_BUSINESS_PROVIDER_DEFAULT_BASE_URL;
-    const providerType = this.normalizeProviderType(
-      baseUrl,
-      profile?.providerType
-    );
-
-    return {
-      id: FOROPENCODE_BUSINESS_PROVIDER_PROFILE_ID,
-      name: FOROPENCODE_BUSINESS_PROVIDER_NAME,
-      iconUrl: FOROPENCODE_PROVIDER_ICON_URL,
-      homepageUrl:
-        this.normalizeHomepageUrl(profile?.homepageUrl) ||
-        'https://foropencode.com/',
-      providerType,
-      baseUrl,
-      apiKey: typeof profile?.apiKey === 'string' ? profile.apiKey : '',
-      authType: this.normalizeProviderAuthType(
-        baseUrl,
-        providerType,
-        profile?.authType
-      ),
-      imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
-        profile?.imageApiCompatibility,
-        LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
-      ),
-      extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
-      enabled: profile?.enabled !== false,
-      capabilities: this.normalizeCapabilities(profile?.capabilities),
-      pricingUrl:
-        typeof profile?.pricingUrl === 'string' && profile.pricingUrl.trim()
-          ? profile.pricingUrl.trim()
-          : 'https://foropencode.com/api/pricing',
-      pricingGroup:
-        typeof profile?.pricingGroup === 'string' && profile.pricingGroup.trim()
-          ? profile.pricingGroup.trim()
-          : 'default',
-      cnyPerUsd:
-        typeof profile?.cnyPerUsd === 'number' &&
-        Number.isFinite(profile.cnyPerUsd)
-          ? profile.cnyPerUsd
-          : undefined,
     };
   }
 
@@ -827,6 +612,7 @@ class SettingsManager {
           imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
             profile.imageApiCompatibility
           ),
+          preferAsyncImageEndpoint: profile.preferAsyncImageEndpoint === true,
           extraHeaders: this.normalizeStringRecord(profile.extraHeaders),
           enabled: profile.enabled !== false,
           capabilities: this.normalizeCapabilities(profile.capabilities),
@@ -869,12 +655,8 @@ class SettingsManager {
             )
           : [],
         selectedModelIds: Array.isArray(draft.selectedModelIds)
-          ? Array.from(
-              new Set(
-                draft.selectedModelIds
-                  .map((id) => this.normalizeStoredModelId(id))
-                  .filter((id): id is string => typeof id === 'string')
-              )
+          ? draft.selectedModelIds.filter(
+              (id): id is string => typeof id === 'string'
             )
           : [],
         sourceBaseUrl:
@@ -896,9 +678,6 @@ class SettingsManager {
     }
 
     const draft = value as Partial<ModelRef>;
-    if (isRetiredModelId(draft.modelId)) {
-      this.shouldPersistSettingsAfterInitialization = true;
-    }
     return createModelRef(
       typeof draft.profileId === 'string' ? draft.profileId : null,
       typeof draft.modelId === 'string' ? draft.modelId : null
@@ -920,9 +699,6 @@ class SettingsManager {
         typeof draft.profileId === 'string' ? draft.profileId : null,
         typeof draft.defaultModelId === 'string' ? draft.defaultModelId : null
       );
-    if (isRetiredModelId(draft.defaultModelId)) {
-      this.shouldPersistSettingsAfterInitialization = true;
-    }
 
     return createRouteConfig(nextModelRef);
   }
@@ -975,10 +751,10 @@ class SettingsManager {
 
     const normalizedSettings: AppSettings = {
       ...mergedSettings,
-      gemini: this.normalizeGeminiSettings({
+      gemini: {
         ...DEFAULT_SETTINGS.gemini,
         ...(mergedSettings.gemini || {}),
-      }),
+      },
       tts: {
         ...DEFAULT_SETTINGS.tts,
         ...(mergedSettings.tts || {}),
@@ -1010,31 +786,25 @@ class SettingsManager {
     const existingLegacyProfile = settings.providerProfiles.find(
       (profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
     );
+    const existingForCodexProfile = settings.providerProfiles.find(
+      (profile) => profile.id === FOR_CODEX_PROVIDER_PROFILE_ID
+    );
     const migrations: SettingsMigrations = { ...settings.migrations };
-    const shouldRunLegacyDefaultImageMigration =
-      migrations.legacyDefaultImageApiCompatibilityV1 !== true;
-    const legacyBaseUrl =
-      settings.gemini.baseUrl || DEFAULT_SETTINGS.gemini.baseUrl;
-    const legacyProfileForBuild =
-      shouldRunLegacyDefaultImageMigration &&
-      this.shouldMigrateLegacyDefaultImageApiCompatibility(
-        existingLegacyProfile,
-        legacyBaseUrl
-      )
-        ? {
-            ...(existingLegacyProfile || {}),
-            imageApiCompatibility:
-              LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
-          }
-        : existingLegacyProfile;
+    const shouldRunLegacyDefaultImageModelMigration =
+      migrations.legacyDefaultImageModelV1 !== true;
+    const gemini = shouldRunLegacyDefaultImageModelMigration
+      ? this.migrateLegacyDefaultImageModel(settings.gemini)
+      : settings.gemini;
 
-    if (shouldRunLegacyDefaultImageMigration) {
-      migrations.legacyDefaultImageApiCompatibilityV1 = true;
-      this.shouldPersistSettingsAfterInitialization = true;
+    if (shouldRunLegacyDefaultImageModelMigration) {
+      migrations.legacyDefaultImageModelV1 = true;
+      if (gemini !== settings.gemini) {
+        this.shouldPersistSettingsAfterInitialization = true;
+      }
     }
 
     const legacyProfile = {
-      ...this.buildLegacyDefaultProfile(settings.gemini, legacyProfileForBuild),
+      ...this.buildLegacyDefaultProfile(gemini, existingLegacyProfile),
       extraHeaders: this.normalizeStringRecord(
         existingLegacyProfile?.extraHeaders
       ),
@@ -1042,14 +812,16 @@ class SettingsManager {
         existingLegacyProfile?.capabilities
       ),
     };
-    const legacyPreset = this.buildLegacyDefaultPreset(settings.gemini);
+    const forCodexProfile = this.buildForCodexProfile(existingForCodexProfile);
+    const legacyPreset = this.buildLegacyDefaultPreset(gemini);
 
     const providerProfiles = [
       legacyProfile,
+      forCodexProfile,
       ...settings.providerProfiles.filter(
         (profile) =>
           profile.id !== LEGACY_DEFAULT_PROVIDER_PROFILE_ID &&
-          !SYSTEM_FOROPENCODE_GROUP_PROVIDER_PROFILE_IDS.has(profile.id)
+          profile.id !== FOR_CODEX_PROVIDER_PROFILE_ID
       ),
     ];
 
@@ -1077,6 +849,21 @@ class SettingsManager {
         discoveredModels: [],
         selectedModelIds: [],
         sourceBaseUrl: legacyProfile.baseUrl,
+        error: null,
+      });
+    }
+
+    if (
+      !providerCatalogs.some(
+        (catalog) => catalog.profileId === FOR_CODEX_PROVIDER_PROFILE_ID
+      )
+    ) {
+      providerCatalogs.push({
+        profileId: FOR_CODEX_PROVIDER_PROFILE_ID,
+        discoveredAt: null,
+        discoveredModels: [],
+        selectedModelIds: [],
+        sourceBaseUrl: forCodexProfile.baseUrl,
         error: null,
       });
     }
@@ -1141,6 +928,7 @@ class SettingsManager {
 
     return {
       ...settings,
+      gemini,
       migrations,
       providerProfiles,
       providerCatalogs,
@@ -1696,6 +1484,10 @@ class SettingsManager {
     profileId: string,
     routeType: ModelType
   ): ModelConfig[] {
+    const profile = this.getProviderProfileById(profileId);
+    if (!profile || profile.enabled === false) {
+      return [];
+    }
     const catalog = this.getProviderCatalogById(profileId);
     if (!catalog) {
       return [];
@@ -1705,6 +1497,38 @@ class SettingsManager {
     return catalog.discoveredModels.filter(
       (model) => model.type === routeType && selectedIds.has(model.id)
     );
+  }
+
+  private hasAuthoritativeModelCatalog(profileId: string): boolean {
+    const catalog = this.getProviderCatalogById(profileId);
+    return Boolean(
+      catalog &&
+        ((catalog.signature || '').trim() ||
+          Number.isFinite(catalog.discoveredAt) ||
+          catalog.discoveredModels.length > 0)
+    );
+  }
+
+  private isProviderSelectionMode(): boolean {
+    return this.settings.providerProfiles.some(
+      (profile) =>
+        profile.enabled !== false &&
+        this.hasAuthoritativeModelCatalog(profile.id)
+    );
+  }
+
+  private getSelectedRouteCandidates(routeType: ModelType): Array<{
+    profile: ProviderProfile;
+    model: ModelConfig;
+  }> {
+    return this.settings.providerProfiles.flatMap((profile) => {
+      if (profile.enabled === false) {
+        return [];
+      }
+      return this.getSelectedModelsForProfile(profile.id, routeType).map(
+        (model) => ({ profile, model })
+      );
+    });
   }
 
   public getActiveInvocationPreset(): InvocationPreset | null {
@@ -1794,6 +1618,61 @@ class SettingsManager {
           );
     const normalizedRequestedModelId = requestedModelRef?.modelId || null;
     const normalizedPresetModelId = presetModelRef?.modelId || null;
+    const selectedRouteCandidates = this.getSelectedRouteCandidates(routeType);
+    const providerSelectionMode = this.isProviderSelectionMode();
+
+    if (providerSelectionMode && selectedRouteCandidates.length > 0) {
+      const findSelectedCandidate = (modelRef?: ModelRef | null) => {
+        if (!modelRef?.modelId) {
+          return null;
+        }
+        if (modelRef.profileId) {
+          return (
+            selectedRouteCandidates.find(
+              (candidate) =>
+                candidate.profile.id === modelRef.profileId &&
+                candidate.model.id === modelRef.modelId
+            ) || null
+          );
+        }
+
+        const matches = selectedRouteCandidates.filter(
+          (candidate) => candidate.model.id === modelRef.modelId
+        );
+        return matches.length === 1 ? matches[0] : null;
+      };
+      const selectedCandidate =
+        findSelectedCandidate(requestedModelRef) ||
+        findSelectedCandidate(presetModelRef) ||
+        selectedRouteCandidates[0];
+
+      return {
+        routeType,
+        modelId: selectedCandidate.model.id,
+        profileId: selectedCandidate.profile.id,
+        profileName: selectedCandidate.profile.name,
+        providerType: selectedCandidate.profile.providerType,
+        baseUrl:
+          selectedCandidate.profile.baseUrl?.trim() ||
+          DEFAULT_SETTINGS.gemini.baseUrl,
+        apiKey: selectedCandidate.profile.apiKey?.trim() || '',
+        source: 'preset',
+      };
+    }
+
+    if (providerSelectionMode) {
+      return {
+        routeType,
+        modelId: '',
+        profileId: null,
+        profileName: null,
+        providerType: null,
+        baseUrl: '',
+        apiKey: '',
+        source: 'preset',
+      };
+    }
+
     const requestedStaticModel = normalizedRequestedModelId
       ? getModelConfig(normalizedRequestedModelId)
       : null;
@@ -1802,14 +1681,32 @@ class SettingsManager {
       Boolean(requestedModelRef?.profileId) ||
       normalizedRequestedModelId === normalizedPresetModelId ||
       !requestedStaticModel;
-    const profile = this.getProviderProfileById(
+    let profile = this.getProviderProfileById(
       requestedModelRef?.profileId ||
         (shouldInheritPresetProfile ? presetModelRef?.profileId : null) ||
         null
     );
-    const profileModels = profile
+    let profileModels = profile
       ? this.getSelectedModelsForProfile(profile.id, routeType)
       : [];
+    let routedModelId =
+      normalizedRequestedModelId || normalizedPresetModelId || null;
+
+    if (
+      profile &&
+      routedModelId &&
+      this.hasAuthoritativeModelCatalog(profile.id) &&
+      !profileModels.some((model) => model.id === routedModelId)
+    ) {
+      routedModelId = profileModels[0]?.id || null;
+      if (!routedModelId) {
+        // The current credential has no selected model for this route. Do not
+        // send a stale model ID to that credential; fall back to legacy route
+        // resolution instead.
+        profile = null;
+        profileModels = [];
+      }
+    }
     const normalizedLegacyBaseUrl =
       this.settings.gemini.baseUrl?.trim() || DEFAULT_SETTINGS.gemini.baseUrl;
     const normalizedLegacyApiKey = this.settings.gemini.apiKey?.trim() || '';
@@ -1820,10 +1717,7 @@ class SettingsManager {
 
     return {
       routeType,
-      modelId:
-        normalizedRequestedModelId ||
-        normalizedPresetModelId ||
-        fallbackModelId,
+      modelId: routedModelId || fallbackModelId,
       profileId: profile?.id || null,
       profileName: profile?.name || null,
       providerType: profile?.providerType || null,

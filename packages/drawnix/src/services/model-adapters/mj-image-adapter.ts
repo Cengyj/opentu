@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   AdapterContext,
   ImageGenerationRequest,
   ImageModelAdapter,
@@ -6,6 +6,7 @@
 import { registerModelAdapter } from './registry';
 import { sendAdapterRequest } from './context';
 import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
+import { ModelVendor } from '../../constants/model-config';
 
 type MJSubmitResponse = {
   code: number;
@@ -106,6 +107,7 @@ export const mjImageAdapter: ImageModelAdapter = {
   docsUrl: 'https://foropencode.com',
   matchProtocols: ['mj.imagine'],
   matchRequestSchemas: ['mj.imagine.base64-array'],
+  matchVendors: [ModelVendor.MIDJOURNEY],
   matchTags: ['mj'],
   supportedModels: ['mj-imagine'],
   defaultModel: 'mj-imagine',

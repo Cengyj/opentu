@@ -35,9 +35,9 @@ const openaiProfile: ProviderProfileSnapshot = {
   imageApiCompatibility: 'auto',
 };
 
-const forOpenCodeProfile: ProviderProfileSnapshot = {
-  id: 'foropencode',
-  name: 'ForOpenCode',
+const forProfile: ProviderProfileSnapshot = {
+  id: 'for',
+  name: 'For',
   providerType: 'openai-compatible',
   baseUrl: 'https://foropencode.com/v1',
   apiKey: 'for-key',
@@ -120,13 +120,19 @@ describe('image routing to default registered adapters', () => {
     );
   });
 
-  it('routes ForOpenCode auto GPT Image compatibility to the official GPT Image adapter', () => {
-    const binding = firstImageBinding(forOpenCodeProfile, {
-      id: 'gpt-image-2',
-      label: 'GPT Image 2',
-      type: 'image',
-      vendor: ModelVendor.GPT,
-    });
+  it('routes third-party profiles configured for official GPT Image to the official adapter', () => {
+    const binding = firstImageBinding(
+      {
+        ...forProfile,
+        imageApiCompatibility: 'openai-gpt-image',
+      },
+      {
+        id: 'gpt-image-2',
+        label: 'GPT Image 2',
+        type: 'image',
+        vendor: ModelVendor.GPT,
+      }
+    );
 
     expect(binding.requestSchema).toBe('openai.image.gpt-generation-json');
     expect(resolveAdapterForBinding(binding, 'image')?.id).toBe(
@@ -134,14 +140,17 @@ describe('image routing to default registered adapters', () => {
     );
   });
 
-  it('routes ForOpenCode auto GPT Image edits to the official GPT Image adapter', () => {
+  it('routes third-party profiles configured for official GPT Image edits to the official adapter', () => {
     const binding = imageBindingBySchema(
-      forOpenCodeProfile,
       {
-        id: 'gpt-image-2',
-        label: 'GPT Image 2',
-        type: 'image',
-        vendor: ModelVendor.GPT,
+        ...forProfile,
+        imageApiCompatibility: 'openai-gpt-image',
+      },
+      {
+      id: 'gpt-image-2',
+      label: 'GPT Image 2',
+      type: 'image',
+      vendor: ModelVendor.GPT,
       },
       'openai.image.gpt-edit-form'
     );
@@ -153,14 +162,14 @@ describe('image routing to default registered adapters', () => {
     );
   });
 
-  it('defaults legacy model-only GPT Image requests to the official GPT Image adapter', () => {
+  it('keeps legacy model-only GPT Image requests on the official adapter', () => {
     const adapter = resolveAdapterForInvocation('image', 'gpt-image-2', null);
 
     expect(adapter?.id).toBe('gpt-image-adapter');
   });
 
   it('keeps generic non-GPT OpenAI-compatible image models on the default adapter', () => {
-    const binding = firstImageBinding(forOpenCodeProfile, {
+    const binding = firstImageBinding(forProfile, {
       id: 'qwen-image-2.0',
       label: 'Qwen Image 2.0',
       type: 'image',
@@ -174,13 +183,17 @@ describe('image routing to default registered adapters', () => {
   });
 
   it('routes pricing async-image bindings to the default image adapter', () => {
+    const asyncForProfile = {
+      ...forProfile,
+      preferAsyncImageEndpoint: true,
+    };
     const binding = inferBindingsForProviderModel(
-      forOpenCodeProfile,
+      asyncForProfile,
       {
-        id: 'gpt-image-1-vip',
-        label: 'GPT Image 1 VIP',
+        id: 'gemini-3-pro-image-preview-async',
+        label: 'Gemini Async Image',
         type: 'image',
-        vendor: ModelVendor.GPT,
+        vendor: ModelVendor.GEMINI,
       },
       {
         'openai-video': {
@@ -192,6 +205,7 @@ describe('image routing to default registered adapters', () => {
     ).find((entry) => entry.requestSchema === 'openai.async.image.form');
 
     expect(binding?.protocol).toBe('openai.async.media');
+    expect(binding?.submitPath).toBe('/videos');
     expect(resolveAdapterForBinding(binding!, 'image')?.id).toBe(
       'gemini-image-adapter'
     );
@@ -234,7 +248,7 @@ describe('image routing to default registered adapters', () => {
     ];
 
     cases.forEach(({ model, adapterId }) => {
-      const binding = firstImageBinding(forOpenCodeProfile, model);
+      const binding = firstImageBinding(forProfile, model);
       expect(resolveAdapterForBinding(binding, 'image')?.id).toBe(adapterId);
     });
   });

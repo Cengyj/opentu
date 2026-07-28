@@ -2,20 +2,20 @@
 
 # 首页和HTML文件 - 允许iframe嵌入，禁用缓存
 /
-  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Cache-Control: public, max-age=0, must-revalidate
   Content-Security-Policy: upgrade-insecure-requests; default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://us.i.posthog.com https://us-assets.i.posthog.com https://foropencode.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss: data:; frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com;
   X-Content-Type-Options: nosniff
   Referrer-Policy: origin-when-cross-origin
 
 /*.html
-  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Cache-Control: public, max-age=0, must-revalidate
   Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com
   X-Content-Type-Options: nosniff
   Referrer-Policy: origin-when-cross-origin
 
 # 测试页面特殊配置
 /iframe-test.html
-  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Cache-Control: public, max-age=0, must-revalidate
   Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com; frame-src 'self' localhost:* https://foropencode.com data:
 
 # 静态资源 - 长期缓存
@@ -69,7 +69,7 @@
 
 # Service Worker - 不缓存，确保总是获取最新版本
 /sw.js
-  Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+  Cache-Control: public, max-age=0, must-revalidate
   Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com
 
 # Manifest 文件 - 短缓存

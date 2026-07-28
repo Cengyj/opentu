@@ -16,6 +16,7 @@ import React, {
 } from 'react';
 import { Bot, Check, Image, Video } from 'lucide-react';
 import {
+  getDefaultDisplayModelsByType,
   getModelConfig,
   type ModelConfig,
   type ModelType,
@@ -30,6 +31,11 @@ import { HoverTip } from '../shared/hover';
 import { useProviderProfiles } from '../../hooks/use-provider-profiles';
 import { groupModelsByProvider } from '../../utils/model-grouping';
 import { sortModelsByDisplayPriority } from '../../utils/model-sort';
+
+const DEFAULT_SELECTOR_MODELS = [
+  ...getDefaultDisplayModelsByType('image'),
+  ...getDefaultDisplayModelsByType('video'),
+];
 
 export interface ModelSelectorProps {
   /** 是否可见 */
@@ -46,7 +52,7 @@ export interface ModelSelectorProps {
   onClose: () => void;
   /** 语言 */
   language?: 'zh' | 'en';
-  /** 模型列表（可选，默认为图片+视频模型） */
+  /** 模型列表（可选，默认为无 key 默认展示的图片+视频模型） */
   models?: ModelConfig[];
 }
 
@@ -61,7 +67,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   onSelect,
   onClose,
   language = 'zh',
-  models = [],
+  models = DEFAULT_SELECTOR_MODELS,
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(0);

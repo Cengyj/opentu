@@ -57,6 +57,8 @@ export async function generateVideo(
 
   // 创建任务记录
   const taskId = generateTaskId();
+  // 在首次异步持久化前标记为当前会话任务，避免与启动恢复竞态。
+  taskQueueService.claimTaskForCurrentSession(taskId);
   const now = Date.now();
   const invocationRoute = createTaskInvocationRouteSnapshot(
     'video',

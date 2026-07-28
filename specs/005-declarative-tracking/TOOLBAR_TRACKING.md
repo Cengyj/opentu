@@ -48,7 +48,6 @@ Added `data-track` prop support (using standard HTML data attribute):
 | Export JPG | `toolbar_click_menu_export_jpg` | Export as JPG |
 | Clean Board | `toolbar_click_menu_clean` | Clear all elements |
 | Settings | `toolbar_click_menu_settings` | Open settings dialog |
-| GitHub Link | `toolbar_click_menu_github` | Open GitHub repository |
 
 #### CreationToolbar
 **File**: `packages/drawnix/src/components/toolbar/creation-toolbar.tsx`
@@ -171,7 +170,7 @@ Each event will include metadata from the declarative tracking system:
 ```json
 {
   "version": "0.2.1",
-  "url": "https://foropencode.com/editor",
+  "url": "https://opentu.ai/editor",
   "timestamp": 1701849600000,
   "sessionId": "session-abc123",
   "eventType": "click",

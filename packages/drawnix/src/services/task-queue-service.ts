@@ -132,12 +132,7 @@ function areStorageSyncValuesEqual(left: unknown, right: unknown): boolean {
     return true;
   }
 
-  if (
-    left &&
-    right &&
-    typeof left === 'object' &&
-    typeof right === 'object'
-  ) {
+  if (left && right && typeof left === 'object' && typeof right === 'object') {
     const leftJson = stableStringify(left);
     const rightJson = stableStringify(right);
     return leftJson !== undefined && leftJson === rightJson;
@@ -146,7 +141,10 @@ function areStorageSyncValuesEqual(left: unknown, right: unknown): boolean {
   return false;
 }
 
-function hasStorageTaskChanges(task: Task, storageTask: Partial<Task>): boolean {
+function hasStorageTaskChanges(
+  task: Task,
+  storageTask: Partial<Task>
+): boolean {
   return STORAGE_SYNC_FIELDS.some((field) => {
     if (!(field in storageTask)) {
       return false;
@@ -235,10 +233,7 @@ function trackTaskAnalytics(
 
 function isTrackedTerminalTaskStatus(
   status: TaskStatus
-): status is
-  | TaskStatus.COMPLETED
-  | TaskStatus.FAILED
-  | TaskStatus.CANCELLED {
+): status is TaskStatus.COMPLETED | TaskStatus.FAILED | TaskStatus.CANCELLED {
   return (
     status === TaskStatus.COMPLETED ||
     status === TaskStatus.FAILED ||
@@ -428,6 +423,16 @@ class TaskQueueService {
   private tasks: Map<string, Task>;
   private taskUpdates$: Subject<TaskEvent>;
   private executingTasks = new Set<string>();
+  /**
+   * Task IDs created or explicitly retried by this page session.
+   *
+   * Startup restoration reads IndexedDB asynchronously. A task created while
+   * that read is in flight can appear in the storage snapshot as
+   * `processing`, but it is not an interrupted task from a previous page
+   * session. Keep this runtime-only ownership marker out of persisted task
+   * data so the restoration layer can distinguish the two cases.
+   */
+  private currentSessionTaskIds = new Set<string>();
   private taskAbortControllers = new Map<string, AbortController>();
   private blockedTaskIds = new Set<string>();
   private tasksWithStrippedParams = new Set<string>();
@@ -1937,6 +1942,7 @@ class TaskQueueService {
 
     // Add to queue
     this.tasks.set(task.id, task);
+    this.currentSessionTaskIds.add(task.id);
 
     // Persist to IndexedDB
     this.persistTask(task);
@@ -2071,6 +2077,26 @@ class TaskQueueService {
     return this.tasks.get(taskId);
   }
 
+  /**
+   * Returns whether a task was created or explicitly retried in this page
+   * session. This is intentionally runtime-only and is used by startup
+   * restoration to avoid treating a newly-started task as interrupted.
+   */
+  isTaskOwnedByCurrentSession(taskId: string): boolean {
+    return this.currentSessionTaskIds.has(taskId);
+  }
+
+  /**
+   * Claims an externally-created task before its first asynchronous storage
+   * write. This closes the small window where startup restoration could read
+   * the new processing task before trackExternalTask() registers it in memory.
+   */
+  claimTaskForCurrentSession(taskId: string): void {
+    if (taskId) {
+      this.currentSessionTaskIds.add(taskId);
+    }
+  }
+
   async getCompleteTask(taskId: string): Promise<Task | undefined> {
     const storedTask = await taskStorageReader.getTask(taskId);
     if (storedTask) {
@@ -2082,9 +2108,9 @@ class TaskQueueService {
   }
 
   async findImageTaskByResultUrl(imageUrl: string): Promise<Task | undefined> {
-    const memoryMatch = this
-      .getAllTasks()
-      .find((task) => imageTaskMatchesUrl(task, imageUrl));
+    const memoryMatch = this.getAllTasks().find((task) =>
+      imageTaskMatchesUrl(task, imageUrl)
+    );
     if (memoryMatch) {
       return this.getCompleteTask(memoryMatch.id);
     }
@@ -2157,10 +2183,7 @@ class TaskQueueService {
    *
    * @param taskId - The task ID to retry
    */
-  retryTask(
-    taskId: string,
-    options: { allowCompleted?: boolean } = {}
-  ): void {
+  retryTask(taskId: string, options: { allowCompleted?: boolean } = {}): void {
     const task = this.tasks.get(taskId);
     if (!task) {
       console.warn(`[TaskQueueService] Task ${taskId} not found`);
@@ -2188,6 +2211,7 @@ class TaskQueueService {
       previousErrorMessage: task.error?.message,
     });
     this.blockedTaskIds.delete(taskId);
+    this.currentSessionTaskIds.add(taskId);
     this.updateTaskStatus(taskId, TaskStatus.PROCESSING, {
       error: undefined,
       result: undefined,
@@ -2231,6 +2255,7 @@ class TaskQueueService {
 
     this.blockedTaskIds.add(taskId);
     this.tasks.delete(taskId);
+    this.currentSessionTaskIds.delete(taskId);
     this.tasksWithStrippedParams.delete(taskId);
 
     // Delete from IndexedDB
@@ -2267,6 +2292,10 @@ class TaskQueueService {
    */
   trackExternalTask(task: Task): void {
     this.blockedTaskIds.delete(task.id);
+    // Mark ownership before the idempotency guard. Startup restoration may
+    // have loaded the just-persisted external task while its creator awaited
+    // IndexedDB, in which case it already exists in the in-memory Map.
+    this.currentSessionTaskIds.add(task.id);
     if (this.tasks.has(task.id)) return;
     const trackedTask: Task = task.invocationRoute
       ? task

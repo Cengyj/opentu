@@ -1,5 +1,4 @@
 import { PlaitBoard, Transforms } from '@plait/core';
-import { openExternalLink } from '../utils/external-link-policy';
 
 /**
  * 为 PlaitBoard 添加视频支持的插件
@@ -92,7 +91,7 @@ export function handleVideoElementClick(element: any, event: MouseEvent) {
     
     // 在新窗口打开视频
     if (element.url) {
-      openExternalLink(element.url);
+      window.open(element.url, '_blank');
       return true;
     }
   }

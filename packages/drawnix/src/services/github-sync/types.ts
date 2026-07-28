@@ -824,6 +824,8 @@ export interface GistFile {
 /** Gist 响应 */
 export interface GistResponse {
   id: string;
+  url: string;
+  html_url: string;
   description: string;
   public: boolean;
   files: Record<string, GistFile>;

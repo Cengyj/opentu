@@ -33,14 +33,20 @@ The system SHALL allow users to fetch a provider's available model list using th
 
 ### Requirement: Reuse Runtime Model Lists Across Selectors
 
-All model selectors that currently depend on static model lists SHALL resolve models from provider-scoped catalogs while preserving provider provenance, with static models remaining available as system defaults.
+All model selectors that currently depend on static model lists SHALL resolve models from provider-scoped catalogs while preserving provider provenance. Static models SHALL remain available only as built-in defaults before an enabled provider has an authoritative catalog.
 
 #### Scenario: Selectors show enabled provider-backed models grouped by provider
 
 - **GIVEN** one or more enabled provider profiles have selected models in their catalogs
 - **WHEN** the user opens an image, video, or text model selector
 - **THEN** the selector SHALL show the selected provider-backed models grouped by provider
-- **AND** SHALL continue to expose system models as fallback options
+- **AND** SHALL not expose unselected system models as fallback options
+
+#### Scenario: Fresh configuration uses system defaults
+
+- **GIVEN** no enabled provider has an authoritative model catalog
+- **WHEN** the user opens a model selector
+- **THEN** the selector SHALL expose the curated system default-display models for that modality
 
 #### Scenario: Preset switching updates default selection without hiding provider models
 

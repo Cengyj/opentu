@@ -8,10 +8,9 @@ describe('settings-repository', () => {
   it('uses the saved legacy provider type and auth type in snapshots', async () => {
     vi.doMock('../../utils/settings-manager', () => ({
       DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
-      LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
-      FOROPENCODE_DEFAULT_PROVIDER_NAME: 'ForOpenCode',
-      FOROPENCODE_PROVIDER_DEFAULT_BASE_URL: 'https://foropencode.com/v1',
+      FOR_DEFAULT_PROVIDER_NAME: 'default 分组',
+      FOR_PROVIDER_DEFAULT_BASE_URL: 'https://foropencode.com/v1',
       createModelRef: (profileId?: string | null, modelId?: string | null) => ({
         profileId: profileId ?? null,
         modelId: modelId ?? null,
@@ -64,20 +63,19 @@ describe('settings-repository', () => {
 
     expect(profiles[0]).toMatchObject({
       id: 'legacy-default',
-      name: 'ForOpenCode',
+      name: 'default 分组',
       providerType: 'custom',
       authType: 'query',
       imageApiCompatibility: 'openai-gpt-image',
     });
   });
 
-  it('normalizes saved legacy image compatibility overrides in snapshots', async () => {
+  it('preserves saved generic image compatibility overrides in snapshots', async () => {
     vi.doMock('../../utils/settings-manager', () => ({
       DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
-      LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: 'openai-gpt-image',
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
-      FOROPENCODE_DEFAULT_PROVIDER_NAME: 'ForOpenCode',
-      FOROPENCODE_PROVIDER_DEFAULT_BASE_URL: 'https://foropencode.com/v1',
+      FOR_DEFAULT_PROVIDER_NAME: 'default 分组',
+      FOR_PROVIDER_DEFAULT_BASE_URL: 'https://foropencode.com/v1',
       createModelRef: (profileId?: string | null, modelId?: string | null) => ({
         profileId: profileId ?? null,
         modelId: modelId ?? null,
@@ -100,7 +98,7 @@ describe('settings-repository', () => {
             baseUrl: 'https://foropencode.com/v1',
             apiKey: 'legacy-key',
             authType: 'query',
-            imageApiCompatibility: 'tuzi-gpt-image',
+            imageApiCompatibility: 'openai-compatible-basic',
             enabled: true,
             capabilities: {
               supportsModelsEndpoint: true,
@@ -130,7 +128,7 @@ describe('settings-repository', () => {
     const profiles = listSettingsProviderProfiles();
 
     expect(profiles[0]).toMatchObject({
-      imageApiCompatibility: 'openai-gpt-image',
+      imageApiCompatibility: 'openai-compatible-basic',
     });
   });
 });

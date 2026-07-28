@@ -13,7 +13,7 @@
 | 名称 | Opentu (开图) - AI 图片与视频创作工具 |
 | 版本 | 0.5.0 |
 | 许可证 | MIT |
-| 官网 | https://foropencode.com |
+| 官网 | https://opentu.ai |
 
 ---
 

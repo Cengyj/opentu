@@ -20,8 +20,6 @@ export type ImageApiCompatibility =
 
 export const DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: ImageApiCompatibility =
   'openai-gpt-image';
-export const LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY: ImageApiCompatibility =
-  'openai-gpt-image';
 
 export interface ProviderCapabilities {
   supportsModelsEndpoint: boolean;
@@ -42,6 +40,7 @@ export interface ProviderProfile {
   apiKey: string;
   authType: ProviderAuthType;
   imageApiCompatibility?: ImageApiCompatibility;
+  preferAsyncImageEndpoint?: boolean;
   extraHeaders?: Record<string, string>;
   enabled: boolean;
   capabilities: ProviderCapabilities;
@@ -80,7 +79,7 @@ export interface InvocationPreset {
 }
 
 export interface SettingsMigrations {
-  legacyDefaultImageApiCompatibilityV1?: boolean;
+  legacyDefaultImageModelV1?: boolean;
 }
 
 export interface TtsSettings {

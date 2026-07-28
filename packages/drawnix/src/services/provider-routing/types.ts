@@ -1,4 +1,4 @@
-﻿import type { ModelType } from '../../constants/model-config';
+import type { ModelType } from '../../constants/model-config';
 import type {
   ImageApiCompatibility,
   ModelRef,
@@ -96,6 +96,7 @@ export interface ProviderProfileSnapshot
     | 'baseUrl'
     | 'apiKey'
     | 'imageApiCompatibility'
+    | 'preferAsyncImageEndpoint'
     | 'extraHeaders'
   > {
   authType: ProviderAuthStrategy;

@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   AdapterContext,
   VideoGenerationRequest,
   VideoModelAdapter,
@@ -270,7 +270,7 @@ export const seedanceVideoAdapter: VideoModelAdapter = {
       );
       attempts += 1;
 
-      let isBusinessFailure = false;
+      let isTerminalTaskFailure = false;
 
       try {
         const status = await querySeedanceVideo(context, taskId);
@@ -299,11 +299,11 @@ export const seedanceVideoAdapter: VideoModelAdapter = {
         }
 
         if (status.status === 'failed') {
-          isBusinessFailure = true;
+          isTerminalTaskFailure = true;
           throw new Error(extractErrorMessage(status.error));
         }
       } catch (err: any) {
-        if (isBusinessFailure) {
+        if (isTerminalTaskFailure) {
           throw err;
         }
 

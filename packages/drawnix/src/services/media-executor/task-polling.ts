@@ -15,7 +15,7 @@ import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
 export interface PollingOptions {
   /** 轮询间隔（毫秒），默认 1000 */
   interval?: number;
-  /** 最大等待时间（毫秒），默认 35 分钟 */
+  /** 最大等待时间（毫秒），默认 15 分钟 */
   timeout?: number;
   /** 取消信号 */
   signal?: AbortSignal;

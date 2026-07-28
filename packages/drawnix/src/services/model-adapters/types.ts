@@ -26,7 +26,6 @@ export interface AdapterContext {
 
 export interface AdapterMetadata {
   id: string;
-  legacyIds?: string[];
   label: string;
   kind: ModelKind;
   docsUrl?: string;

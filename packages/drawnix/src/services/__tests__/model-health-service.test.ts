@@ -6,7 +6,7 @@ import {
   matchModelHealth,
   parseHealthGroupName,
   shouldFetchModelHealthForSelections,
-  isForOpenCodeApiUrl,
+  isHealthStatusEligibleBaseUrl,
   type ModelHealthResponse,
 } from '../model-health-service';
 
@@ -77,32 +77,23 @@ describe('model-health-service', () => {
     );
   });
 
-  it('detects foropencode.com hostnames only', () => {
-    expect(isForOpenCodeApiUrl('https://foropencode.com/v1')).toBe(true);
-    expect(isForOpenCodeApiUrl('foropencode.com/api')).toBe(true);
-    expect(isForOpenCodeApiUrl('https://example.com/v1')).toBe(false);
+  it('detects health status eligible provider hostnames only', () => {
+    expect(isHealthStatusEligibleBaseUrl('foropencode.com/api')).toBe(true);
+    expect(isHealthStatusEligibleBaseUrl('https://foropencode.com/v1')).toBe(
+      true
+    );
+    expect(isHealthStatusEligibleBaseUrl('status.example.com/api')).toBe(
+      false
+    );
+    expect(isHealthStatusEligibleBaseUrl('https://not-foropencode.com/v1')).toBe(
+      false
+    );
   });
 
-  it('does not fetch health without an explicit health status endpoint', () => {
-    expect(
-      shouldFetchModelHealthForSelections(
-        [{ modelId: 'gpt-image-2', profileId: 'foropencode-active' }],
-        [
-          {
-            id: 'foropencode-active',
-            baseUrl: 'https://foropencode.com/v1',
-            enabled: true,
-          },
-        ],
-        'https://foropencode.com/v1'
-      )
-    ).toBe(false);
-  });
-
-  it('does not fetch health when selected models use non-ForOpenCode providers', () => {
+  it('does not fetch health when selected models use ineligible providers', () => {
     const providers = [
       {
-        id: 'foropencode-idle',
+        id: 'for-idle',
         baseUrl: 'https://foropencode.com/v1',
         enabled: true,
       },
@@ -117,16 +108,15 @@ describe('model-health-service', () => {
       shouldFetchModelHealthForSelections(
         [{ modelId: 'gpt-image-2', profileId: 'openai-active' }],
         providers,
-        'https://api.openai.com/v1',
-        'https://status.example.com'
+        'https://api.openai.com/v1'
       )
     ).toBe(false);
   });
 
-  it('fetches health when any selected model uses a foropencode.com provider', () => {
+  it('fetches health when any selected model uses an eligible provider', () => {
     const providers = [
       {
-        id: 'foropencode-active',
+        id: 'for-active',
         baseUrl: 'https://foropencode.com/v1',
         enabled: true,
       },
@@ -141,11 +131,10 @@ describe('model-health-service', () => {
       shouldFetchModelHealthForSelections(
         [
           { modelId: 'custom-model', profileId: 'custom-active' },
-          { modelId: 'gpt-image-2', profileId: 'foropencode-active' },
+          { modelId: 'gpt-image-2', profileId: 'for-active' },
         ],
         providers,
-        'https://gateway.example.com/v1',
-        'https://status.example.com'
+        'https://gateway.example.com/v1'
       )
     ).toBe(true);
   });

@@ -147,11 +147,7 @@ function generateNpmPackageJson(version) {
       'assets',
       'cdn',
     ],
-    homepage: 'https://foropencode.com',
-    repository: {
-      type: 'git',
-      url: 'https://github.com/ljquan/aitu.git'
-    },
+    homepage: 'https://opentu.ai',
     license: 'MIT',
     author: 'ljquan',
     files: ['**/*'],

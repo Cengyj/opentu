@@ -510,7 +510,7 @@ async function restoreEnvironmentSecrets(
       imported++;
     } catch (error) {
       warnings.push(
-        `同步访问令牌未恢复：${error instanceof Error ? error.message : String(error)}`
+        `GitHub Token 未恢复：${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

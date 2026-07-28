@@ -296,7 +296,7 @@ async function refreshGistData() {
     // 1. Get Token
     const encryptedToken = localStorage.getItem('github_sync_token');
     if (!encryptedToken) {
-      throw new Error('未找到同步访问令牌');
+      throw new Error('未找到 GitHub Token');
     }
 
     try {
@@ -354,7 +354,7 @@ async function refreshGistData() {
 }
 
 // ====================================
-// 远程同步 API
+// GitHub API
 // ====================================
 
 async function fetchGist(gistId) {
@@ -366,7 +366,7 @@ async function fetchGist(gistId) {
   });
 
   if (!response.ok) {
-    throw new Error(`远程同步 API 错误: ${response.status}`);
+    throw new Error(`GitHub API 错误: ${response.status}`);
   }
 
   return response.json();
@@ -1871,13 +1871,13 @@ function openSyncLogDb() {
 // --- Connection Tests ---
 
 async function debugTestConnection() {
-  debugLog('info', '开始测试远程同步 API 连接...');
+  debugLog('info', '开始测试 GitHub API 连接...');
 
   try {
     // Check token
     const encryptedToken = localStorage.getItem('github_sync_token');
     if (!encryptedToken) {
-      debugLog('error', '访问令牌未配置', '请先在应用中配置同步访问令牌');
+      debugLog('error', 'Token 未配置', '请先在应用中配置 GitHub Token');
       return;
     }
 
@@ -2653,7 +2653,7 @@ async function ensureToken() {
 
   const encryptedToken = localStorage.getItem('github_sync_token');
   if (!encryptedToken) {
-    throw new Error('未配置同步访问令牌');
+    throw new Error('未配置 GitHub Token');
   }
   currentToken = await decryptToken(encryptedToken);
 }

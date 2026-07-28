@@ -118,7 +118,6 @@ type ToolButtonBaseProps = {
    - Export JPG: `data-track="toolbar_click_menu_export_jpg"`
    - Clean: `data-track="toolbar_click_menu_clean"`
    - Settings: `data-track="toolbar_click_menu_settings"`
-   - GitHub: `data-track="toolbar_click_menu_github"`
 
 5. **creation-toolbar.tsx** - 所有创建工具按钮
    - Popover buttons: `data-track={\`toolbar_click_${popupKey}\`}`

@@ -6,6 +6,503 @@ describe('runtime-model-discovery', () => {
     vi.unstubAllGlobals();
   });
 
+  const mockSettingsManager = ({
+    catalogs = [],
+    profiles = [],
+  }: {
+    catalogs?: Array<Record<string, unknown>>;
+    profiles?: Array<Record<string, unknown>>;
+  } = {}) => {
+    vi.doMock('../settings-manager', () => ({
+      LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
+      providerCatalogsSettings: {
+        get: () => catalogs,
+        addListener: () => {},
+        removeListener: () => {},
+        update: async () => {},
+      },
+      providerProfilesSettings: {
+        get: () => profiles,
+        addListener: () => {},
+        removeListener: () => {},
+      },
+      invocationPresetsSettings: {
+        addListener: () => {},
+        removeListener: () => {},
+      },
+      settingsManager: {
+        getSetting: () => ({}),
+        addListener: () => {},
+        removeListener: () => {},
+      },
+    }));
+  };
+
+  it('空 provider catalog 时文本选择器只展示精简默认模型', async () => {
+    mockSettingsManager();
+
+    const { getSelectableModels } = await import('../runtime-model-discovery');
+
+    expect(getSelectableModels('text').map((model) => model.id)).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+    ]);
+  });
+
+  it('空 provider catalog 时图片选择器只展示 gpt-image-2', async () => {
+    mockSettingsManager();
+
+    const { getSelectableModels } = await import('../runtime-model-discovery');
+
+    expect(getSelectableModels('image').map((model) => model.id)).toEqual([
+      'gpt-image-2',
+    ]);
+  });
+
+  it('空 provider catalog 时视频和音频选择器不展示默认模型', async () => {
+    mockSettingsManager();
+
+    const { getSelectableModels } = await import('../runtime-model-discovery');
+
+    expect(getSelectableModels('video')).toEqual([]);
+    expect(getSelectableModels('audio')).toEqual([]);
+  });
+
+  it('设置页 profile 模型候选同样使用精简默认展示列表', async () => {
+    mockSettingsManager();
+
+    const { getProfilePreferredModels } = await import(
+      '../runtime-model-discovery'
+    );
+
+    expect(
+      getProfilePreferredModels('legacy-default', 'text').map(
+        (model) => model.id
+      )
+    ).toEqual(['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']);
+    expect(
+      getProfilePreferredModels('legacy-default', 'image').map(
+        (model) => model.id
+      )
+    ).toEqual(['gpt-image-2']);
+    expect(getProfilePreferredModels('legacy-default', 'video')).toEqual([]);
+    expect(getProfilePreferredModels('legacy-default', 'audio')).toEqual([]);
+  });
+
+  it('显式静态文本选择可 pin，其他类型仍受默认展示限制', async () => {
+    mockSettingsManager();
+
+    const { getPinnedSelectableModel } = await import(
+      '../runtime-model-discovery'
+    );
+
+    expect(getPinnedSelectableModel('text', 'gpt-5.5')).toMatchObject({
+      id: 'gpt-5.5',
+    });
+    expect(getPinnedSelectableModel('text', 'gpt-5.4')).toMatchObject({
+      id: 'gpt-5.4',
+    });
+    expect(getPinnedSelectableModel('text', 'gpt-5.4-mini')).toMatchObject({
+      id: 'gpt-5.4-mini',
+    });
+    expect(getPinnedSelectableModel('image', 'gpt-image-2')).toMatchObject({
+      id: 'gpt-image-2',
+    });
+    expect(getPinnedSelectableModel('image', 'gpt-image-2-vip')).toBeNull();
+    expect(getPinnedSelectableModel('video', 'seedance-1.5-pro')).toBeNull();
+    expect(getPinnedSelectableModel('audio', 'suno_music')).toBeNull();
+  });
+
+  it('供应商模式只展示用户已选择的运行时模型', async () => {
+    mockSettingsManager({
+      profiles: [
+        {
+          id: 'custom-provider',
+          name: 'Custom Provider',
+          enabled: true,
+        },
+      ],
+      catalogs: [
+        {
+          profileId: 'custom-provider',
+          discoveredAt: Date.now(),
+          discoveredModels: [
+            {
+              id: 'custom-text-model',
+              label: 'Custom Text Model',
+              shortLabel: 'Custom Text Model',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+            {
+              id: 'custom-video-model',
+              label: 'Custom Video Model',
+              shortLabel: 'Custom Video Model',
+              type: 'video',
+              vendor: 'OTHER',
+            },
+            {
+              id: 'unselected-text-model',
+              label: 'Unselected Text Model',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+          ],
+          selectedModelIds: ['custom-text-model', 'custom-video-model'],
+        },
+      ],
+    });
+
+    const { getSelectableModels } = await import('../runtime-model-discovery');
+
+    expect(getSelectableModels('text').map((model) => model.id)).toEqual([
+      'custom-text-model',
+    ]);
+    expect(getSelectableModels('video').map((model) => model.id)).toEqual([
+      'custom-video-model',
+    ]);
+    expect(getSelectableModels('image')).toEqual([]);
+    expect(getSelectableModels('audio')).toEqual([]);
+  });
+
+  it('供应商明确选择旧 GPT 模型后仍可显示和使用', async () => {
+    mockSettingsManager({
+      profiles: [
+        {
+          id: 'custom-provider',
+          name: 'Custom Provider',
+          enabled: true,
+        },
+      ],
+      catalogs: [
+        {
+          profileId: 'custom-provider',
+          discoveredAt: Date.now(),
+          discoveredModels: [
+            {
+              id: 'gpt-5.5',
+              label: 'gpt-5.5',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+            {
+              id: 'gpt-5.4',
+              label: 'gpt-5.4',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+          ],
+          selectedModelIds: ['gpt-5.5', 'gpt-5.4'],
+        },
+      ],
+    });
+
+    const { getSelectableModels } = await import('../runtime-model-discovery');
+    const selectableModels = getSelectableModels('text');
+
+    expect(selectableModels.map((model) => model.id).sort()).toEqual([
+      'gpt-5.4',
+      'gpt-5.5',
+    ]);
+    expect(selectableModels.map((model) => model.selectionKey).sort()).toEqual([
+      'custom-provider::gpt-5.4',
+      'custom-provider::gpt-5.5',
+    ]);
+  });
+
+  it('多供应商只合并启用供应商的已选模型', async () => {
+    mockSettingsManager({
+      profiles: [
+        { id: 'provider-a', name: 'Provider A', enabled: true },
+        { id: 'provider-b', name: 'Provider B', enabled: true },
+        { id: 'provider-disabled', name: 'Disabled', enabled: false },
+      ],
+      catalogs: [
+        {
+          profileId: 'provider-a',
+          discoveredAt: Date.now(),
+          discoveredModels: [
+            {
+              id: 'shared-model',
+              label: 'Shared A',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+            {
+              id: 'a-unselected',
+              label: 'A Unselected',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+          ],
+          selectedModelIds: ['shared-model'],
+        },
+        {
+          profileId: 'provider-b',
+          discoveredAt: Date.now(),
+          discoveredModels: [
+            {
+              id: 'shared-model',
+              label: 'Shared B',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+            {
+              id: 'provider-b-model',
+              label: 'Provider B Model',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+          ],
+          selectedModelIds: ['shared-model', 'provider-b-model'],
+        },
+        {
+          profileId: 'provider-disabled',
+          discoveredAt: Date.now(),
+          discoveredModels: [
+            {
+              id: 'disabled-model',
+              label: 'Disabled Model',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+          ],
+          selectedModelIds: ['disabled-model'],
+        },
+      ],
+    });
+
+    const { getPinnedSelectableModel, getSelectableModels } = await import(
+      '../runtime-model-discovery'
+    );
+    const selectableModels = getSelectableModels('text');
+
+    expect(selectableModels.map((model) => model.selectionKey).sort()).toEqual([
+      'provider-a::shared-model',
+      'provider-b::provider-b-model',
+      'provider-b::shared-model',
+    ]);
+    expect(
+      getPinnedSelectableModel('text', 'disabled-model', {
+        profileId: 'provider-disabled',
+        modelId: 'disabled-model',
+      })
+    ).toBeNull();
+    expect(getPinnedSelectableModel('text', 'shared-model')).toBeNull();
+  });
+
+  it('用户选择的 GPT-5.6 运行时模型保留供应商来源', async () => {
+    mockSettingsManager({
+      profiles: [
+        {
+          id: 'custom-provider',
+          name: 'Custom Provider',
+          enabled: true,
+        },
+      ],
+      catalogs: [
+        {
+          profileId: 'custom-provider',
+          discoveredAt: Date.now(),
+          discoveredModels: [
+            {
+              id: 'gpt-5.6-terra',
+              label: 'gpt-5.6-terra',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+          ],
+          selectedModelIds: ['gpt-5.6-terra'],
+        },
+      ],
+    });
+
+    const { getSelectableModels, runtimeModelDiscovery } = await import(
+      '../runtime-model-discovery'
+    );
+    const runtimeModel = getSelectableModels('text').find(
+      (model) => model.selectionKey === 'custom-provider::gpt-5.6-terra'
+    );
+
+    expect(runtimeModel).toMatchObject({
+      id: 'gpt-5.6-terra',
+      label: 'GPT-5.6 Terra',
+      type: 'text',
+      vendor: 'GPT',
+      sourceProfileId: 'custom-provider',
+      selectionKey: 'custom-provider::gpt-5.6-terra',
+    });
+    expect(
+      runtimeModelDiscovery.getSelectedModelIds('custom-provider')
+    ).toEqual(['gpt-5.6-terra']);
+  });
+
+  it('新密钥目录生效后不会把旧密钥模型重新钉回选择器', async () => {
+    mockSettingsManager({
+      profiles: [
+        {
+          id: 'custom-provider',
+          name: 'Custom Provider',
+          enabled: true,
+        },
+      ],
+      catalogs: [
+        {
+          profileId: 'custom-provider',
+          discoveredAt: Date.now(),
+          signature: 'new-key-signature',
+          discoveredModels: [
+            {
+              id: 'new-key-text-model',
+              label: 'New Key Text Model',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+          ],
+          selectedModelIds: ['new-key-text-model'],
+        },
+      ],
+    });
+
+    const { getPinnedSelectableModel, getSelectableModels } = await import(
+      '../runtime-model-discovery'
+    );
+
+    expect(getSelectableModels('text').map((model) => model.id)).toEqual([
+      'new-key-text-model',
+    ]);
+    expect(
+      getPinnedSelectableModel('text', 'old-key-text-model', {
+        profileId: 'custom-provider',
+        modelId: 'old-key-text-model',
+      })
+    ).toBeNull();
+    expect(getPinnedSelectableModel('text', 'gpt-5.6-sol')).toBeNull();
+  });
+
+  it('清空供应商凭据和目录后恢复内置默认展示', async () => {
+    mockSettingsManager({
+      profiles: [
+        {
+          id: 'custom-provider',
+          name: 'Custom Provider',
+          enabled: true,
+        },
+      ],
+      catalogs: [
+        {
+          profileId: 'custom-provider',
+          discoveredAt: Date.now(),
+          signature: 'old-key-signature',
+          discoveredModels: [
+            {
+              id: 'old-key-text-model',
+              label: 'Old Key Text Model',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+          ],
+          selectedModelIds: ['old-key-text-model'],
+        },
+      ],
+    });
+
+    const { getSelectableModels, runtimeModelDiscovery } = await import(
+      '../runtime-model-discovery'
+    );
+
+    runtimeModelDiscovery.invalidateIfConfigChanged(
+      'custom-provider',
+      'https://api.example.com/v1',
+      '',
+      true
+    );
+
+    expect(runtimeModelDiscovery.isProviderSelectionMode()).toBe(false);
+    expect(getSelectableModels('text').map((model) => model.id)).toEqual([
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+    ]);
+  });
+
+  it('没有获取过模型目录的供应商仍允许保留手工模型引用', async () => {
+    mockSettingsManager({
+      profiles: [
+        {
+          id: 'manual-provider',
+          name: 'Manual Provider',
+          enabled: true,
+        },
+      ],
+    });
+
+    const { getPinnedSelectableModel } = await import(
+      '../runtime-model-discovery'
+    );
+
+    expect(
+      getPinnedSelectableModel('text', 'manual-text-model', {
+        profileId: 'manual-provider',
+        modelId: 'manual-text-model',
+      })
+    ).toMatchObject({
+      id: 'manual-text-model',
+      sourceProfileId: 'manual-provider',
+    });
+  });
+
+  it('密钥改变后立即废弃旧目录，不等待下一次获取模型成功', async () => {
+    mockSettingsManager({
+      profiles: [
+        {
+          id: 'custom-provider',
+          name: 'Custom Provider',
+          enabled: true,
+        },
+      ],
+      catalogs: [
+        {
+          profileId: 'custom-provider',
+          discoveredAt: Date.now(),
+          sourceBaseUrl: 'https://api.example.com/v1',
+          discoveredModels: [
+            {
+              id: 'old-key-text-model',
+              label: 'Old Key Text Model',
+              type: 'text',
+              vendor: 'OTHER',
+            },
+          ],
+          selectedModelIds: ['old-key-text-model'],
+        },
+      ],
+    });
+
+    const { getPinnedSelectableModel, runtimeModelDiscovery } = await import(
+      '../runtime-model-discovery'
+    );
+
+    runtimeModelDiscovery.invalidateIfConfigChanged(
+      'custom-provider',
+      'https://api.example.com/v1',
+      'new-key',
+      true
+    );
+
+    const state = runtimeModelDiscovery.getState('custom-provider');
+    expect(state.discoveredModels).toEqual([]);
+    expect(state.selectedModelIds).toEqual([]);
+    expect(state.signature).not.toBe('');
+    expect(
+      getPinnedSelectableModel('text', 'old-key-text-model', {
+        profileId: 'custom-provider',
+        modelId: 'old-key-text-model',
+      })
+    ).toBeNull();
+  });
+
   it('不会把图片模型钉到音频类型列表里', async () => {
     vi.doMock('../settings-manager', () => ({
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
@@ -66,85 +563,38 @@ describe('runtime-model-discovery', () => {
   });
 
   it('主流最新静态模型可被初始选择器解析', async () => {
-    const { getStaticModelConfig } = await import('../../constants/model-config');
+    const { getStaticModelConfig } = await import(
+      '../../constants/model-config'
+    );
 
+    expect(getStaticModelConfig('gpt-5.6-sol')).toMatchObject({
+      label: 'GPT-5.6 Sol',
+      shortCode: 'g56s',
+      type: 'text',
+      vendor: 'GPT',
+      recommendedScore: 102,
+    });
+    expect(getStaticModelConfig('gpt-5.6-terra')).toMatchObject({
+      label: 'GPT-5.6 Terra',
+      shortCode: 'g56t',
+      type: 'text',
+      vendor: 'GPT',
+      recommendedScore: 101,
+    });
+    expect(getStaticModelConfig('gpt-5.6-luna')).toMatchObject({
+      label: 'GPT-5.6 Luna',
+      shortCode: 'g56l',
+      type: 'text',
+      vendor: 'GPT',
+      recommendedScore: 100,
+    });
+    expect(getStaticModelConfig('gpt-5.5')?.type).toBe('text');
+    expect(getStaticModelConfig('gpt-5.4')?.type).toBe('text');
+    expect(getStaticModelConfig('gpt-5.4-mini')?.type).toBe('text');
     expect(getStaticModelConfig('gpt-5.1')?.type).toBe('text');
     expect(getStaticModelConfig('claude-sonnet-4-6')?.type).toBe('text');
     expect(getStaticModelConfig('seedream-v4')?.type).toBe('image');
     expect(getStaticModelConfig('veo3-fast-frames')?.type).toBe('video');
-  });
-
-  it('默认分组初始展示来自 ForOpenCode 本地快照而不是静态模型全集', async () => {
-    vi.doMock('../settings-manager', () => ({
-      LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
-      FOROPENCODE_DEFAULT_PROVIDER_NAME: 'default 分组',
-      FOROPENCODE_PROVIDER_ICON_URL: '/logo-foropencode.png',
-      providerCatalogsSettings: {
-        get: () => [],
-        addListener: () => {},
-        removeListener: () => {},
-        update: async () => {},
-      },
-      providerProfilesSettings: {
-        get: () => [
-          {
-            id: 'legacy-default',
-            name: 'default 分组',
-            enabled: true,
-          },
-        ],
-        addListener: () => {},
-        removeListener: () => {},
-      },
-      invocationPresetsSettings: {
-        addListener: () => {},
-        removeListener: () => {},
-      },
-      settingsManager: {
-        getSetting: () => ({}),
-        addListener: () => {},
-        removeListener: () => {},
-      },
-    }));
-
-    const { FOROPENCODE_DEFAULT_MODEL_IDS } = await import(
-      '../../constants/for-default-models'
-    );
-    const { ModelVendor } = await import('../../constants/model-config');
-    const { groupModelsByProvider } = await import('../model-grouping');
-    const { getSelectableModels, runtimeModelDiscovery } = await import(
-      '../runtime-model-discovery'
-    );
-
-    const state = runtimeModelDiscovery.getState('legacy-default');
-    const imageModels = getSelectableModels('image');
-    const textModels = getSelectableModels('text');
-    const defaultDisplayModels = [...imageModels, ...textModels];
-    const defaultDisplayIds = defaultDisplayModels.map((model) => model.id);
-
-    expect(state.models.map((model) => model.id)).toEqual([
-      ...FOROPENCODE_DEFAULT_MODEL_IDS,
-    ]);
-    expect(new Set(defaultDisplayIds)).toEqual(
-      new Set(FOROPENCODE_DEFAULT_MODEL_IDS)
-    );
-    expect(defaultDisplayIds).not.toContain('gemini-3-pro-image-preview');
-    expect(defaultDisplayIds).not.toContain('claude-sonnet-4-6');
-    expect(defaultDisplayIds).not.toContain('seedream-v4');
-    expect(defaultDisplayIds.some((id) => id.endsWith('openai-compact'))).toBe(
-      false
-    );
-
-    const vendorTabs = groupModelsByProvider(defaultDisplayModels, [
-      {
-        id: 'legacy-default',
-        name: 'default 分组',
-        enabled: true,
-      },
-    ]).flatMap((group) =>
-      group.vendorCategories.map((category) => category.vendor)
-    );
-    expect(new Set(vendorTabs)).toEqual(new Set([ModelVendor.GPT]));
   });
 
   it('应用模型选择时会返回新增和移除增量', async () => {
@@ -207,14 +657,19 @@ describe('runtime-model-discovery', () => {
       },
     }));
 
-    const { runtimeModelDiscovery } = await import('../runtime-model-discovery');
+    const { runtimeModelDiscovery } = await import(
+      '../runtime-model-discovery'
+    );
 
     const result = runtimeModelDiscovery.applySelection('provider-text', [
       'model-b',
       'model-c',
     ]);
 
-    expect(result.models.map((model) => model.id)).toEqual(['model-b', 'model-c']);
+    expect(result.models.map((model) => model.id)).toEqual([
+      'model-b',
+      'model-c',
+    ]);
     expect(result.addedModelIds).toEqual(['model-c']);
     expect(result.removedModelIds).toEqual(['model-a']);
   });
@@ -266,7 +721,9 @@ describe('runtime-model-discovery', () => {
       },
     }));
 
-    const { runtimeModelDiscovery } = await import('../runtime-model-discovery');
+    const { runtimeModelDiscovery } = await import(
+      '../runtime-model-discovery'
+    );
     const state = runtimeModelDiscovery.getState('provider-happyhorse');
 
     expect(state.discoveredModels[0]).toMatchObject({
@@ -320,7 +777,9 @@ describe('runtime-model-discovery', () => {
       },
     }));
 
-    const { runtimeModelDiscovery } = await import('../runtime-model-discovery');
+    const { runtimeModelDiscovery } = await import(
+      '../runtime-model-discovery'
+    );
 
     const models = await runtimeModelDiscovery.discover(
       'provider-happyhorse',
@@ -335,27 +794,25 @@ describe('runtime-model-discovery', () => {
     });
   });
 
-  it('默认分组自动展示只保留允许的 GPT 模型且不裁剪发现结果', async () => {
-    const returnedModelIds = [
-      'gpt-image-2',
-      'gpt-image-2-vip',
-      'gpt-draw-1024x1536',
-      'gpt-4.1-mini-openai-compact',
-      'gpt-5.4-openai-compact',
-      'gpt-image-3-openai-compact',
-      'gpt-5.5',
-      'claude-sonnet-4-6',
-      'gemini-3-pro',
-    ];
-    const catalogs: unknown[] = [];
-
+  it('运行时发现 Omni Flash 系列会识别为 Gemini 供应商', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => ({
         ok: true,
         text: async () =>
           JSON.stringify({
-            data: returnedModelIds.map((id) => ({ id })),
+            data: [
+              {
+                id: 'omni-flash',
+                owned_by: 'openai',
+                supported_endpoint_types: ['videos.generate'],
+              },
+              {
+                id: 'omni-flash-components',
+                owned_by: 'openai',
+                supported_endpoint_types: ['videos.generate'],
+              },
+            ],
           }),
       }))
     );
@@ -363,134 +820,16 @@ describe('runtime-model-discovery', () => {
     vi.doMock('../settings-manager', () => ({
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
       providerCatalogsSettings: {
-        get: () => catalogs,
+        get: () => [],
         addListener: () => {},
         removeListener: () => {},
-        update: async (nextCatalogs: unknown[]) => {
-          catalogs.splice(0, catalogs.length, ...nextCatalogs);
-        },
+        update: async () => {},
       },
       providerProfilesSettings: {
         get: () => [
           {
-            id: 'legacy-default',
-            name: 'default 分组',
-            enabled: true,
-          },
-        ],
-        addListener: () => {},
-        removeListener: () => {},
-      },
-      invocationPresetsSettings: {
-        addListener: () => {},
-        removeListener: () => {},
-      },
-      settingsManager: {
-        getSetting: () => ({}),
-        addListener: () => {},
-        removeListener: () => {},
-      },
-    }));
-
-    const {
-      isDefaultGroupAutoVisibleModel,
-      runtimeModelDiscovery,
-    } = await import('../runtime-model-discovery');
-
-    const discoveredModels = await runtimeModelDiscovery.discover(
-      'legacy-default',
-      'https://foropencode.com/v1',
-      'test-key'
-    );
-    const state = runtimeModelDiscovery.getState('legacy-default');
-
-    expect(discoveredModels.map((model) => model.id)).toEqual(returnedModelIds);
-    expect(state.discoveredModels.map((model) => model.id)).toEqual(
-      returnedModelIds
-    );
-    expect(state.selectedModelIds).toEqual(['gpt-image-2', 'gpt-5.5']);
-    expect(state.models.map((model) => model.id)).toEqual([
-      'gpt-image-2',
-      'gpt-5.5',
-    ]);
-    expect(
-      runtimeModelDiscovery.getSelectableModels('text').map((model) => model.id)
-    ).toEqual(['gpt-5.5']);
-
-    const helperInput = (
-      id: string,
-      vendor = 'GPT'
-    ): Parameters<typeof isDefaultGroupAutoVisibleModel>[0] => ({
-      id,
-      label: id,
-      type: 'text',
-      vendor: vendor as Parameters<
-        typeof isDefaultGroupAutoVisibleModel
-      >[0]['vendor'],
-    });
-
-    expect(isDefaultGroupAutoVisibleModel(helperInput('gpt-5.4-mini'))).toBe(
-      true
-    );
-    expect(
-      isDefaultGroupAutoVisibleModel(helperInput('gpt-draw-1024x1536'))
-    ).toBe(false);
-    expect(isDefaultGroupAutoVisibleModel(helperInput('gpt-image-2-vip'))).toBe(
-      false
-    );
-    expect(
-      isDefaultGroupAutoVisibleModel(
-        helperInput('gpt-4.1-mini-openai-compact')
-      )
-    ).toBe(false);
-    expect(
-      isDefaultGroupAutoVisibleModel(helperInput('gpt-5.4-openai-compact'))
-    ).toBe(false);
-    expect(
-      isDefaultGroupAutoVisibleModel(helperInput('gpt-image-3-openai-compact'))
-    ).toBe(false);
-    expect(
-      isDefaultGroupAutoVisibleModel(
-        helperInput('claude-sonnet-4-6', 'ANTHROPIC')
-      )
-    ).toBe(false);
-  });
-
-  it('自定义供应商发现结果和手动选择不套用默认分组 GPT 过滤', async () => {
-    const returnedModelIds = [
-      'gpt-image-2',
-      'gpt-draw-1024x1536',
-      'claude-sonnet-4-6',
-      'gemini-3-pro',
-    ];
-    const catalogs: unknown[] = [];
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        text: async () =>
-          JSON.stringify({
-            data: returnedModelIds.map((id) => ({ id })),
-          }),
-      }))
-    );
-
-    vi.doMock('../settings-manager', () => ({
-      LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
-      providerCatalogsSettings: {
-        get: () => catalogs,
-        addListener: () => {},
-        removeListener: () => {},
-        update: async (nextCatalogs: unknown[]) => {
-          catalogs.splice(0, catalogs.length, ...nextCatalogs);
-        },
-      },
-      providerProfilesSettings: {
-        get: () => [
-          {
-            id: 'custom-provider',
-            name: 'Custom Provider',
+            id: 'provider-video',
+            name: 'Video Provider',
             enabled: true,
           },
         ],
@@ -512,79 +851,38 @@ describe('runtime-model-discovery', () => {
       '../runtime-model-discovery'
     );
 
-    await runtimeModelDiscovery.discover(
-      'custom-provider',
-      'https://foropencode.com/v1',
+    const models = await runtimeModelDiscovery.discover(
+      'provider-video',
+      'https://api.example.com/v1',
       'test-key'
     );
 
-    expect(
-      runtimeModelDiscovery
-        .getState('custom-provider')
-        .discoveredModels.map((model) => model.id)
-    ).toEqual(returnedModelIds);
-    expect(
-      runtimeModelDiscovery.getState('custom-provider').selectedModelIds
-    ).toEqual([]);
-
-    const selection = runtimeModelDiscovery.applySelection('custom-provider', [
-      'claude-sonnet-4-6',
-      'gpt-draw-1024x1536',
-    ]);
-
-    expect(selection.models.map((model) => model.id)).toEqual([
-      'gpt-draw-1024x1536',
-      'claude-sonnet-4-6',
-    ]);
-    expect(
-      runtimeModelDiscovery
-        .getSelectableModels('text')
-        .map((model) => model.selectionKey || model.id)
-    ).toEqual(
-      expect.arrayContaining([
-        'custom-provider::gpt-draw-1024x1536',
-        'custom-provider::claude-sonnet-4-6',
-      ])
-    );
+    expect(models.map((model) => model.vendor)).toEqual(['GEMINI', 'GEMINI']);
+    expect(models.map((model) => model.type)).toEqual(['video', 'video']);
   });
 
-  it('default group persisted compact selections do not re-enter selectable UI', async () => {
+  it('不会把 OpenAI 自有 omni 模型误归类为 Gemini', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        text: async () =>
+          JSON.stringify({
+            data: [
+              {
+                id: 'omni-moderation-latest',
+                owned_by: 'openai',
+                supported_endpoint_types: ['moderations'],
+              },
+            ],
+          }),
+      }))
+    );
+
     vi.doMock('../settings-manager', () => ({
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
       providerCatalogsSettings: {
-        get: () => [
-          {
-            profileId: 'legacy-default',
-            discoveredAt: Date.now(),
-            discoveredModels: [
-              {
-                id: 'gpt-5.5',
-                label: 'GPT 5.5',
-                shortLabel: 'GPT 5.5',
-                type: 'text',
-                vendor: 'GPT',
-              },
-              {
-                id: 'gpt-5.4-openai-compact',
-                label: 'GPT compact',
-                shortLabel: 'GPT compact',
-                type: 'text',
-                vendor: 'GPT',
-              },
-              {
-                id: 'claude-sonnet-4-6',
-                label: 'Claude',
-                shortLabel: 'Claude',
-                type: 'text',
-                vendor: 'ANTHROPIC',
-              },
-            ],
-            selectedModelIds: [
-              'gpt-5.4-openai-compact',
-              'claude-sonnet-4-6',
-            ],
-          },
-        ],
+        get: () => [],
         addListener: () => {},
         removeListener: () => {},
         update: async () => {},
@@ -592,8 +890,8 @@ describe('runtime-model-discovery', () => {
       providerProfilesSettings: {
         get: () => [
           {
-            id: 'legacy-default',
-            name: 'default group',
+            id: 'provider-openai',
+            name: 'OpenAI',
             enabled: true,
           },
         ],
@@ -611,24 +909,105 @@ describe('runtime-model-discovery', () => {
       },
     }));
 
-    const { getPinnedSelectableModel, runtimeModelDiscovery } = await import(
+    const { runtimeModelDiscovery } = await import(
       '../runtime-model-discovery'
     );
 
+    const models = await runtimeModelDiscovery.discover(
+      'provider-openai',
+      'https://api.example.com/v1',
+      'test-key'
+    );
+
+    expect(models).toHaveLength(1);
+    expect(models[0]).toMatchObject({
+      id: 'omni-moderation-latest',
+      vendor: 'GPT',
+    });
+  });
+
+  it('优先按接口 category 分类模型', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        text: async () =>
+          JSON.stringify({
+            data: [
+              {
+                id: 'gpt-4o-image-async',
+                owned_by: 'openai',
+                category: '生图',
+                supported_endpoint_types: [
+                  'OpenAI-Chat',
+                  'edit',
+                  'generate',
+                  'openai-video',
+                ],
+              },
+              {
+                id: 'research-video-preview',
+                owned_by: 'openai',
+                category: '文本',
+                supported_endpoint_types: ['openai-video'],
+              },
+            ],
+          }),
+      }))
+    );
+
+    vi.doMock('../settings-manager', () => ({
+      LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
+      providerCatalogsSettings: {
+        get: () => [],
+        addListener: () => {},
+        removeListener: () => {},
+        update: async () => {},
+      },
+      providerProfilesSettings: {
+        get: () => [
+          {
+            id: 'provider-openai',
+            name: 'OpenAI',
+            enabled: true,
+          },
+        ],
+        addListener: () => {},
+        removeListener: () => {},
+      },
+      invocationPresetsSettings: {
+        addListener: () => {},
+        removeListener: () => {},
+      },
+      settingsManager: {
+        getSetting: () => ({}),
+        addListener: () => {},
+        removeListener: () => {},
+      },
+    }));
+
+    const { runtimeModelDiscovery } = await import(
+      '../runtime-model-discovery'
+    );
+
+    const models = await runtimeModelDiscovery.discover(
+      'provider-openai',
+      'https://api.example.com/v1',
+      'test-key'
+    );
+
+    expect(models).toHaveLength(2);
     expect(
-      runtimeModelDiscovery.getState('legacy-default').selectedModelIds
-    ).toEqual(['gpt-5.5']);
+      models.find((model) => model.id === 'gpt-4o-image-async')
+    ).toMatchObject({
+      type: 'image',
+      vendor: 'GPT',
+    });
     expect(
-      runtimeModelDiscovery.getSelectableModels('text').map((model) => model.id)
-    ).toEqual(['gpt-5.5']);
-    expect(
-      getPinnedSelectableModel('text', 'gpt-5.4-openai-compact', {
-        profileId: 'legacy-default',
-        modelId: 'gpt-5.4-openai-compact',
-      })
-    ).toBeNull();
-    expect(
-      getPinnedSelectableModel('text', 'gpt-5.4-openai-compact', null)
-    ).toBeNull();
+      models.find((model) => model.id === 'research-video-preview')
+    ).toMatchObject({
+      type: 'text',
+      vendor: 'GPT',
+    });
   });
 });

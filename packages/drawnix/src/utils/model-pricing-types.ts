@@ -1,4 +1,4 @@
-﻿/** ForOpenCode legacy /api/pricing 响应中单个模型在某分组下的价格配置 */
+/** for-api /api/pricing 响应中单个模型在某分组下的价格配置 */
 export interface PricingGroupPrice {
   quota_type: number;
   model_ratio: number;
@@ -8,7 +8,7 @@ export interface PricingGroupPrice {
   model_create_cache_ratio: number;
 }
 
-/** ForOpenCode legacy /api/pricing 响应中的模型信息 */
+/** for-api /api/pricing 响应中的模型信息 */
 export interface PricingEndpointInfo {
   docs?: string;
   label?: string;
@@ -31,7 +31,7 @@ export interface PricingModelInfo {
   endpoints?: Record<string, PricingEndpointInfo>;
 }
 
-/** ForOpenCode legacy /api/pricing 响应中的分组信息 */
+/** for-api /api/pricing 响应中的分组信息 */
 export interface PricingGroupInfo {
   GroupRatio: number;
   DisplayName: string;
@@ -46,8 +46,8 @@ export interface NewApiPricingGroupInfo {
   display_name?: string;
 }
 
-/** ForOpenCode legacy /api/pricing 完整响应 */
-export interface ForOpenCodeLegacyPricingApiResponse {
+/** for-api /api/pricing 完整响应 */
+export interface ForPricingApiResponse {
   success: boolean;
   data: {
     group_info: Record<string, PricingGroupInfo>;
@@ -76,11 +76,11 @@ export interface NewApiPricingModelInfo {
   /** 兼容旧文档中的单数字段 */
   enable_group?: string[];
   supported_endpoint_types?: Array<string | number>;
-  /** foropencode.com 会把 endpoint 元信息直接放在模型下 */
+  /** 分组 pricing 会把 endpoint 元信息直接放在模型下 */
   endpoints?: Record<string, PricingEndpointInfo | string>;
 }
 
-/** foropencode.com /api/pricing 中按分组覆盖的模型价格表 */
+/** 分组 pricing 中按分组覆盖的模型价格表 */
 export interface NewApiGroupModelPricing {
   quota_type?: Record<string, number>;
   model_quota_type?: Record<string, number>;
@@ -105,7 +105,7 @@ export interface NewApiPricingApiResponse {
   supported_endpoint?: Record<string, PricingEndpointInfo | string>;
 }
 
-export type PricingApiResponse = ForOpenCodeLegacyPricingApiResponse | NewApiPricingApiResponse;
+export type PricingApiResponse = ForPricingApiResponse | NewApiPricingApiResponse;
 
 /** 计算后的单个模型价格（已转换为 CNY） */
 export interface ModelPrice {

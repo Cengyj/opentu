@@ -8,13 +8,10 @@
  * - tasks: 任务状态和结果
  * - workflows: 工作流状态
  * - config: API 配置
- *
- * 注：PSD 会话历史已迁出到独立数据库 `aitu-psd-history`（见 psd-history-service），
- * 不再放在本库；DB_VERSION 仍保持 2（已发布，无法降级，升级为 no-op）。
  */
 
 const DB_NAME = 'aitu-app';
-const DB_VERSION = 2;
+const DB_VERSION = 1;
 
 // Store 名称常量
 export const APP_DB_STORES = {
@@ -53,24 +50,12 @@ export async function getAppDB(): Promise<IDBDatabase> {
       reject(request.error);
     };
 
-    // 升级被其他打开的连接阻塞时记录，便于排查（如旧无版本连接阻塞新 store 创建）
-    request.onblocked = () => {
-      console.warn('[AppDB] open blocked by another open connection');
-    };
-
     request.onsuccess = () => {
       clearTimeout(timeout);
       dbInstance = request.result;
 
       // 监听数据库关闭事件，清理缓存
       dbInstance.onclose = () => {
-        dbInstance = null;
-        dbPromise = null;
-      };
-
-      // 其他连接发起版本升级时主动让路（关闭本连接），避免阻塞升级
-      dbInstance.onversionchange = () => {
-        dbInstance?.close();
         dbInstance = null;
         dbPromise = null;
       };

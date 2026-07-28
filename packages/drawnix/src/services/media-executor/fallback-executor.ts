@@ -54,7 +54,6 @@ import {
   buildImageRequestBody,
   parseImageResponse,
   pollVideoStatus,
-  isAsyncImageModel,
   generateAsyncImage,
   ensureBase64ForAI,
   cacheRemoteUrl,
@@ -73,6 +72,7 @@ import {
   resolveLegacyTaskInvocationRouteModel,
   shouldUseStrictTaskInvocationRoute,
 } from '../task-invocation-route';
+import { normalizeLlmTextContent } from '../../utils/llm-json-extractor';
 
 function inferAuthTypeFromRoute(
   route: ReturnType<typeof resolveInvocationRoute>
@@ -99,6 +99,67 @@ function buildProviderContext(config: {
       extraHeaders: config.extraHeaders,
     }
   );
+}
+
+async function readResponseTextPreview(
+  response: Response,
+  limit = 1000
+): Promise<string> {
+  if (!response.body) {
+    try {
+      return (await response.clone().text()).slice(0, limit);
+    } catch {
+      return '';
+    }
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+
+  try {
+    while (text.length < limit) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+    if (text.length >= limit) {
+      await reader.cancel().catch(() => undefined);
+    }
+  } catch {
+    await reader.cancel().catch(() => undefined);
+  }
+
+  return text.slice(0, limit);
+}
+
+function extractProviderErrorMessage(rawText: string): string {
+  const trimmed = rawText.trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      message?: string;
+      detail?: string;
+      error?:
+        | string
+        | {
+            message?: string;
+            details?: string;
+          };
+    };
+    if (typeof parsed.error === 'string') return parsed.error;
+    return (
+      parsed.error?.message ||
+      parsed.error?.details ||
+      parsed.message ||
+      parsed.detail ||
+      ''
+    ).trim();
+  } catch {
+    return trimmed.replace(/\s+/g, ' ');
+  }
 }
 
 /** 从 uploadedImages 提取 URL 列表，与 SW ImageHandler 逻辑一致 */
@@ -210,45 +271,16 @@ export class FallbackMediaExecutor implements IMediaExecutor {
     const startTime = Date.now();
     const modelName = model || config.imageConfig.modelName;
 
-    // 专用 adapter 路由（mj-imagine 等非 gemini 模型）
-    const imageAdapter = resolveAdapterForInvocation(
+    // 异步图片模型：使用 /v1/videos 接口（仅当 binding 为 async-image 时）
+    const imagePlan = resolveInvocationPlanFromRoute(
       'image',
-      modelName,
-      modelRef || null,
+      modelRef || modelName,
       invocationOptions
     );
-    if (imageAdapter && imageAdapter.kind === 'image') {
-      return executeImageViaAdapter(
-        taskId,
-        imageAdapter,
-        {
-          prompt,
-          model: modelName,
-          modelRef: modelRef || null,
-          size,
-          resolution: params.resolution,
-          quality,
-          count,
-          referenceImages,
-          generationMode:
-            params.generationMode ||
-            (shouldUseEditSchema ? 'image_to_image' : 'text_to_image'),
-          maskImage: params.maskImage,
-          inputFidelity: params.inputFidelity,
-          background: params.background,
-          outputFormat: params.outputFormat,
-          outputCompression: params.outputCompression,
-          params: params.params,
-          assetMetadata: params.assetMetadata,
-          preferredRequestSchema: invocationOptions.preferredRequestSchema,
-        },
-        options,
-        startTime
-      );
-    }
-
-    // 异步图片模型：使用 /v1/videos 接口（与 SW 模式一致）
-    if (isAsyncImageModel(modelName)) {
+    if (
+      imagePlan?.binding.protocol === 'openai.async.media' ||
+      imagePlan?.binding.requestSchema === 'openai.async.image.form'
+    ) {
       return this.generateAsyncImageTask(
         taskId,
         {
@@ -261,6 +293,44 @@ export class FallbackMediaExecutor implements IMediaExecutor {
           assetMetadata: params.assetMetadata,
         },
         config,
+        options,
+        startTime
+      );
+    }
+
+    const imageAdapter = resolveAdapterForInvocation(
+      'image',
+      modelName,
+      modelRef || null,
+      invocationOptions
+    );
+    const shouldUseImageAdapter =
+      imageAdapter?.kind === 'image' &&
+      (imageAdapter.id !== 'gemini-image-adapter' ||
+        imagePlan?.binding.protocol === 'google.generateContent');
+    if (shouldUseImageAdapter) {
+      return executeImageViaAdapter(
+        taskId,
+        imageAdapter,
+        {
+          prompt,
+          model: modelName,
+          modelRef: modelRef || null,
+          size,
+          resolution: params.resolution,
+          quality,
+          count,
+          referenceImages,
+          generationMode: params.generationMode,
+          maskImage: params.maskImage,
+          inputFidelity: params.inputFidelity,
+          background: params.background,
+          outputFormat: params.outputFormat,
+          outputCompression: params.outputCompression,
+          params: params.params,
+          assetMetadata: params.assetMetadata,
+          preferredRequestSchema: invocationOptions.preferredRequestSchema,
+        },
         options,
         startTime
       );
@@ -461,10 +531,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         const maskData = await unifiedCacheService.getImageForAI(
           params.maskImage
         );
-        processedMaskImage = await ensureBase64ForAI(
-          maskData,
-          options?.signal
-        );
+        processedMaskImage = await ensureBase64ForAI(maskData, options?.signal);
       }
 
       // 调用异步图片生成
@@ -865,7 +932,9 @@ export class FallbackMediaExecutor implements IMediaExecutor {
 
       options?.onProgress?.({ progress: 80 });
 
-      const fullResponse = data.choices?.[0]?.message?.content || '';
+      const fullResponse = normalizeLlmTextContent(
+        data.choices?.[0]?.message?.content
+      );
       const elapsedTime = Date.now() - startTime;
 
       // 记录成功
@@ -991,14 +1060,6 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       }
       return undefined;
     };
-    const toKnownString = (
-      value: unknown,
-      allowed: readonly string[]
-    ): string | undefined => {
-      if (typeof value !== 'string') return undefined;
-      const normalized = value.trim();
-      return allowed.includes(normalized) ? normalized : undefined;
-    };
 
     try {
       if (taskId) {
@@ -1024,6 +1085,12 @@ export class FallbackMediaExecutor implements IMediaExecutor {
                 ...(toNumber(extraParams?.max_tokens) !== undefined
                   ? { maxOutputTokens: toNumber(extraParams?.max_tokens) }
                   : {}),
+                ...(typeof extraParams?.response_mime_type === 'string' &&
+                extraParams.response_mime_type.trim()
+                  ? {
+                      responseMimeType: extraParams.response_mime_type.trim(),
+                    }
+                  : {}),
               },
             })
           : await providerTransport
@@ -1046,33 +1113,30 @@ export class FallbackMediaExecutor implements IMediaExecutor {
                   ...(toNumber(extraParams?.max_tokens) !== undefined
                     ? { max_tokens: toNumber(extraParams?.max_tokens) }
                     : {}),
-                  ...(toKnownString(extraParams?.reasoning_effort, [
-                    'low',
-                    'medium',
-                    'high',
-                  ])
-                    ? {
-                        reasoning_effort: toKnownString(
-                          extraParams?.reasoning_effort,
-                          ['low', 'medium', 'high']
-                        ),
-                      }
+                  ...(typeof extraParams?.response_format === 'object'
+                    ? { response_format: extraParams.response_format }
                     : {}),
                 }),
                 signal: options?.signal,
               })
               .then(async (response) => {
                 if (!response.ok) {
+                  const rawError = await readResponseTextPreview(response);
+                  const providerMessage = extractProviderErrorMessage(rawError);
                   throw new Error(
                     `HTTP ${response.status}: ${
-                      response.statusText || 'Text generation failed'
+                      providerMessage ||
+                      response.statusText ||
+                      'Text generation failed'
                     }`
                   );
                 }
                 return response.json();
               });
 
-      const fullResponse = data.choices?.[0]?.message?.content || '';
+      const fullResponse = normalizeLlmTextContent(
+        data.choices?.[0]?.message?.content
+      );
       options?.onProgress?.({ progress: 100 });
       if (taskId) {
         await taskStorageWriter.completeTask(taskId, {

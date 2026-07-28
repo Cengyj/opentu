@@ -99,17 +99,11 @@ function generateNpmPackageJson(version) {
       'image-generation',
       'video-generation'
     ],
-    homepage: 'https://foropencode.com',
-    repository: {
-      type: 'git',
-      url: 'https://github.com/ljquan/aitu.git'
-    },
-    bugs: {
-      url: 'https://github.com/ljquan/aitu/issues'
-    },
+    homepage: 'https://opentu.ai',
     license: 'MIT',
     author: 'ljquan',
     files: [
+      'index.html',
       'assets/**',
       'version.json',
       'icons/**',
@@ -166,10 +160,6 @@ npx serve ./node_modules/${CONFIG.packageName}
 # 或使用 http-server
 npx http-server ./node_modules/${CONFIG.packageName}
 \`\`\`
-
-## 源代码
-
-GitHub: [https://github.com/ljquan/aitu](https://github.com/ljquan/aitu)
 
 ## 许可证
 

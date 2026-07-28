@@ -192,7 +192,7 @@
             <strong>状态:</strong> localhost
             任意端口已在白名单中，应该正常显示<br />
             <strong>用途:</strong> 复现 <code>foropencode.com/oepntu</code> 嵌入
-            <code>foropencode.com</code> 的模式
+            <code>opentu.ai</code> 的模式
           </div>
           <div class="note">
             <strong>推荐本地复现:</strong>
@@ -255,14 +255,14 @@
             </button>
             <button
               class="btn btn-secondary"
-              onclick="reloadIframe('tuzi-iframe')"
+              onclick="reloadIframe('for-iframe')"
             >
               重新加载
             </button>
           </div>
           <div class="iframe-container">
             <iframe
-              id="tuzi-iframe"
+              id="for-iframe"
               src=""
               title="模拟foropencode.com嵌入"
             ></iframe>
@@ -399,7 +399,7 @@ Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localh
         if (isLocalHost) {
           return `${location.protocol}//${location.hostname}:7200`;
         }
-        return 'https://foropencode.com';
+        return 'https://opentu.ai';
       }
 
       function normalizeBaseUrl(url) {
@@ -462,13 +462,13 @@ Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localh
       // 嵌入当前应用
       function loadCurrentApp() {
         const baseUrl = getBaseUrl();
-        setIframeSrc('tuzi-iframe', baseUrl);
+        setIframeSrc('for-iframe', baseUrl);
       }
 
       // 带查询参数嵌入当前应用
       function loadAppWithQuery(query) {
         const baseUrl = getBaseUrl();
-        setIframeSrc('tuzi-iframe', `${baseUrl}?${query}`);
+        setIframeSrc('for-iframe', `${baseUrl}?${query}`);
       }
 
       // 带参数加载

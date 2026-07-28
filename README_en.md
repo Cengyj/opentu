@@ -1,10 +1,10 @@
 <div align="center">
-  <h1>Opentu (foropencode.com)</h1>
+  <h1>Opentu (opentu.ai)</h1>
   <h3>Canvas-first AI Application Platform</h3>
   <p>Connect models, tools, assets, and knowledge flows so AI work keeps running in one workspace.</p>
   <p>
     <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-    <a href="https://foropencode.com"><img src="https://img.shields.io/badge/demo-online-brightgreen.svg" alt="Demo"></a>
+    <a href="https://opentu.ai"><img src="https://img.shields.io/badge/demo-online-brightgreen.svg" alt="Demo"></a>
   </p>
 </div>
 
@@ -12,8 +12,8 @@
 
 ## Live Apps
 
-- Production: [foropencode.com](https://foropencode.com)
-- Preview: [foropencode.com](https://foropencode.com)
+- Production: [opentu.ai](https://opentu.ai)
+- Preview: [pr.opentu.ai](https://pr.opentu.ai)
 
 ## Product Showcase
 

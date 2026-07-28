@@ -1,4 +1,4 @@
-﻿## ADDED Requirements
+## ADDED Requirements
 
 ### Requirement: Support Official GPT Image Edit Requests
 
@@ -26,9 +26,9 @@ The system SHALL send official GPT Image edit requests to `/images/edits` when a
 
 The system SHALL preserve the existing default adapter behavior for reference-image requests when the selected profile resolves to a basic compatibility mode.
 
-#### Scenario: ForOpenCode reference-image request stays basic
+#### Scenario: Basic reference-image request stays basic
 
-- **GIVEN** a provider profile resolves image API compatibility to `for-gpt-image`
+- **GIVEN** a provider profile resolves image API compatibility to `openai-compatible-basic`
 - **AND** the selected model is a GPT Image model
 - **AND** the request includes reference images
 - **WHEN** the image task is executed

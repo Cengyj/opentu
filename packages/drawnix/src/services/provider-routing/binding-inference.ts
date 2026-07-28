@@ -5,7 +5,9 @@ import {
 } from '../../constants/model-config';
 import type { PricingEndpointInfo } from '../../utils/model-pricing-types';
 import type { ImageApiCompatibility } from '../../utils/settings-types';
-import { OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA } from '../model-adapters/image-request-schemas';
+import {
+  OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
+} from '../model-adapters/image-request-schemas';
 import { inferAllBindingHintsFromEndpoints } from './endpoint-binding-inference';
 import type { ProviderModelBinding, ProviderProfileSnapshot } from './types';
 
@@ -76,8 +78,8 @@ function isGeminiFamilyModel(model: ModelConfig): boolean {
   ]);
 }
 
-function isForOpenCodeProviderProfile(profile: ProviderProfileSnapshot): boolean {
-  return isForOpenCodeBaseUrl(profile.baseUrl);
+function isForProviderProfile(profile: ProviderProfileSnapshot): boolean {
+  return isBuiltInForProviderBaseUrl(profile.baseUrl);
 }
 
 function isMidjourneyModel(model: ModelConfig): boolean {
@@ -162,6 +164,13 @@ function isSeedanceModel(model: ModelConfig): boolean {
   return model.id.toLowerCase().includes('seedance');
 }
 
+function shouldPreferAsyncImageBinding(
+  profile: ProviderProfileSnapshot,
+  model: ModelConfig
+): boolean {
+  return !!profile.preferAsyncImageEndpoint && model.type === 'image';
+}
+
 function isHappyHorseModel(model: ModelConfig): boolean {
   const lowerId = model.id.toLowerCase();
   return (
@@ -192,11 +201,7 @@ function isOfficialOpenAIProfile(profile: ProviderProfileSnapshot): boolean {
   return profile.baseUrl.toLowerCase().includes('api.openai.com');
 }
 
-function isForOpenCodeProfile(profile: ProviderProfileSnapshot): boolean {
-  return isForOpenCodeBaseUrl(profile.baseUrl);
-}
-
-function isForOpenCodeBaseUrl(baseUrl: string): boolean {
+function isBuiltInForProviderBaseUrl(baseUrl: string): boolean {
   const normalizedBaseUrl = baseUrl.trim().toLowerCase();
   if (!normalizedBaseUrl) {
     return false;
@@ -226,15 +231,7 @@ function normalizeImageApiCompatibilityMode(
     return value;
   }
 
-  if (
-    value === 'for-gpt-image' ||
-    value === 'tuzi-gpt-image' ||
-    value === 'tuzi-compatible'
-  ) {
-    return 'openai-gpt-image';
-  }
-
-  return 'auto';
+  return 'openai-gpt-image';
 }
 
 function resolveImageApiCompatibility(
@@ -250,10 +247,6 @@ function resolveImageApiCompatibility(
   }
 
   if (isOfficialOpenAIProfile(profile) && isGptImageModel(model)) {
-    return 'openai-gpt-image';
-  }
-
-  if (isForOpenCodeProfile(profile) && isGptImageModel(model)) {
     return 'openai-gpt-image';
   }
 
@@ -311,7 +304,7 @@ function inferTextBindings(
   if (
     isGeminiFamilyModel(model) &&
     (profile.providerType === 'gemini-compatible' ||
-      isForOpenCodeProviderProfile(profile))
+      isForProviderProfile(profile))
   ) {
     bindings.push(
       buildBinding(profile, model, {
@@ -476,7 +469,7 @@ function inferImageBindings(
       ? 'openai.image.gpt-generation-json'
       : 'openai.image.basic-json';
 
-    if (!isMidjourneyModel(model) && isAsyncImageModel(model.id)) {
+    if (shouldPreferAsyncImageBinding(profile, model)) {
       bindings.push(
         buildBinding(profile, model, {
           protocol: 'openai.async.media',
@@ -491,7 +484,7 @@ function inferImageBindings(
       );
     }
 
-    if (!isAsyncImageModel(model.id) || isSeedreamModel(model)) {
+    if (!shouldPreferAsyncImageBinding(profile, model)) {
       bindings.push(
         buildBinding(profile, model, {
           protocol: 'openai.images.generations',
@@ -513,7 +506,7 @@ function inferImageBindings(
     }
 
     if (
-      !isAsyncImageModel(model.id) &&
+      !shouldPreferAsyncImageBinding(profile, model) &&
       isGptImageModel(model) &&
       resolvedImageApiCompatibility === 'openai-gpt-image'
     ) {
@@ -761,7 +754,7 @@ function shouldUseDiscoveredEndpointHintForModel(
   }
 
   if (hint.protocol === 'openai.async.media') {
-    return model.type === 'image';
+    return model.type === 'image' && !!profile.preferAsyncImageEndpoint;
   }
 
   if (hint.protocol === 'openai.async.video') {

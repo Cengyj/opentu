@@ -3,3 +3,4 @@
  */
 
 export { SyncSettings } from './SyncSettings';
+export { TokenGuide } from './TokenGuide';

@@ -140,24 +140,6 @@ function resolveAudioPlanContext(routeModel?: string | ModelRef | null): {
   };
 }
 
-function isForOpenCodeBaseUrl(baseUrl: string): boolean {
-  const trimmed = baseUrl.trim();
-  if (!trimmed) {
-    return false;
-  }
-
-  try {
-    const url = new URL(
-      /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed)
-        ? trimmed
-        : `https://${trimmed}`
-    );
-    return url.hostname.toLowerCase() === 'foropencode.com';
-  } catch {
-    return false;
-  }
-}
-
 function inferAudioBaseUrlStrategy(
   providerContext: ResolvedProviderContext,
   binding?: NonNullable<
@@ -169,14 +151,33 @@ function inferAudioBaseUrlStrategy(
   }
 
   const normalizedBaseUrl = providerContext.baseUrl.trim().toLowerCase();
-  const isForOpenCodeRoot = isForOpenCodeBaseUrl(providerContext.baseUrl);
+  const isBuiltInProvider = isBuiltInProviderBaseUrl(normalizedBaseUrl);
   const hasLegacyV1Suffix = /\/v1\/?$/.test(normalizedBaseUrl);
 
-  if (isForOpenCodeRoot && hasLegacyV1Suffix) {
+  if (isBuiltInProvider && hasLegacyV1Suffix) {
     return 'trim-v1';
   }
 
   return undefined;
+}
+
+function isBuiltInProviderBaseUrl(baseUrl: string): boolean {
+  const trimmed = baseUrl.trim().toLowerCase();
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const url = new URL(
+      /^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed)
+        ? trimmed
+        : `https://${trimmed}`
+    );
+    const hostname = url.hostname.toLowerCase();
+    return hostname === 'foropencode.com';
+  } catch {
+    return false;
+  }
 }
 
 function replaceTaskIdTemplate(pathTemplate: string, taskId: string): string {

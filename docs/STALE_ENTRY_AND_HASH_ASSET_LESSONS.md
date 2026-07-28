@@ -6,7 +6,7 @@
 
 线上会出现这样的请求：
 
-- `https://foropencode.com/assets/index-Bfl2zVkU.js`
+- `https://opentu.ai/assets/index-Bfl2zVkU.js`
 
 但当前本地构建里：
 

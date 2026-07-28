@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, FlaskConical, Search, X } from 'lucide-react';
 import { Dialog, DialogContent } from '../dialog/dialog';
 import {
-  getStaticModelConfig,
   type ModelConfig,
   type ModelVendor,
 } from '../../constants/model-config';
@@ -19,6 +18,7 @@ import {
   MODEL_TYPE_SHORT_LABELS,
   matchesModelQuery,
   buildVendorGroups,
+  getRecommendedDiscoveredModelIds,
   getOrderedTypeGroups,
 } from './model-discovery-utils';
 import './model-discovery-dialog.scss';
@@ -126,7 +126,7 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
     visibleModels.length > 0 &&
     visibleModels.every((model) => selectedIds.has(model.id));
   const recommendedModelIds = useMemo(
-    () => models.filter((model) => getStaticModelConfig(model.id)).map((model) => model.id),
+    () => getRecommendedDiscoveredModelIds(models),
     [models]
   );
   const allRecommendedSelected =
@@ -187,7 +187,9 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
   };
 
   const selectRecommendedModels = () => {
-    setDraftSelection((prev) => Array.from(new Set([...prev, ...recommendedModelIds])));
+    setDraftSelection((prev) =>
+      Array.from(new Set([...prev, ...recommendedModelIds]))
+    );
   };
 
   const toggleVendor = (vendor: ModelVendor) => {
@@ -399,7 +401,10 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
                                       </div>
                                     </div>
                                     {onTestModel ? (
-                                      <HoverTip content="测试此模型" showArrow={false}>
+                                      <HoverTip
+                                        content="测试此模型"
+                                        showArrow={false}
+                                      >
                                         <button
                                           type="button"
                                           className="model-discovery-dialog__item-test"
@@ -446,7 +451,9 @@ export const ModelDiscoveryDialog: React.FC<ModelDiscoveryDialogProps> = ({
               type="button"
               className="model-discovery-dialog__ghost-button"
               onClick={selectRecommendedModels}
-              disabled={recommendedModelIds.length === 0 || allRecommendedSelected}
+              disabled={
+                recommendedModelIds.length === 0 || allRecommendedSelected
+              }
             >
               选中推荐模型
             </button>

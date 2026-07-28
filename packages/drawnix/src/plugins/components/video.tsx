@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
 import classNames from 'classnames';
-import { openExternalLink } from '../../utils/external-link-policy';
 
 export interface VideoItem {
   url: string;
@@ -63,7 +62,7 @@ export const Video: React.FC<VideoProps> = (props: VideoProps) => {
       e.stopPropagation();
       // 在只读模式下，点击视频在新窗口打开
       e.preventDefault();
-      openExternalLink(url);
+      window.open(url, '_blank');
     }
   };
 

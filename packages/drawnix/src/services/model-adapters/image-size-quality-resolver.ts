@@ -15,7 +15,7 @@ type GPTImageAspectRatioKey =
 
 type LegacyGPTImageAspectRatioKey = '1x1' | '2x3' | '3x2';
 
-const GPT_IMAGE_2_MODEL_IDS = new Set(['gpt-image-2']);
+const GPT_IMAGE_2_MODEL_IDS = new Set(['gpt-image-2-vip', 'gpt-image-2']);
 const LEGACY_GPT_IMAGE_MODEL_IDS = new Set(['gpt-image-1', 'gpt-image-1.5']);
 
 const OFFICIAL_GPT_IMAGE_QUALITY_VALUES = new Set<OfficialGPTImageQuality>([
@@ -167,150 +167,21 @@ function resolveKnownAspectRatio(
   return parsed.width > parsed.height ? '16x9' : '9x16';
 }
 
-/** gpt-image-2 官方自定义尺寸约束（与 OpenAI 文档一致） */
-export const GPT_IMAGE_2_SIZE_STEP = 16; // 宽高必须是 16 的倍数
-export const GPT_IMAGE_2_MAX_LONG_EDGE = 3840; // 长边不超过 4K
-export const GPT_IMAGE_2_MAX_EDGE_RATIO = 3; // 长宽比不超过 3:1
-export const GPT_IMAGE_2_MIN_PIXELS = 655_360; // 约 0.66MP
-export const GPT_IMAGE_2_MAX_PIXELS = 8_294_400; // 约 8.29MP（4K）
-
-export function isValidGPTImage2PixelSize(
-  width: number,
-  height: number
-): boolean {
+function isValidGPTImage2PixelSize(width: number, height: number): boolean {
   const longEdge = Math.max(width, height);
   const shortEdge = Math.min(width, height);
   const totalPixels = width * height;
 
-  if (longEdge > GPT_IMAGE_2_MAX_LONG_EDGE) {
+  if (longEdge > 3840) {
     return false;
   }
-  if (
-    width % GPT_IMAGE_2_SIZE_STEP !== 0 ||
-    height % GPT_IMAGE_2_SIZE_STEP !== 0
-  ) {
+  if (width % 16 !== 0 || height % 16 !== 0) {
     return false;
   }
-  if (shortEdge === 0 || longEdge / shortEdge > GPT_IMAGE_2_MAX_EDGE_RATIO) {
+  if (shortEdge === 0 || longEdge / shortEdge > 3) {
     return false;
   }
-  return (
-    totalPixels >= GPT_IMAGE_2_MIN_PIXELS &&
-    totalPixels <= GPT_IMAGE_2_MAX_PIXELS
-  );
-}
-
-function roundToStep(value: number): number {
-  return Math.round(value / GPT_IMAGE_2_SIZE_STEP) * GPT_IMAGE_2_SIZE_STEP;
-}
-
-function floorToStep(value: number): number {
-  return Math.floor(value / GPT_IMAGE_2_SIZE_STEP) * GPT_IMAGE_2_SIZE_STEP;
-}
-
-/**
- * 将任意宽高吸附到最近的合法 gpt-image-2 尺寸：
- * 16 倍数 → 夹长边 ≤3840 → 收紧 3:1 → 按面积夹到 [0.66MP, 8.29MP]。
- * 缩放保持比例，因此前序约束不会被后序破坏。
- */
-export function snapToValidGPTImage2Size(
-  rawWidth: number,
-  rawHeight: number
-): { width: number; height: number } {
-  const clampDim = (value: number): number => {
-    if (!Number.isFinite(value) || value <= 0) {
-      return GPT_IMAGE_2_SIZE_STEP;
-    }
-    const snapped = roundToStep(value);
-    return Math.min(
-      Math.max(snapped, GPT_IMAGE_2_SIZE_STEP),
-      GPT_IMAGE_2_MAX_LONG_EDGE
-    );
-  };
-
-  let width = clampDim(rawWidth);
-  let height = clampDim(rawHeight);
-
-  // 收紧到 3:1：缩短长边到短边的 3 倍
-  const shortEdge = Math.min(width, height);
-  const maxLong = Math.max(
-    floorToStep(shortEdge * GPT_IMAGE_2_MAX_EDGE_RATIO),
-    GPT_IMAGE_2_SIZE_STEP
-  );
-  if (width >= height) {
-    width = Math.min(width, maxLong);
-  } else {
-    height = Math.min(height, maxLong);
-  }
-
-  // 等比缩放夹住总像素上限
-  const total = width * height;
-  if (total > GPT_IMAGE_2_MAX_PIXELS) {
-    const scale = Math.sqrt(GPT_IMAGE_2_MAX_PIXELS / total);
-    width = Math.max(floorToStep(width * scale), GPT_IMAGE_2_SIZE_STEP);
-    height = Math.max(floorToStep(height * scale), GPT_IMAGE_2_SIZE_STEP);
-  } else if (total < GPT_IMAGE_2_MIN_PIXELS) {
-    const scale = Math.sqrt(GPT_IMAGE_2_MIN_PIXELS / total);
-    width = Math.min(roundToStep(width * scale), GPT_IMAGE_2_MAX_LONG_EDGE);
-    height = Math.min(roundToStep(height * scale), GPT_IMAGE_2_MAX_LONG_EDGE);
-    // 向上取整后可能仍略低于下限，逐级补一个 step 直到达标
-    while (
-      width * height < GPT_IMAGE_2_MIN_PIXELS &&
-      (width < GPT_IMAGE_2_MAX_LONG_EDGE || height < GPT_IMAGE_2_MAX_LONG_EDGE)
-    ) {
-      if (width <= height && width < GPT_IMAGE_2_MAX_LONG_EDGE) {
-        width += GPT_IMAGE_2_SIZE_STEP;
-      } else if (height < GPT_IMAGE_2_MAX_LONG_EDGE) {
-        height += GPT_IMAGE_2_SIZE_STEP;
-      } else {
-        width = Math.min(
-          width + GPT_IMAGE_2_SIZE_STEP,
-          GPT_IMAGE_2_MAX_LONG_EDGE
-        );
-      }
-    }
-  }
-
-  return { width, height };
-}
-
-export interface GPTImage2SizeInfo {
-  width: number;
-  height: number;
-  /** 化简后的比例标签，如 "3:2" */
-  ratioLabel: string;
-  /** 百万像素 */
-  megaPixels: number;
-  /** 估算分辨率档位 */
-  tier: ImageResolutionTier;
-  valid: boolean;
-}
-
-/** 根据像素宽高生成 UI 展示所需的比例 / 像素 / 档位信息 */
-export function getGPTImage2SizeInfo(
-  width: number,
-  height: number
-): GPTImage2SizeInfo {
-  const safeWidth = Math.max(Math.round(width) || 0, 0);
-  const safeHeight = Math.max(Math.round(height) || 0, 0);
-  const divisor = gcd(safeWidth, safeHeight) || 1;
-  const ratioLabel =
-    safeWidth && safeHeight
-      ? `${safeWidth / divisor}:${safeHeight / divisor}`
-      : '—';
-  const totalPixels = safeWidth * safeHeight;
-  const megaPixels = totalPixels / 1_000_000;
-  const tier: ImageResolutionTier =
-    totalPixels <= 1_600_000 ? '1k' : totalPixels <= 5_000_000 ? '2k' : '4k';
-
-  return {
-    width: safeWidth,
-    height: safeHeight,
-    ratioLabel,
-    megaPixels,
-    tier,
-    valid: isValidGPTImage2PixelSize(safeWidth, safeHeight),
-  };
+  return totalPixels >= 655_360 && totalPixels <= 8_294_400;
 }
 
 function toLegacyAspectRatio(
@@ -336,44 +207,6 @@ export function isGPTImage2Model(modelId?: string | null): boolean {
 
 export function isLegacyGPTImageModel(modelId?: string | null): boolean {
   return !!modelId && LEGACY_GPT_IMAGE_MODEL_IDS.has(modelId);
-}
-
-/** 将形如 "1536x1024" / "1536X1024" 的字符串解析为像素宽高 */
-export function parseGPTImage2PixelSize(
-  value: unknown
-): { width: number; height: number } | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  return parsePixelSize(value.trim().toLowerCase());
-}
-
-/**
- * 判断某个 size 参数值是否可接受：
- * - 命中 enum options 列表 → 合法
- * - 参数声明 allowCustomPixelSize 且值是合法的 gpt-image-2 自定义像素串 → 合法
- * 供持久化校验闸（sanitize / AIInputBar）统一复用，避免各处重复实现判定。
- */
-export function isAcceptableSizeValue(
-  param:
-    | {
-        options?: Array<{ value: string }>;
-        allowCustomPixelSize?: boolean;
-      }
-    | undefined,
-  value: string | undefined
-): boolean {
-  if (!param || !value) {
-    return false;
-  }
-  if (param.options?.some((option) => option.value === value)) {
-    return true;
-  }
-  if (param.allowCustomPixelSize) {
-    const parsed = parseGPTImage2PixelSize(value);
-    return !!parsed && isValidGPTImage2PixelSize(parsed.width, parsed.height);
-  }
-  return false;
 }
 
 export function normalizeImageResolutionTier(

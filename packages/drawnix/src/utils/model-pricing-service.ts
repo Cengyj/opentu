@@ -1,4 +1,4 @@
-﻿import {
+import {
   providerPricingCacheSettings,
   type ProviderProfile,
 } from './settings-manager';
@@ -12,7 +12,7 @@ import type {
   PricingGroup,
   PricingGroupPrice,
   ProviderPricingCache,
-  ForOpenCodeLegacyPricingApiResponse,
+  ForPricingApiResponse,
 } from './model-pricing-types';
 
 type PricingListener = () => void;
@@ -33,12 +33,11 @@ type SharedPricingResponseCacheEntry = {
   response: PricingApiResponse;
 };
 
-const FOROPENCODE_ROOT_HOST = 'foropencode.com';
-const FOROPENCODE_API_HOST = 'foropencode.com';
+const DEFAULT_API_HOST = 'foropencode.com';
 const DEFAULT_GROUP_NAME = 'default';
-export const DEFAULT_FOROPENCODE_CNY_PER_USD = 0.7;
+export const DEFAULT_FOR_CNY_PER_USD = 0.7;
 export const MODEL_PRICING_CACHE_TTL_MS = 5 * 60 * 1000;
-export const FOROPENCODE_PRICING_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+export const FOR_PRICING_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 function round4(v: number): number {
   return Math.round(v * 10000) / 10000;
@@ -68,34 +67,36 @@ export function derivePricingUrl(baseUrl: string): string {
   }
 }
 
-function isForOpenCodeProvider(baseUrl: string): boolean {
+function isForPricingProvider(baseUrl: string): boolean {
   try {
     const hostname = new URL(baseUrl).hostname.toLowerCase();
-    return hostname === FOROPENCODE_ROOT_HOST;
+    return hostname === DEFAULT_API_HOST;
   } catch {
     return false;
   }
 }
 
-function isForOpenCodePricingUrl(pricingUrl: string): boolean {
+function isBuiltInPricingUrl(pricingUrl: string): boolean {
   const normalized = normalizePricingUrl(pricingUrl);
   if (!normalized) return false;
 
   try {
     const url = new URL(normalized);
     const hostname = url.hostname.toLowerCase();
-    return hostname === FOROPENCODE_ROOT_HOST && url.pathname === '/api/pricing';
+    return (
+      hostname === DEFAULT_API_HOST && url.pathname === '/api/pricing'
+    );
   } catch {
     return (
       stripPricingUrlSearch(normalized) ===
-      `https://${FOROPENCODE_API_HOST}/api/pricing`
+      `https://${DEFAULT_API_HOST}/api/pricing`
     );
   }
 }
 
 export function getPricingCacheTtlMs(pricingUrl: string): number {
-  return isForOpenCodePricingUrl(pricingUrl)
-    ? FOROPENCODE_PRICING_CACHE_TTL_MS
+  return isBuiltInPricingUrl(pricingUrl)
+    ? FOR_PRICING_CACHE_TTL_MS
     : MODEL_PRICING_CACHE_TTL_MS;
 }
 
@@ -147,7 +148,9 @@ export function resolveProviderPricingConfig(
     pricingGroup: profile.pricingGroup || DEFAULT_GROUP_NAME,
     cnyPerUsd:
       profile.cnyPerUsd ??
-      (isForOpenCodeProvider(profile.baseUrl || '') ? DEFAULT_FOROPENCODE_CNY_PER_USD : 1),
+      (isForPricingProvider(profile.baseUrl || '')
+        ? DEFAULT_FOR_CNY_PER_USD
+        : 1),
   };
 }
 
@@ -163,7 +166,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isForOpenCodeLegacyPricingResponse(json: PricingApiResponse): json is ForOpenCodeLegacyPricingApiResponse {
+function isForPricingResponse(json: PricingApiResponse): json is ForPricingApiResponse {
   return (
     isPlainRecord(json.data) &&
     isPlainRecord(json.data.group_info) &&
@@ -186,7 +189,7 @@ function isNewApiPricingResponse(
 }
 
 function isSupportedPricingResponse(json: PricingApiResponse): boolean {
-  return isForOpenCodeLegacyPricingResponse(json) || isNewApiPricingResponse(json);
+  return isForPricingResponse(json) || isNewApiPricingResponse(json);
 }
 
 function computeModelPrice(
@@ -286,7 +289,7 @@ function computeNewApiModelPrice(
     };
   }
 
-  // foropencode.com 的 token 模型可能是 quota_type=1，但仍通过 model_ratio 计价。
+  // 分组 pricing 的 token 模型可能是 quota_type=1，但仍通过 model_ratio 计价。
   if (modelRatio > 0) {
     const completionRatio =
       toOptionalFiniteNumber(
@@ -689,9 +692,9 @@ class ModelPricingService {
     }
   }
 
-  private buildForOpenCodeProviderCache(
+  private buildForProviderCache(
     profileId: string,
-    json: ForOpenCodeLegacyPricingApiResponse,
+    json: ForPricingApiResponse,
     groupName: string,
     cnyPerUsd: number,
     sourceSignature: string,
@@ -809,8 +812,8 @@ class ModelPricingService {
     sourceSignature: string,
     autoRefreshSourceSignature: string | null
   ): ProviderPricingCache {
-    if (isForOpenCodeLegacyPricingResponse(json)) {
-      return this.buildForOpenCodeProviderCache(
+    if (isForPricingResponse(json)) {
+      return this.buildForProviderCache(
         profileId,
         json,
         groupName,

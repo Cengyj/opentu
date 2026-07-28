@@ -1,4 +1,4 @@
-﻿## Context
+## Context
 
 The first GPT Image compatibility phase added profile-level image API compatibility and a dedicated official generation schema:
 
@@ -12,7 +12,7 @@ The second phase needs `/images/edits`, but the project still has only one image
 - Goals:
   - Support official GPT Image image-to-image/edit requests.
   - Reuse existing `TaskType.IMAGE` queue/history/canvas flows.
-  - Keep basic ForOpenCode/OpenAI-compatible behavior unchanged.
+  - Keep generic OpenAI-compatible behavior unchanged.
   - Avoid routing by model ID alone.
 - Non-Goals:
   - No new task type.
@@ -46,7 +46,7 @@ Image task
   -> gpt-image-adapter sends /images/generations or /images/edits
 ```
 
-If the preferred edit schema is unavailable, planning falls back to the highest-priority image binding. That preserves For/basic compatibility.
+If the preferred edit schema is unavailable, planning falls back to the highest-priority image binding. That preserves generic OpenAI-compatible behavior.
 
 ## Request Fields
 
@@ -76,4 +76,4 @@ size=1024x1024
 
 ## Rollback
 
-Switching a profile from `openai-gpt-image` to `for-gpt-image` or `openai-compatible-basic` returns reference-image requests to the default adapter compatibility path.
+Switching a profile from `openai-gpt-image` to `openai-compatible-basic` returns reference-image requests to the default adapter compatibility path.

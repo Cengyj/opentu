@@ -2,7 +2,7 @@
 
 ## Why
 
-Official GPT Image editing uses `/images/edits` with a different request contract from text-to-image generation. The first GPT Image compatibility phase intentionally shipped only `/images/generations`; users now need image-to-image/edit support without replacing the existing For/basic compatibility fallback.
+Official GPT Image editing uses `/images/edits` with a different request contract from text-to-image generation. The first GPT Image compatibility phase intentionally shipped only `/images/generations`; users now need image-to-image/edit support while preserving the existing generic OpenAI-compatible fallback.
 
 ## What Changes
 
@@ -10,7 +10,7 @@ Official GPT Image editing uses `/images/edits` with a different request contrac
 - Let image invocation planning prefer a request schema when the current request requires edit semantics.
 - Extend the image adapter request shape with lightweight edit fields while keeping `TaskType.IMAGE`.
 - Extend the GPT Image adapter to build official multipart edit requests from reference images.
-- Keep For/basic GPT Image compatibility on the existing default adapter path.
+- Keep generic OpenAI-compatible image requests on the existing default adapter path.
 - Add tests for generation-vs-edit routing, request bodies, and adapter selection.
 
 ## Non-Goals

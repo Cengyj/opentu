@@ -111,38 +111,6 @@ export function isBlacklistedUrl(url) {
   }
 }
 
-const BLOCKED_EXTERNAL_PREVIEW_HOSTS = [
-  'github.com',
-  'github.io',
-  'githubusercontent.com',
-];
-
-function isBlockedExternalPreviewUrl(url) {
-  if (!url || typeof url !== 'string') return true;
-  if (url.startsWith('data:image/') || url.startsWith('/__aitu_cache__/')) {
-    return false;
-  }
-
-  try {
-    const urlObj = new URL(url, window.location.origin);
-    return BLOCKED_EXTERNAL_PREVIEW_HOSTS.some(domain =>
-      urlObj.hostname === domain || urlObj.hostname.endsWith('.' + domain)
-    );
-  } catch {
-    return true;
-  }
-}
-
-export function openDebugPreviewUrl(url) {
-  if (isBlockedExternalPreviewUrl(url)) return;
-  const opened = globalThis.open?.(url, '_blank', 'noopener');
-  if (opened) {
-    opened.opener = null;
-  }
-}
-
-window.openDebugPreviewUrl = openDebugPreviewUrl;
-
 /**
  * Filter logs by time range
  * @param {Array} logs 
@@ -222,7 +190,7 @@ function createBase64ImagePreview(base64Str) {
       🖼️ [image/${mimeType}, ${sizeText}]
     </span>
     <span class="base64-preview-image" id="${previewId}" style="display: none;">
-      <img src="${escapeHtml(base64Str)}" style="max-width: 200px; max-height: 200px; border-radius: 4px; margin: 8px 0; cursor: pointer; border: 1px solid var(--border-color);" onclick="openDebugPreviewUrl(this.src)" title="点击查看原图">
+      <img src="${escapeHtml(base64Str)}" style="max-width: 200px; max-height: 200px; border-radius: 4px; margin: 8px 0; cursor: pointer; border: 1px solid var(--border-color);" onclick="window.open(this.src)" title="点击查看原图">
     </span>
   </span>`;
 }

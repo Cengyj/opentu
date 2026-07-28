@@ -118,6 +118,9 @@ export async function generateImage(
 
   // 创建任务记录
   const taskId = generateTaskId();
+  // 必须先认领当前会话，再进行首次异步持久化；否则启动恢复可能把刚写入的
+  // processing 快照误判为上次页面中断的任务。
+  taskQueueService.claimTaskForCurrentSession(taskId);
   const now = Date.now();
   const persistedTaskParams = buildStoredImageTaskParams(
     sanitizedParams.prompt,

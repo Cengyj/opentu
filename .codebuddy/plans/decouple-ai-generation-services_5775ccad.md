@@ -73,7 +73,7 @@ todos:
 - TypeScript
 - RxJS（事件驱动状态管理）
 - IndexedDB/localforage（任务持久化）
-- 现有 API 客户端（tu-zi.com API）
+- 现有 API 客户端（foropencode.com API）
 
 ## 实现方案
 

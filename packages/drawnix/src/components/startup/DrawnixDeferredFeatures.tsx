@@ -69,6 +69,7 @@ interface DrawnixDeferredFeaturesProps {
   mediaLibraryOpen: boolean;
   mediaLibraryConfig?: Partial<MediaLibraryConfig> & {
     selectButtonText?: string;
+    batchSelectButtonText?: string;
   };
   backupRestoreOpen: boolean;
   cloudSyncOpen: boolean;
@@ -81,6 +82,7 @@ interface DrawnixDeferredFeaturesProps {
   handleOpenMediaLibrary: (
     config?: Partial<MediaLibraryConfig> & {
       selectButtonText?: string;
+      batchSelectButtonText?: string;
     }
   ) => void;
   handleBeforeSwitch: () => Promise<void>;
@@ -124,7 +126,9 @@ export function DrawnixDeferredFeatures({
             mode={mediaLibraryConfig?.mode}
             filterType={mediaLibraryConfig?.filterType}
             onSelect={mediaLibraryConfig?.onSelect}
+            onSelectMultiple={mediaLibraryConfig?.onSelectMultiple}
             selectButtonText={mediaLibraryConfig?.selectButtonText}
+            batchSelectButtonText={mediaLibraryConfig?.batchSelectButtonText}
           />
         </Suspense>
       )}

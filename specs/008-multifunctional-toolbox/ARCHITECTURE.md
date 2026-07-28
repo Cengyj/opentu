@@ -537,7 +537,7 @@ packages/drawnix/src/
 
 ## 🔗 相关文档
 
-- [Plait 官方文档](https://github.com/worktile/plait)
+- Plait 官方文档
 - [SVG foreignObject 规范](https://developer.mozilla.org/en-US/docs/Web/SVG/Element/foreignObject)
 - [iframe sandbox 文档](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/iframe)
 - [postMessage API](https://developer.mozilla.org/en-US/docs/Web/API/Window/postMessage)

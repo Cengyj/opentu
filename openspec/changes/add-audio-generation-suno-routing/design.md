@@ -168,7 +168,7 @@ interface AudioGenerationResult {
 ```ts
 {
   operation: 'audio',
-  protocol: 'tuzi.suno.music',
+  protocol: 'for.suno.music',
   submitPath: '/suno/submit/music',
   pollPathTemplate: '/suno/fetch/{task_id}',
   metadata: {

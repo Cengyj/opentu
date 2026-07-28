@@ -12,6 +12,9 @@ import { visualizer } from 'rollup-plugin-visualizer';
 const require = createRequire(import.meta.url);
 const workspaceRoot = path.resolve(__dirname, '../..');
 
+const shouldRewriteEntryAssetsToCDN =
+  process.env.AITU_REWRITE_ENTRY_ASSETS_TO_CDN === '1';
+
 // Read version from public/version.json
 const versionPath = path.resolve(__dirname, 'public/version.json');
 let appVersion = '0.0.0';
@@ -646,6 +649,10 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
     return 'media-viewer';
   }
 
+  if (normalizedId.includes('/packages/drawnix/src/tools/tool-ids.ts')) {
+    return undefined;
+  }
+
   if (
     normalizedId.includes(
       '/packages/drawnix/src/components/startup/DrawnixDeferredRuntime.tsx'
@@ -661,9 +668,6 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
     ) ||
     normalizedId.includes(
       '/packages/drawnix/src/services/font-manager-service'
-    ) ||
-    normalizedId.includes(
-      '/packages/drawnix/src/utils/model-pricing-service'
     ) ||
     normalizedId.includes('/packages/drawnix/src/hooks/useTaskStorage') ||
     normalizedId.includes('/packages/drawnix/src/hooks/useTaskExecutor') ||
@@ -683,6 +687,7 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
     normalizedId.includes(
       '/packages/drawnix/src/services/tool-window-service'
     ) ||
+    normalizedId.includes('/packages/drawnix/src/services/toolbox-service') ||
     normalizedId.includes('/packages/drawnix/src/tools/') ||
     normalizedId.includes('/packages/drawnix/src/components/backup-restore/') ||
     normalizedId.includes(
@@ -997,6 +1002,13 @@ function rewriteEntryAssetsToCDNPlugin(): Plugin {
           return;
         }
 
+        if (!shouldRewriteEntryAssetsToCDN) {
+          console.log(
+            '[EntryAssets] Keeping entry asset tags local because AITU_REWRITE_ENTRY_ASSETS_TO_CDN is not 1'
+          );
+          return;
+        }
+
         const html = (await readFileWithFdRetry(
           indexHtmlPath,
           'utf8'
@@ -1071,6 +1083,13 @@ function rewriteManifestAssetsToCDNPlugin(): Plugin {
         const manifestPath = path.join(outDir, 'manifest.json');
 
         if (!fs.existsSync(manifestPath)) {
+          return;
+        }
+
+        if (!shouldRewriteEntryAssetsToCDN) {
+          console.log(
+            '[ManifestAssets] Keeping manifest asset urls local because AITU_REWRITE_ENTRY_ASSETS_TO_CDN is not 1'
+          );
           return;
         }
 
@@ -1187,6 +1206,7 @@ export default defineConfig({
       brotliSize: true,
     }),
     deferEntryAssetsPlugin(),
+    rewriteEntryAssetsToCDNPlugin(),
     rewriteManifestAssetsToCDNPlugin(),
     precacheManifestPlugin(),
     idlePrefetchManifestPlugin(),

@@ -8,7 +8,7 @@
 /**
  * Image generation timeout for model calls, polling, and task waits.
  */
-export const IMAGE_GENERATION_TIMEOUT_MS = 35 * 60 * 1000;
+export const IMAGE_GENERATION_TIMEOUT_MS = 15 * 60 * 1000;
 
 /**
  * Task timeout durations (in milliseconds)
@@ -16,7 +16,7 @@ export const IMAGE_GENERATION_TIMEOUT_MS = 35 * 60 * 1000;
  * This is the total task timeout, not HTTP request timeout
  */
 export const TASK_TIMEOUT = {
-  /** Image generation task timeout: 35 minutes */
+  /** Image generation task timeout: 15 minutes */
   IMAGE: IMAGE_GENERATION_TIMEOUT_MS,
   /** Video generation task timeout: 1.5 hours (90 minutes) */
   VIDEO: 90 * 60 * 1000,
@@ -32,7 +32,7 @@ export const DUPLICATE_SUBMISSION_WINDOW = 5 * 1000; // 5 seconds
 
 /**
  * Maximum concurrent AI/model generation calls.
- * Keep non-AI Blob/ZIP/cache/sync paths on their own lower limits.
+ * Keep non-AI Blob/ZIP/cache/GitHub paths on their own lower limits.
  */
 export const AI_GENERATION_CONCURRENCY_LIMIT = 20;
 

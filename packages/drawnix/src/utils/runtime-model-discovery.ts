@@ -7,15 +7,12 @@ import {
   DEFAULT_AUDIO_MODEL_ID,
   DEFAULT_VIDEO_MODEL_ID,
   DEFAULT_TEXT_MODEL_ID,
+  getModelsByType,
+  getDefaultDisplayModelsByType,
+  getStaticModelsByType,
   getStaticModelConfig,
   setRuntimeModelConfigs,
 } from '../constants/model-config';
-import {
-  FOROPENCODE_DEFAULT_MODEL_IDS,
-  FOROPENCODE_DEFAULT_MODELS_SOURCE_URL,
-  FOROPENCODE_DEFAULT_MODELS_SYNCED_AT,
-} from '../constants/for-default-models';
-import { isDefaultProviderDisplayModel } from '../constants/default-model-visibility';
 import { normalizeApiBase } from '../services/media-api/utils';
 import {
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
@@ -27,7 +24,10 @@ import {
   type ModelRef,
   type ProviderProfile,
 } from './settings-manager';
-import { applySunoAliasPresentation, isSunoLikeModelId } from './suno-model-aliases';
+import {
+  applySunoAliasPresentation,
+  isSunoLikeModelId,
+} from './suno-model-aliases';
 import { sortModelsByDisplayPriority } from './model-sort';
 
 const LEGACY_CACHE_KEY = 'drawnix-runtime-model-discovery';
@@ -37,6 +37,7 @@ export interface RemoteModelListItem {
   object?: string;
   created?: number;
   owned_by?: string;
+  category?: string;
   supported_endpoint_types?: string[];
 }
 
@@ -66,7 +67,7 @@ interface LegacyPersistedRuntimeModelDiscoveryState {
   selectedModelIds: string[];
 }
 
-function createEmptyState(profileId: string): RuntimeModelDiscoveryState {
+function createDefaultState(profileId: string): RuntimeModelDiscoveryState {
   return {
     profileId,
     status: 'idle',
@@ -80,58 +81,15 @@ function createEmptyState(profileId: string): RuntimeModelDiscoveryState {
   };
 }
 
-function getDefaultSnapshotDiscoveredAt(): number | null {
-  const syncedAt = Date.parse(FOROPENCODE_DEFAULT_MODELS_SYNCED_AT);
-  return Number.isFinite(syncedAt) ? syncedAt : null;
-}
-
-function buildDefaultSnapshotModels(profileId: string): ModelConfig[] {
-  const models: ModelConfig[] = [];
-  const seen = new Set<string>();
-
-  for (const modelId of FOROPENCODE_DEFAULT_MODEL_IDS) {
-    if (!isDefaultProviderDisplayModel(modelId) || seen.has(modelId)) {
-      continue;
-    }
-
-    const model = adaptRuntimeModel({ id: modelId });
-    if (!model) {
-      continue;
-    }
-
-    seen.add(modelId);
-    models.push(attachRuntimeSource(profileId, model));
-  }
-
-  return models;
-}
-
-function createDefaultGroupSnapshotState(): RuntimeModelDiscoveryState {
-  const profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID;
-  const discoveredModels = buildDefaultSnapshotModels(profileId);
-  const selectedModelIds = discoveredModels.map((model) => model.id);
-
-  return {
-    profileId,
-    status: discoveredModels.length > 0 ? 'ready' : 'idle',
-    sourceBaseUrl: normalizeModelApiBaseUrl(
-      FOROPENCODE_DEFAULT_MODELS_SOURCE_URL
-    ),
-    signature: `foropencode-default-snapshot:${FOROPENCODE_DEFAULT_MODEL_IDS.join(
-      ','
-    )}`,
-    discoveredAt: getDefaultSnapshotDiscoveredAt(),
-    discoveredModels,
-    selectedModelIds,
-    models: buildSelectedModels(discoveredModels, selectedModelIds),
-    error: null,
-  };
-}
-
-function createDefaultState(profileId: string): RuntimeModelDiscoveryState {
-  return profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
-    ? createDefaultGroupSnapshotState()
-    : createEmptyState(profileId);
+function hasAuthoritativeModelCatalog(
+  state?: RuntimeModelDiscoveryState
+): boolean {
+  return Boolean(
+    state &&
+      (state.signature.trim() ||
+        state.discoveredAt !== null ||
+        state.discoveredModels.length > 0)
+  );
 }
 
 function hashString(input: string): string {
@@ -157,22 +115,6 @@ export function normalizeModelApiBaseUrl(baseUrl: string): string {
 
 function buildDiscoverySignature(baseUrl: string, apiKey: string): string {
   return `${normalizeModelApiBaseUrl(baseUrl)}::${hashString(apiKey.trim())}`;
-}
-
-const RETIRED_RUNTIME_MODEL_ID_REPLACEMENTS: Readonly<Record<string, string>> =
-  {
-    'gpt-image-2-vip': DEFAULT_IMAGE_MODEL_ID,
-  };
-
-function normalizeRetiredRuntimeModelId(modelId: string): string {
-  return (
-    RETIRED_RUNTIME_MODEL_ID_REPLACEMENTS[modelId.trim().toLowerCase()] ||
-    modelId
-  );
-}
-
-export function isDefaultGroupAutoVisibleModel(model: ModelConfig): boolean {
-  return isDefaultProviderDisplayModel(model.id);
 }
 
 function extractDiscoveryErrorMessage(
@@ -227,6 +169,92 @@ function hasAnyEndpointHint(
   patterns: readonly InferencePattern[]
 ): boolean {
   return endpointHints.some((hint) => matchesAnyPattern(hint, patterns));
+}
+
+function inferModelTypeFromCategory(category?: unknown): ModelType | null {
+  const normalized =
+    typeof category === 'string' ? category.trim().toLowerCase() : '';
+  if (!normalized) return null;
+
+  if (
+    matchesAnyPattern(normalized, [
+      '视频',
+      'video',
+      'videos',
+      'movie',
+      'film',
+      'video_generation',
+      'video-generation',
+      'text-to-video',
+      'image-to-video',
+      't2v',
+      'i2v',
+    ])
+  ) {
+    return 'video';
+  }
+
+  if (
+    matchesAnyPattern(normalized, [
+      '生图',
+      '图片',
+      '图像',
+      '绘图',
+      'image',
+      'images',
+      'img',
+      'picture',
+      'photo',
+      'image_generation',
+      'image-generation',
+      'text-to-image',
+      'image-to-image',
+      't2i',
+      'i2i',
+    ])
+  ) {
+    return 'image';
+  }
+
+  if (
+    matchesAnyPattern(normalized, [
+      '音频',
+      '音乐',
+      '语音',
+      'audio',
+      'music',
+      'voice',
+      'speech',
+      'suno',
+    ])
+  ) {
+    return 'audio';
+  }
+
+  if (
+    matchesAnyPattern(normalized, [
+      '文本',
+      '文字',
+      '对话',
+      '聊天',
+      '语言',
+      '研究',
+      '推理',
+      '代码',
+      'text',
+      'chat',
+      'llm',
+      'language',
+      'research',
+      'reasoning',
+      'coder',
+      'code',
+    ])
+  ) {
+    return 'text';
+  }
+
+  return null;
 }
 
 function inferVendorByKeywords(modelId: string): ModelVendor {
@@ -345,7 +373,6 @@ function inferVendorByKeywords(modelId: string): ModelVendor {
     lowerId.includes('whisper') ||
     lowerId.includes('codex') ||
     lowerId.includes('text-embedding') ||
-    lowerId.includes('omni') ||
     lowerId.includes('tts-') ||
     lowerId.includes('babbage') ||
     lowerId.includes('davinci') ||
@@ -355,6 +382,8 @@ function inferVendorByKeywords(modelId: string): ModelVendor {
     return ModelVendor.GPT;
   }
   if (
+    lowerId === 'omni-flash' ||
+    lowerId === 'omni-flash-components' ||
     lowerId.includes('gemini') ||
     lowerId.includes('banana') ||
     lowerId.includes('gemma') ||
@@ -474,6 +503,11 @@ function inferVendor(model: RemoteModelListItem): ModelVendor {
 }
 
 function inferModelType(model: RemoteModelListItem): ModelType {
+  const categoryType = inferModelTypeFromCategory(model.category);
+  if (categoryType) {
+    return categoryType;
+  }
+
   const endpointHints = (model.supported_endpoint_types || [])
     .map((item) => item.toLowerCase())
     .filter(Boolean);
@@ -524,23 +558,8 @@ function inferModelType(model: RemoteModelListItem): ModelType {
     return 'audio';
   }
 
-  if (
-    hasHint(
-      'video',
-      'videos',
-      'video_generation',
-      'video-generation',
-      'videos.generate',
-      'video/generations',
-      'text-to-video',
-      'image-to-video',
-      't2v',
-      'i2v',
-      'video-edit',
-      'video_edit'
-    )
-  ) {
-    return 'video';
+  if (hasImageIdSignal()) {
+    return 'image';
   }
 
   if (
@@ -561,6 +580,25 @@ function inferModelType(model: RemoteModelListItem): ModelType {
     )
   ) {
     return 'image';
+  }
+
+  if (
+    hasHint(
+      'video',
+      'videos',
+      'video_generation',
+      'video-generation',
+      'videos.generate',
+      'video/generations',
+      'text-to-video',
+      'image-to-video',
+      't2v',
+      'i2v',
+      'video-edit',
+      'video_edit'
+    )
+  ) {
+    return 'video';
   }
 
   switch (vendor) {
@@ -841,7 +879,32 @@ function adaptRuntimeModel(model: RemoteModelListItem): ModelConfig | null {
 
   const staticConfig = getStaticModelConfig(model.id);
   if (staticConfig) {
-    return cloneModelConfig(staticConfig);
+    const clonedConfig = cloneModelConfig(staticConfig);
+    const categoryType = inferModelTypeFromCategory(model.category);
+    if (!categoryType || categoryType === staticConfig.type) {
+      return clonedConfig;
+    }
+
+    return {
+      ...clonedConfig,
+      type: categoryType,
+      imageDefaults:
+        categoryType === 'image'
+          ? staticConfig.imageDefaults || {
+              aspectRatio: 'auto',
+              width: 1024,
+              height: 1024,
+            }
+          : undefined,
+      videoDefaults:
+        categoryType === 'video'
+          ? staticConfig.videoDefaults || {
+              duration: '8',
+              size: '1280x720',
+              aspectRatio: '16:9',
+            }
+          : undefined,
+    };
   }
 
   return buildFallbackConfig(model);
@@ -853,57 +916,8 @@ function normalizeSelectedModelIds(
 ): string[] {
   const knownIds = new Set(discoveredModels.map((model) => model.id));
   return Array.from(
-    new Set(
-      modelIds
-        .map(normalizeRetiredRuntimeModelId)
-        .filter((modelId) => knownIds.has(modelId))
-    )
+    new Set(modelIds.filter((modelId) => knownIds.has(modelId)))
   );
-}
-
-function filterDefaultGroupVisibleModelIds(
-  discoveredModels: ModelConfig[],
-  modelIds: string[]
-): string[] {
-  const modelById = new Map(discoveredModels.map((model) => [model.id, model]));
-  return modelIds.filter((modelId) => {
-    const model = modelById.get(modelId);
-    return model
-      ? isDefaultGroupAutoVisibleModel(model)
-      : isDefaultProviderDisplayModel(modelId);
-  });
-}
-
-function getDefaultGroupAutoVisibleModelIds(
-  discoveredModels: ModelConfig[]
-): string[] {
-  return discoveredModels
-    .filter(isDefaultGroupAutoVisibleModel)
-    .map((model) => model.id);
-}
-
-function resolveSelectedModelIds(
-  profileId: string,
-  discoveredModels: ModelConfig[],
-  modelIds: string[]
-): string[] {
-  const selectedModelIds = normalizeSelectedModelIds(
-    discoveredModels,
-    modelIds
-  );
-
-  if (profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID) {
-    const visibleSelectedModelIds = filterDefaultGroupVisibleModelIds(
-      discoveredModels,
-      selectedModelIds
-    );
-
-    return visibleSelectedModelIds.length > 0
-      ? visibleSelectedModelIds
-      : getDefaultGroupAutoVisibleModelIds(discoveredModels);
-  }
-
-  return selectedModelIds;
 }
 
 function buildSelectedModels(
@@ -913,6 +927,20 @@ function buildSelectedModels(
   return discoveredModels.filter((model) =>
     selectedModelIds.includes(model.id)
   );
+}
+
+function mergeModels(
+  staticModels: ModelConfig[],
+  runtimeModels: ModelConfig[]
+): ModelConfig[] {
+  const merged = [...runtimeModels];
+  const seen = new Set(runtimeModels.map((model) => model.id));
+  for (const model of staticModels) {
+    if (!seen.has(model.id)) {
+      merged.push(model);
+    }
+  }
+  return merged;
 }
 
 function ensureRuntimeTag(tags?: string[]): string[] {
@@ -1017,29 +1045,13 @@ function createPinnedRuntimeModel(
 function createStateFromCatalog(
   catalog: ProviderCatalog
 ): RuntimeModelDiscoveryState {
-  const rawDiscoveredModels = Array.isArray(catalog.discoveredModels)
-    ? catalog.discoveredModels
-    : [];
-  const rawSelectedModelIds = Array.isArray(catalog.selectedModelIds)
-    ? catalog.selectedModelIds
-    : [];
-
-  if (
-    catalog.profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID &&
-    rawDiscoveredModels.length === 0 &&
-    rawSelectedModelIds.length === 0
-  ) {
-    return createDefaultGroupSnapshotState();
-  }
-
   const discoveredModels = decorateRuntimeModels(
     catalog.profileId,
-    rawDiscoveredModels
+    Array.isArray(catalog.discoveredModels) ? catalog.discoveredModels : []
   );
-  const selectedModelIds = resolveSelectedModelIds(
-    catalog.profileId,
+  const selectedModelIds = normalizeSelectedModelIds(
     discoveredModels,
-    rawSelectedModelIds
+    Array.isArray(catalog.selectedModelIds) ? catalog.selectedModelIds : []
   );
   const models = buildSelectedModels(discoveredModels, selectedModelIds);
 
@@ -1086,8 +1098,7 @@ function loadLegacyPersistedState(): RuntimeModelDiscoveryState | null {
       LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
       parsed.discoveredModels
     );
-    const selectedModelIds = resolveSelectedModelIds(
-      LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
+    const selectedModelIds = normalizeSelectedModelIds(
       discoveredModels,
       Array.isArray(parsed.selectedModelIds) ? parsed.selectedModelIds : []
     );
@@ -1129,6 +1140,7 @@ class RuntimeModelDiscoveryStore {
     this.syncRuntimeModelConfigs();
 
     providerCatalogsSettings.addListener(this.handleCatalogSettingsChange);
+    providerProfilesSettings.addListener(this.handleProfileSettingsChange);
     invocationPresetsSettings.addListener(this.handlePresetSettingsChange);
     settingsManager.addListener(
       'activePresetId',
@@ -1200,6 +1212,11 @@ class RuntimeModelDiscoveryStore {
   };
 
   private handlePresetSettingsChange = (): void => {
+    this.syncRuntimeModelConfigs();
+    this.emit();
+  };
+
+  private handleProfileSettingsChange = (): void => {
     this.syncRuntimeModelConfigs();
     this.emit();
   };
@@ -1300,8 +1317,20 @@ class RuntimeModelDiscoveryStore {
     return [...this.getCatalogState(profileId).selectedModelIds];
   }
 
+  isProviderSelectionMode(): boolean {
+    for (const state of this.catalogStates.values()) {
+      if (
+        isProfileEnabled(state.profileId) &&
+        hasAuthoritativeModelCatalog(state)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   getPreferredModels(type: ModelType): ModelConfig[] {
-    return this.getSelectableModels(type);
+    return getModelsByType(type);
   }
 
   getSelectableModels(type: ModelType): ModelConfig[] {
@@ -1310,14 +1339,15 @@ class RuntimeModelDiscoveryStore {
       if (!isProfileEnabled(state.profileId)) {
         continue;
       }
-      const typeModels = state.models.filter((model) => model.type === type);
       runtimeModels.push(
-        ...(state.profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
-          ? typeModels.filter(isDefaultGroupAutoVisibleModel)
-          : typeModels)
+        ...state.models.filter((model) => model.type === type)
       );
     }
-    return sortModelsByDisplayPriority(runtimeModels);
+    return sortModelsByDisplayPriority(
+      this.isProviderSelectionMode()
+        ? runtimeModels
+        : decorateStaticModels(getDefaultDisplayModelsByType(type))
+    );
   }
 
   getPinnedSelectableModel(
@@ -1332,90 +1362,82 @@ class RuntimeModelDiscoveryStore {
     const profileId = modelRef?.profileId || null;
     const expectedSelectionKey = buildSelectionKey(profileId, modelId);
 
-    if (
-      profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID &&
-      !isDefaultProviderDisplayModel(modelId)
-    ) {
-      return null;
-    }
-
     if (profileId) {
+      if (!isProfileEnabled(profileId)) {
+        return null;
+      }
       const state = this.catalogStates.get(profileId);
-      const directMatch =
-        state?.models.find(
-          (model) =>
-            model.type === type &&
-            (model.selectionKey || buildSelectionKey(profileId, model.id)) ===
-              expectedSelectionKey
-        ) ||
-        state?.discoveredModels.find(
-          (model) =>
-            model.type === type &&
-            (model.selectionKey || buildSelectionKey(profileId, model.id)) ===
-              expectedSelectionKey
-        );
+      const directMatch = state?.models.find(
+        (model) =>
+          model.type === type &&
+          (model.selectionKey || buildSelectionKey(profileId, model.id)) ===
+            expectedSelectionKey
+      );
 
       if (directMatch) {
-        if (
-          profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID &&
-          !isDefaultGroupAutoVisibleModel(directMatch)
-        ) {
-          return null;
-        }
         return directMatch;
       }
 
-      const conflictingTypeMatch =
-        state?.models.find(
-          (model) =>
-            (model.selectionKey || buildSelectionKey(profileId, model.id)) ===
-            expectedSelectionKey
-        ) ||
-        state?.discoveredModels.find(
-          (model) =>
-            (model.selectionKey || buildSelectionKey(profileId, model.id)) ===
-            expectedSelectionKey
-        );
+      const discoveredMatch = state?.discoveredModels.find(
+        (model) =>
+          (model.selectionKey || buildSelectionKey(profileId, model.id)) ===
+          expectedSelectionKey
+      );
 
-      if (conflictingTypeMatch) {
+      // A successful catalog is authoritative for its current credential.
+      // Models that are unselected or absent must not be recreated from stale
+      // presets/local UI state after the API key changes.
+      if (discoveredMatch || hasAuthoritativeModelCatalog(state)) {
         return null;
       }
 
-      if (
-        profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID &&
-        !isDefaultProviderDisplayModel(modelId)
-      ) {
+      const conflictingTypeMatch = state?.models.find(
+        (model) =>
+          (model.selectionKey || buildSelectionKey(profileId, model.id)) ===
+          expectedSelectionKey
+      );
+
+      if (conflictingTypeMatch) {
         return null;
       }
 
       return createPinnedRuntimeModel(profileId, modelId, type);
     }
 
+    if (this.isProviderSelectionMode()) {
+      const selectedMatches: ModelConfig[] = [];
+      for (const state of this.catalogStates.values()) {
+        if (!isProfileEnabled(state.profileId)) {
+          continue;
+        }
+        selectedMatches.push(
+          ...state.models.filter(
+            (model) => model.type === type && model.id === modelId
+          )
+        );
+      }
+
+      return selectedMatches.length === 1 ? selectedMatches[0] : null;
+    }
+
     const staticMatch = getStaticModelConfig(modelId);
-    if (
+    const canPinStaticModel =
       staticMatch &&
       staticMatch.type === type &&
-      isDefaultProviderDisplayModel(staticMatch.id)
-    ) {
+      (type === 'text' ||
+        getDefaultDisplayModelsByType(type).some(
+          (model) => model.id === modelId
+        ));
+    if (canPinStaticModel) {
       return decorateStaticModels([staticMatch])[0];
     }
 
     for (const state of this.catalogStates.values()) {
-      const fallbackMatch =
-        state.models.find(
-          (model) => model.type === type && model.id === modelId
-        ) ||
-        state.discoveredModels.find(
-          (model) => model.type === type && model.id === modelId
-        );
+      const fallbackMatch = state.models.find(
+        (model) => model.type === type && model.id === modelId
+      );
 
       if (fallbackMatch) {
-        if (
-          state.profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID &&
-          !isDefaultGroupAutoVisibleModel(fallbackMatch)
-        ) {
-          continue;
-        }
         return fallbackMatch;
       }
     }
@@ -1429,27 +1451,33 @@ class RuntimeModelDiscoveryStore {
   ): ModelConfig[] {
     const state = this.getCatalogState(profileId);
     const runtimeModels = state.models.filter((model) => model.type === type);
-
-    if (profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID) {
-      return sortModelsByDisplayPriority(
-        runtimeModels.filter(isDefaultGroupAutoVisibleModel)
-      );
+    if (this.isProviderSelectionMode()) {
+      return sortModelsByDisplayPriority(runtimeModels);
     }
-
-    return sortModelsByDisplayPriority(runtimeModels);
+    return mergeModels(getDefaultDisplayModelsByType(type), runtimeModels);
   }
 
   invalidateIfConfigChanged(
     profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
     baseUrl: string,
-    apiKey: string
+    apiKey: string,
+    force = false
   ): void {
     const state = this.getCatalogState(profileId);
-    const signature = buildDiscoverySignature(baseUrl, apiKey);
-    if (!state.signature || state.signature === signature) {
+    const signature = apiKey.trim()
+      ? buildDiscoverySignature(baseUrl, apiKey)
+      : '';
+    if (!force && (!state.signature || state.signature === signature)) {
       return;
     }
-    this.clear(profileId);
+    this.setCatalogState(profileId, {
+      ...createDefaultState(profileId),
+      sourceBaseUrl: normalizeModelApiBaseUrl(baseUrl),
+      signature,
+    });
+    if (profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID) {
+      removeLegacyPersistedState();
+    }
   }
 
   applySelection(
@@ -1513,6 +1541,7 @@ class RuntimeModelDiscoveryStore {
     const state = this.getCatalogState(profileId);
     const normalizedBaseUrl = normalizeModelApiBaseUrl(baseUrl);
     const signature = buildDiscoverySignature(normalizedBaseUrl, trimmedApiKey);
+    const isSameCredential = state.signature === signature;
 
     this.setCatalogState(
       profileId,
@@ -1521,6 +1550,10 @@ class RuntimeModelDiscoveryStore {
         status: 'loading',
         sourceBaseUrl: normalizedBaseUrl,
         signature,
+        discoveredAt: isSameCredential ? state.discoveredAt : null,
+        discoveredModels: isSameCredential ? state.discoveredModels : [],
+        selectedModelIds: isSameCredential ? state.selectedModelIds : [],
+        models: isSameCredential ? state.models : [],
         error: null,
       },
       false
@@ -1569,14 +1602,9 @@ class RuntimeModelDiscoveryStore {
       throw new Error('模型列表为空');
     }
 
-    const selectedModelIds =
-      state.signature === signature
-        ? resolveSelectedModelIds(
-            profileId,
-            adaptedModels,
-            state.selectedModelIds
-          )
-        : resolveSelectedModelIds(profileId, adaptedModels, []);
+    const selectedModelIds = isSameCredential
+      ? normalizeSelectedModelIds(adaptedModels, state.selectedModelIds)
+      : [];
     const models = buildSelectedModels(adaptedModels, selectedModelIds);
 
     this.setCatalogState(profileId, {

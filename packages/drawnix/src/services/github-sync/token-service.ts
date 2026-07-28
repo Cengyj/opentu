@@ -1,5 +1,5 @@
 /**
- * 同步访问令牌管理服务
+ * GitHub Token 管理服务
  * 负责 Token 的安全存储、验证和管理
  */
 
@@ -16,7 +16,7 @@ const TOKEN_VALIDATED_KEY = 'github_token_validated';
 const TOKEN_PREFIXES = ['ghp_', 'github_pat_', 'gho_', 'ghu_', 'ghs_', 'ghr_'];
 
 /**
- * 同步访问令牌管理服务
+ * GitHub Token 管理服务
  */
 class TokenService {
   private cachedToken: string | null = null;
@@ -99,7 +99,7 @@ class TokenService {
       return false;
     }
 
-    // 检查长度（同步访问令牌通常至少 40 个字符）
+    // 检查长度（GitHub Token 通常至少 40 个字符）
     if (token.length < 40) {
       return false;
     }
@@ -122,7 +122,7 @@ class TokenService {
   }
 
   /**
-   * 验证 Token 是否有效（调用远程同步 API）
+   * 验证 Token 是否有效（调用 GitHub API）
    */
   async validateToken(token?: string): Promise<boolean> {
     const tokenToValidate = token || await this.getToken();
@@ -215,7 +215,7 @@ class TokenService {
   }
 
   /**
-   * 获取 Token 关联的远程账户信息
+   * 获取 Token 关联的 GitHub 用户信息
    */
   async getUserInfo(): Promise<{ login: string; name: string | null; avatar_url: string } | null> {
     // 使用缓存

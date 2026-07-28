@@ -57,11 +57,7 @@ function hasAsyncImageInvocationRoute(
 export function isResumableAsyncImageTask(
   task: Pick<Task, 'type' | 'remoteId' | 'params' | 'invocationRoute'>
 ): boolean {
-  return (
-    task.type === TaskType.IMAGE &&
-    Boolean(task.remoteId) &&
-    (isAsyncImageModel(task.params?.model) || hasAsyncImageInvocationRoute(task))
-  );
+  return task.type === TaskType.IMAGE && Boolean(task.remoteId);
 }
 
 /**
@@ -71,8 +67,8 @@ export function isResumableAsyncImageTask(
  * @returns True if the task has timed out, false otherwise
  * 
  * @example
- * const task = { type: 'image', startedAt: Date.now() - 36 * 60 * 1000 };
- * isTaskTimeout(task) // Returns true (started > 35 minutes ago)
+ * const task = { type: 'image', startedAt: Date.now() - 16 * 60 * 1000 };
+ * isTaskTimeout(task) // Returns true (started > 15 minutes ago)
  */
 export function isTaskTimeout(task: Task): boolean {
   if (!task.startedAt || task.status !== TaskStatus.PROCESSING) {
@@ -92,7 +88,7 @@ export function isTaskTimeout(task: Task): boolean {
  * @returns Timeout duration in milliseconds
  * 
  * @example
- * getTaskTimeout('image') // Returns 2100000 (35 minutes)
+ * getTaskTimeout('image') // Returns 900000 (15 minutes)
  * getTaskTimeout('video') // Returns 1800000 (30 minutes)
  */
 export function getTaskTimeout(taskType: TaskType): number {

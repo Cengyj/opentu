@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 从 pricing API 的 endpoints 数据推断 binding 配置。
  * 纯函数，将 endpoint path 映射到已有的 protocol/requestSchema 体系。
  */

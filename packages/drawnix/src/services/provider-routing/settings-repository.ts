@@ -10,10 +10,9 @@ import {
 } from '../../constants/model-config';
 import {
   DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
-  LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-  FOROPENCODE_DEFAULT_PROVIDER_NAME,
-  FOROPENCODE_PROVIDER_DEFAULT_BASE_URL,
+  FOR_DEFAULT_PROVIDER_NAME,
+  FOR_PROVIDER_DEFAULT_BASE_URL,
   createModelRef,
   geminiSettings,
   providerCatalogsSettings,
@@ -58,7 +57,7 @@ function inferProviderTypeFromBaseUrl(
     normalizedBaseUrl.includes('/openai') ||
     normalizedBaseUrl.endsWith('/v1') ||
     normalizedBaseUrl.includes('api.openai.com') ||
-    isForOpenCodeBaseUrl(normalizedBaseUrl)
+    isBuiltInProviderBaseUrl(normalizedBaseUrl)
   ) {
     return 'openai-compatible';
   }
@@ -66,7 +65,7 @@ function inferProviderTypeFromBaseUrl(
   return 'custom';
 }
 
-function isForOpenCodeBaseUrl(baseUrl: string): boolean {
+function isBuiltInProviderBaseUrl(baseUrl: string): boolean {
   const normalizedBaseUrl = baseUrl.trim().toLowerCase();
   if (!normalizedBaseUrl) {
     return false;
@@ -102,7 +101,7 @@ function inferAuthType(
   return 'bearer';
 }
 
-function normalizeImageApiCompatibility(
+function normalizeSnapshotImageApiCompatibility(
   value?: ProviderProfile['imageApiCompatibility'] | string | null
 ): ProviderProfile['imageApiCompatibility'] {
   if (
@@ -111,14 +110,6 @@ function normalizeImageApiCompatibility(
     value === 'openai-compatible-basic'
   ) {
     return value;
-  }
-
-  if (
-    value === 'for-gpt-image' ||
-    value === 'tuzi-gpt-image' ||
-    value === 'tuzi-compatible'
-  ) {
-    return 'openai-gpt-image';
   }
 
   return DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY;
@@ -134,6 +125,7 @@ function toProviderProfileSnapshot(
     | 'apiKey'
     | 'authType'
     | 'imageApiCompatibility'
+    | 'preferAsyncImageEndpoint'
     | 'extraHeaders'
   >
 ): ProviderProfileSnapshot {
@@ -148,9 +140,10 @@ function toProviderProfileSnapshot(
       profile.providerType,
       profile.authType
     ),
-    imageApiCompatibility: normalizeImageApiCompatibility(
+    imageApiCompatibility: normalizeSnapshotImageApiCompatibility(
       profile.imageApiCompatibility
     ),
+    preferAsyncImageEndpoint: profile.preferAsyncImageEndpoint ?? false,
     extraHeaders: profile.extraHeaders,
   };
 }
@@ -208,10 +201,7 @@ function buildLegacyProfileSnapshot(): ProviderProfileSnapshot {
   const existingLegacyProfile = providerProfilesSettings
     .get()
     .find((profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID);
-  const baseUrl = gemini.baseUrl?.trim() || FOROPENCODE_PROVIDER_DEFAULT_BASE_URL;
-  const legacyImageApiCompatibilityFallback = isForOpenCodeBaseUrl(baseUrl)
-    ? LEGACY_DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY
-    : DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY;
+  const baseUrl = gemini.baseUrl?.trim() || FOR_PROVIDER_DEFAULT_BASE_URL;
   const providerType =
     existingLegacyProfile?.providerType === 'openai-compatible' ||
     existingLegacyProfile?.providerType === 'gemini-compatible' ||
@@ -221,7 +211,7 @@ function buildLegacyProfileSnapshot(): ProviderProfileSnapshot {
 
   return {
     id: LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-    name: FOROPENCODE_DEFAULT_PROVIDER_NAME,
+    name: FOR_DEFAULT_PROVIDER_NAME,
     providerType,
     baseUrl,
     apiKey: gemini.apiKey?.trim() || '',
@@ -230,10 +220,11 @@ function buildLegacyProfileSnapshot(): ProviderProfileSnapshot {
       providerType,
       existingLegacyProfile?.authType
     ),
-    imageApiCompatibility: normalizeImageApiCompatibility(
-      existingLegacyProfile?.imageApiCompatibility ||
-        legacyImageApiCompatibilityFallback
+    imageApiCompatibility: normalizeSnapshotImageApiCompatibility(
+      existingLegacyProfile?.imageApiCompatibility
     ),
+    preferAsyncImageEndpoint:
+      existingLegacyProfile?.preferAsyncImageEndpoint ?? false,
   };
 }
 

@@ -125,7 +125,7 @@ npx @github/specify init
 # 8. 执行实现
 /speckit.implement
 
-# 9. (可选)将任务转换为 GitHub Issues
+# 9. (可选)将任务转换为 Issue 任务
 /speckit.taskstoissues
 ```
 
@@ -141,7 +141,7 @@ npx @github/specify init
 | `/speckit.analyze` | 检查规范/计划/任务的一致性 | 任务生成后(可选) | 分析报告 |
 | `/speckit.checklist` | 生成验收检查清单 | 实现前(可选) | 自定义检查清单 |
 | `/speckit.implement` | AI 执行任务实现 | 任务清单确认后 | 实际代码文件 |
-| `/speckit.taskstoissues` | 将任务转换为 GitHub Issues | 团队协作场景(可选) | GitHub Issues |
+| `/speckit.taskstoissues` | 将任务转换为 Issue 任务 | 团队协作场景(可选) | Issue 任务 |
 
 ### 典型工作流示例
 
@@ -206,12 +206,12 @@ npx @github/specify init
 /speckit.plan
 /speckit.tasks
 
-# 转换为 GitHub Issues
+# 转换为 Issue 任务
 /speckit.taskstoissues
-# 团队成员可以在 GitHub 上认领任务
+# 团队成员可以在任务平台认领任务
 
 # 开发团队成员
-# 直接使用 GitHub Issues 进行开发
+# 直接使用 Issue 任务进行开发
 # 或者再次运行 /speckit.implement 自动实现
 ```
 
@@ -607,8 +607,8 @@ git commit -m "docs(spec): update image crop spec with final implementation"
 6. 开发团队执行实现
 
 **异步协作:**
-- 在 GitHub PR 中审查规范文档
-- 使用 GitHub Discussions 讨论计划方案
+- 在代码评审中审查规范文档
+- 使用团队讨论区讨论计划方案
 - 在 Issues 中跟踪规范变更请求
 
 ### 5. 测试驱动规范
@@ -777,7 +777,7 @@ Then: 触摸区域足够大(最小 44x44px),操作流畅
   # 不推荐：绕过检查点可能导致质量问题
   claude-code "/speckit.specify $1 && /speckit.plan && /speckit.tasks && /speckit.implement"
 
-  2. 提交 Feature Request 到 https://github.com/github/spec-kit/issues，建议增加：
+  2. 提交 Feature Request 到上游项目，建议增加：
     - --auto 标志自动执行所有步骤
     - --fast 模式跳过可选步骤
     - 交互式确认点（而非完全自动）
@@ -794,7 +794,7 @@ Then: 触摸区域足够大(最小 44x44px),操作流畅
 ## 参考资源
 
 ### 官方文档
-- [Spec-Kit GitHub](https://github.com/github/spec-kit)
+- Spec-Kit 项目
 - [Spec-Driven Development 博客](https://github.blog/ai-and-ml/generative-ai/spec-driven-development-with-ai-get-started-with-a-new-open-source-toolkit/)
 
 ### Opentu 项目文档
@@ -803,8 +803,8 @@ Then: 触摸区域足够大(最小 44x44px),操作流畅
 - [项目指导](../CLAUDE.md)
 
 ### 社区讨论
-- [Monorepo 支持讨论](https://github.com/github/spec-kit/discussions/769)
-- [工作区支持 Issue](https://github.com/github/spec-kit/issues/1026)
+- Monorepo 支持讨论
+- 工作区支持 Issue
 
 ---
 

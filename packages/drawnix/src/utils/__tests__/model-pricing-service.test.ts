@@ -1,20 +1,19 @@
-﻿import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildPricingSourceSignature,
   formatModelPrice,
   getPricingCacheTtlMs,
   isPricingCacheEligibleForWarmup,
   MODEL_PRICING_CACHE_TTL_MS,
-  FOROPENCODE_PRICING_CACHE_TTL_MS,
+  FOR_PRICING_CACHE_TTL_MS,
   modelPricingService,
-  resolveProviderPricingConfig,
 } from '../model-pricing-service';
 import { providerPricingCacheSettings } from '../settings-manager';
 import type {
   NewApiPricingApiResponse,
   PricingApiResponse,
   ProviderPricingCache,
-  ForOpenCodeLegacyPricingApiResponse,
+  ForPricingApiResponse,
 } from '../model-pricing-types';
 
 describe('model-pricing-service', () => {
@@ -44,38 +43,22 @@ describe('model-pricing-service', () => {
     );
   }
 
-  it('preserves a provider-selected non-default pricing group in pricing config', () => {
-    expect(
-      resolveProviderPricingConfig({
-        baseUrl: 'https://foropencode.com/v1',
-        pricingGroup: 'codex',
-      })
-    ).toMatchObject({
-      pricingUrl: 'https://foropencode.com/api/pricing',
-      pricingGroup: 'codex',
-      cnyPerUsd: 0.7,
-    });
-  });
-
-  it('uses daily cache TTL for ForOpenCode pricing APIs', () => {
+  it('对 For 价格接口使用每日缓存', () => {
     expect(getPricingCacheTtlMs('https://foropencode.com/api/pricing')).toBe(
-      FOROPENCODE_PRICING_CACHE_TTL_MS
+      FOR_PRICING_CACHE_TTL_MS
     );
     expect(
       getPricingCacheTtlMs('https://foropencode.com/api/pricing?group=default')
-    ).toBe(FOROPENCODE_PRICING_CACHE_TTL_MS);
-    expect(
-      getPricingCacheTtlMs('https://foropencode.com/api/pricing')
-    ).toBe(FOROPENCODE_PRICING_CACHE_TTL_MS);
+    ).toBe(FOR_PRICING_CACHE_TTL_MS);
   });
 
-  it('keeps the short default cache TTL for non-ForOpenCode pricing APIs', () => {
+  it('对非 For 价格接口保持默认短缓存', () => {
     expect(getPricingCacheTtlMs('https://example.com/api/pricing')).toBe(
       MODEL_PRICING_CACHE_TTL_MS
     );
   });
 
-  it('only allows manual or legacy cache signatures to join warmup', () => {
+  it('仅允许手动成功或旧版已缓存签名参与自动更新', () => {
     const sourceSignature = buildPricingSourceSignature(
       'https://foropencode.com/api/pricing',
       'default',
@@ -109,18 +92,18 @@ describe('model-pricing-service', () => {
     expect(isPricingCacheEligibleForWarmup(null, sourceSignature)).toBe(false);
   });
 
-  it('parses nested ForOpenCode legacy pricing responses with multiple groups', async () => {
-    const response: ForOpenCodeLegacyPricingApiResponse = {
+  it('保持兼容 for-api 嵌套价格结构', async () => {
+    const response: ForPricingApiResponse = {
       success: true,
       data: {
         group_info: {
-          default: { GroupRatio: 1, DisplayName: 'Default group' },
-          codex: { GroupRatio: 1.5, DisplayName: 'Codex group' },
+          default: { GroupRatio: 1, DisplayName: '默认分组' },
+          codex: { GroupRatio: 1.5, DisplayName: 'Codex 分组' },
         },
         model_info: [
           {
             model_name: 'gpt-test',
-            description: 'Test model',
+            description: '测试模型',
             tags: '',
             enable_groups: ['default', 'codex'],
             price_info: {
@@ -150,14 +133,14 @@ describe('model-pricing-service', () => {
     const cache = await fetchCache(response, 'codex', 0.7);
 
     expect(cache.groups).toEqual([
-      { name: 'default', displayName: 'Default group', ratio: 1 },
-      { name: 'codex', displayName: 'Codex group', ratio: 1.5 },
+      { name: 'default', displayName: '默认分组', ratio: 1 },
+      { name: 'codex', displayName: 'Codex 分组', ratio: 1.5 },
     ]);
     expect(cache.prices['gpt-test']).toMatchObject({
       billingType: 'token',
       inputCnyMtok: 4.2,
       outputCnyMtok: 12.6,
-      description: 'Test model',
+      description: '测试模型',
       docsUrl: 'https://example.com/docs',
     });
     expect(cache.modelEndpoints?.['gpt-test']?.chat.path).toBe(
@@ -165,13 +148,13 @@ describe('model-pricing-service', () => {
     );
   });
 
-  it('parses flattened NewAPI pricing responses with multiple groups', async () => {
+  it('自动识别并适配 new-api 扁平价格结构', async () => {
     const response: NewApiPricingApiResponse = {
       success: true,
       data: [
         {
           model_name: 'gpt-ratio',
-          description: 'Ratio priced model',
+          description: '倍率计费模型',
           quota_type: 0,
           model_ratio: 1.25,
           completion_ratio: 2,
@@ -181,7 +164,7 @@ describe('model-pricing-service', () => {
         },
         {
           model_name: 'task-price',
-          description: 'Flat priced model',
+          description: '固定价格模型',
           quota_type: 1,
           model_ratio: 0,
           completion_ratio: 0,
@@ -193,7 +176,7 @@ describe('model-pricing-service', () => {
               label: 'Async Image Generation',
               path: '/v1/videos',
               method: 'post',
-              description: 'Async image API',
+              description: '异步图片任务接口',
               scenario: 'async-image',
             },
           },
@@ -213,8 +196,8 @@ describe('model-pricing-service', () => {
         vip: 0.8,
       },
       usable_group: {
-        default: 'Default group',
-        vip: 'VIP group',
+        default: '默认分组',
+        vip: 'VIP 分组',
       },
       supported_endpoint: {
         openai: { path: '/v1/chat/completions', method: 'post' },
@@ -225,14 +208,14 @@ describe('model-pricing-service', () => {
     const cache = await fetchCache(response, 'vip', 7);
 
     expect(cache.groups).toEqual([
-      { name: 'default', displayName: 'Default group', ratio: 1 },
-      { name: 'vip', displayName: 'VIP group', ratio: 0.8 },
+      { name: 'default', displayName: '默认分组', ratio: 1 },
+      { name: 'vip', displayName: 'VIP 分组', ratio: 0.8 },
     ]);
     expect(cache.prices['gpt-ratio']).toMatchObject({
       billingType: 'token',
       inputCnyMtok: 14,
       outputCnyMtok: 28,
-      description: 'Ratio priced model',
+      description: '倍率计费模型',
     });
     expect(formatModelPrice(cache.prices['gpt-ratio'])).toBe(
       '输入 ¥14.00 · 补全 ¥28.00 / 1M Tokens'
@@ -240,7 +223,7 @@ describe('model-pricing-service', () => {
     expect(cache.prices['task-price']).toMatchObject({
       billingType: 'flat',
       flatCny: 0.448,
-      description: 'Flat priced model',
+      description: '固定价格模型',
     });
     expect(cache.prices['hidden-model']).toBeUndefined();
     expect(cache.modelEndpoints?.['gpt-ratio']?.openai).toEqual({
@@ -255,12 +238,12 @@ describe('model-pricing-service', () => {
       label: 'Async Image Generation',
       path: '/v1/videos',
       method: 'POST',
-      description: 'Async image API',
+      description: '异步图片任务接口',
       scenario: 'async-image',
     });
   });
 
-  it('uses returned available groups when the requested new-api group is missing', async () => {
+  it('new-api 当前分组不存在时使用接口返回的可用分组', async () => {
     const response: NewApiPricingApiResponse = {
       success: true,
       data: [
@@ -286,16 +269,16 @@ describe('model-pricing-service', () => {
         codex: 0.25,
       },
       usable_group: {
-        business: 'Business group',
-        codex: 'Codex group',
+        business: '商务分组',
+        codex: 'Codex 分组',
       },
     };
 
     const cache = await fetchCache(response, 'default', 7);
 
     expect(cache.groups).toEqual([
-      { name: 'business', displayName: 'Business group', ratio: 0.5 },
-      { name: 'codex', displayName: 'Codex group', ratio: 0.25 },
+      { name: 'business', displayName: '商务分组', ratio: 0.5 },
+      { name: 'codex', displayName: 'Codex 分组', ratio: 0.25 },
     ]);
     expect(cache.prices['business-model']).toMatchObject({
       billingType: 'token',
@@ -309,7 +292,7 @@ describe('model-pricing-service', () => {
     });
   });
 
-  it('prefers tiered prices for new-api tiered_expr billing', async () => {
+  it('new-api tiered_expr 动态计费优先展示分层秒价', async () => {
     const response: NewApiPricingApiResponse = {
       success: true,
       data: [
@@ -329,7 +312,7 @@ describe('model-pricing-service', () => {
         default: 1,
       },
       usable_group: {
-        default: 'default group',
+        default: 'default分组',
       },
     };
 
@@ -343,15 +326,12 @@ describe('model-pricing-service', () => {
         { label: '1080P', perSecondCny: 1.6 },
       ],
     });
-    expect(formatModelPrice(cache.prices['happyhorse-1.0-video-edit'])).toContain(
-      '720P'
-    );
-    expect(formatModelPrice(cache.prices['happyhorse-1.0-video-edit'])).toContain(
-      '1080P'
+    expect(formatModelPrice(cache.prices['happyhorse-1.0-video-edit'])).toBe(
+      '720P ¥0.80/秒 · 1080P ¥1.60/秒'
     );
   });
 
-  it('includes cache and audio prices for new-api token models', async () => {
+  it('new-api token 模型展示缓存与音频价格明细', async () => {
     const response: NewApiPricingApiResponse = {
       success: true,
       data: [
@@ -380,7 +360,7 @@ describe('model-pricing-service', () => {
         coding: 1,
       },
       usable_group: {
-        coding: 'Coding group',
+        coding: 'Coding分组',
       },
     };
 
@@ -401,7 +381,7 @@ describe('model-pricing-service', () => {
     );
   });
 
-  it('applies current business group model pricing overrides', async () => {
+  it('business pricing 按当前分组覆盖模型倍率', async () => {
     const response: NewApiPricingApiResponse = {
       success: true,
       data: [
@@ -420,7 +400,7 @@ describe('model-pricing-service', () => {
         Claude: 1,
       },
       usable_group: {
-        Claude: 'Claude group',
+        Claude: 'Claude 分组',
       },
       group_model_pricing: {
         Claude: {
@@ -443,7 +423,7 @@ describe('model-pricing-service', () => {
     const cache = await fetchCache(response, 'Claude', 0.7);
 
     expect(cache.groups).toEqual([
-      { name: 'Claude', displayName: 'Claude group', ratio: 1 },
+      { name: 'Claude', displayName: 'Claude 分组', ratio: 1 },
     ]);
     expect(cache.prices['claude-sonnet-4-5']).toMatchObject({
       billingType: 'token',
@@ -454,4 +434,3 @@ describe('model-pricing-service', () => {
     });
   });
 });
-

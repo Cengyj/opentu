@@ -1,4 +1,9 @@
 import {
+  base64ToBlob,
+  getFileExtension,
+  normalizeImageDataUrl,
+} from '@aitu/utils';
+import {
   resolveOfficialGPTImageQuality,
   resolveOfficialGPTImageEditSize,
   resolveOfficialGPTImageSize,
@@ -16,112 +21,6 @@ const GPT_IMAGE_BACKGROUND_VALUES = new Set(['transparent', 'opaque', 'auto']);
 const GPT_IMAGE_MODERATION_VALUES = new Set(['low', 'auto']);
 const GPT_IMAGE_INPUT_FIDELITY_VALUES = new Set(['high', 'low']);
 const GPT_IMAGE_RESPONSE_FORMAT_VALUES = new Set(['url', 'b64_json']);
-const BASE64_IMAGE_SIGNATURES: Array<{ prefix: string; mimeType: string }> = [
-  { prefix: 'iVBORw0KGgo', mimeType: 'image/png' },
-  { prefix: '/9j/', mimeType: 'image/jpeg' },
-  { prefix: 'R0lGOD', mimeType: 'image/gif' },
-  { prefix: 'UklGR', mimeType: 'image/webp' },
-  { prefix: 'PHN2Zy', mimeType: 'image/svg+xml' },
-];
-const BASE64_IMAGE_BODY_REGEX = /^[A-Za-z0-9+/=\r\n]+$/;
-const MIME_EXTENSION_MAP: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/jpg': 'jpg',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-  'image/svg+xml': 'svg',
-};
-
-async function loadImageUrlUtils() {
-  return import('@aitu/utils');
-}
-
-type GetFileExtension = (url: string, mimeType?: string | undefined) => string;
-
-function sanitizeBase64Payload(base64: string): string {
-  return base64.trim().replace(/\s+/g, '');
-}
-
-function inferImageMimeTypeFromBase64(base64: string): string | undefined {
-  const normalized = sanitizeBase64Payload(base64);
-  return BASE64_IMAGE_SIGNATURES.find(({ prefix }) =>
-    normalized.startsWith(prefix)
-  )?.mimeType;
-}
-
-function normalizeImageDataUrl(
-  value: string,
-  fallbackMimeType = 'image/png'
-): string {
-  const trimmed = value.trim();
-  if (!trimmed) return value;
-  if (
-    trimmed.startsWith('data:') ||
-    trimmed.startsWith('blob:') ||
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://')
-  ) {
-    return trimmed;
-  }
-
-  if (
-    (trimmed.startsWith('/') ||
-      trimmed.startsWith('./') ||
-      trimmed.startsWith('../')) &&
-    !inferImageMimeTypeFromBase64(trimmed)
-  ) {
-    return trimmed;
-  }
-
-  const normalized = sanitizeBase64Payload(trimmed);
-  if (!BASE64_IMAGE_BODY_REGEX.test(normalized) || normalized.length < 32) {
-    return trimmed;
-  }
-
-  const mimeType = inferImageMimeTypeFromBase64(normalized) || fallbackMimeType;
-  return `data:${mimeType};base64,${normalized}`;
-}
-
-function getFileExtension(url: string, mimeType?: string): string {
-  const normalizedMimeType = mimeType?.split(';')[0]?.toLowerCase();
-  if (normalizedMimeType && MIME_EXTENSION_MAP[normalizedMimeType]) {
-    return MIME_EXTENSION_MAP[normalizedMimeType];
-  }
-
-  const dataUrlMimeType = url.match(/^data:([^;,]+)/)?.[1]?.toLowerCase();
-  if (dataUrlMimeType && MIME_EXTENSION_MAP[dataUrlMimeType]) {
-    return MIME_EXTENSION_MAP[dataUrlMimeType];
-  }
-
-  const extension = url
-    .split(/[?#]/)[0]
-    ?.match(/\.([a-z0-9]{1,8})$/i)?.[1]
-    ?.toLowerCase();
-  return extension || 'bin';
-}
-
-export function isGPTImage2ModelId(model: string | undefined): boolean {
-  return typeof model === 'string' && model.trim() === 'gpt-image-2';
-}
-
-function supportsGPTImageResponseFormat(model: string | undefined): boolean {
-  return !isGPTImage2ModelId(model);
-}
-
-function supportsGPTImageInputFidelity(model: string | undefined): boolean {
-  return !isGPTImage2ModelId(model);
-}
-
-function normalizeGPTImageBackground(
-  model: string | undefined,
-  background: string | undefined
-): string | undefined {
-  if (isGPTImage2ModelId(model) && background === 'transparent') {
-    return 'auto';
-  }
-  return background;
-}
 
 function getStringParam(
   params: Record<string, unknown> | undefined,
@@ -186,11 +85,11 @@ function setAllowedStringValue(
 
 function getGPTImageResponseFormat(
   params: Record<string, unknown> | undefined
-): 'url' | 'b64_json' {
+): 'url' | 'b64_json' | undefined {
   const value = getStringParam(params, 'response_format');
   return value && GPT_IMAGE_RESPONSE_FORMAT_VALUES.has(value)
     ? (value as 'url' | 'b64_json')
-    : 'url';
+    : undefined;
 }
 
 function applyCommonGPTImageOptions(
@@ -217,9 +116,10 @@ function applyCommonGPTImageOptions(
     params,
     'output_format'
   );
-  const background = normalizeGPTImageBackground(
-    request.model,
-    getStringFieldOrParam(request.background, params, 'background')
+  const background = getStringFieldOrParam(
+    request.background,
+    params,
+    'background'
   );
 
   if (size) {
@@ -273,9 +173,9 @@ export function buildGPTImageGenerationBody(
     model: request.model,
     prompt: request.prompt,
   };
-
-  if (supportsGPTImageResponseFormat(request.model)) {
-    body.response_format = getGPTImageResponseFormat(request.params);
+  const responseFormat = getGPTImageResponseFormat(request.params);
+  if (responseFormat) {
+    body.response_format = responseFormat;
   }
 
   applyCommonGPTImageOptions(body, request, 'generation');
@@ -294,11 +194,7 @@ function appendFormValue(
   formData.append(key, String(value));
 }
 
-function getBlobExtension(
-  blob: Blob,
-  source: string,
-  getFileExtension: GetFileExtension
-): string {
+function getBlobExtension(blob: Blob, source: string): string {
   const sourceExtension = getFileExtension(source, blob.type);
   if (sourceExtension && sourceExtension !== 'bin') {
     return sourceExtension;
@@ -313,19 +209,13 @@ async function imageInputToBlob(
   filenamePrefix: string,
   fetcher: typeof fetch = fetch
 ): Promise<{ blob: Blob; filename: string }> {
-  const { base64ToBlob, getFileExtension, normalizeImageDataUrl } =
-    await loadImageUrlUtils();
   const normalized = normalizeImageDataUrl(value, 'image/png');
 
   if (normalized.startsWith('data:')) {
-    const blob = await normalizeFormDataBlob(base64ToBlob(normalized));
+    const blob = base64ToBlob(normalized);
     return {
       blob,
-      filename: `${filenamePrefix}.${getBlobExtension(
-        blob,
-        normalized,
-        getFileExtension
-      )}`,
+      filename: `${filenamePrefix}.${getBlobExtension(blob, normalized)}`,
     };
   }
 
@@ -336,33 +226,14 @@ async function imageInputToBlob(
     );
   }
 
-  const blob = await normalizeFormDataBlob(await response.blob());
-  return {
-    blob,
-    filename: `${filenamePrefix}.${getBlobExtension(
-      blob,
-      normalized,
-      getFileExtension
-    )}`,
-  };
-}
-
-async function normalizeFormDataBlob(blob: unknown): Promise<Blob> {
-  if (blob instanceof Blob) {
-    return blob;
-  }
-
-  const blobLike = blob as {
-    arrayBuffer?: () => Promise<ArrayBuffer>;
-    type?: string;
-  };
-  if (typeof blobLike.arrayBuffer !== 'function') {
-    throw new Error('GPT Image 编辑图片读取结果不是有效 Blob');
-  }
-
-  return new Blob([await blobLike.arrayBuffer()], {
-    type: blobLike.type || 'application/octet-stream',
+  const blob = await response.blob();
+  const formDataBlob = new Blob([await blob.arrayBuffer()], {
+    type: blob.type || 'image/png',
   });
+  return {
+    blob: formDataBlob,
+    filename: `${filenamePrefix}.${getBlobExtension(formDataBlob, normalized)}`,
+  };
 }
 
 export async function buildGPTImageEditFormData(
@@ -391,19 +262,17 @@ export async function buildGPTImageEditFormData(
     model: request.model,
     prompt: request.prompt,
   };
-
-  if (supportsGPTImageResponseFormat(request.model)) {
-    fields.response_format = getGPTImageResponseFormat(params);
+  const responseFormat = getGPTImageResponseFormat(params);
+  if (responseFormat) {
+    fields.response_format = responseFormat;
   }
 
-  if (supportsGPTImageInputFidelity(request.model)) {
-    setAllowedStringValue(
-      fields,
-      'input_fidelity',
-      inputFidelity,
-      GPT_IMAGE_INPUT_FIDELITY_VALUES
-    );
-  }
+  setAllowedStringValue(
+    fields,
+    'input_fidelity',
+    inputFidelity,
+    GPT_IMAGE_INPUT_FIDELITY_VALUES
+  );
   applyCommonGPTImageOptions(fields, request, 'edit');
 
   const formData = new FormData();
@@ -411,9 +280,9 @@ export async function buildGPTImageEditFormData(
     appendFormValue(formData, key, value);
   }
 
-  for (const [index, referenceImage] of referenceImages.entries()) {
+  for (let index = 0; index < referenceImages.length; index += 1) {
     const { blob, filename } = await imageInputToBlob(
-      referenceImage,
+      referenceImages[index]!,
       `image-${index + 1}`,
       fetcher
     );
@@ -436,6 +305,12 @@ function isGPTImageEditRequest(
   request: ImageGenerationRequest,
   requestSchema?: string
 ): boolean {
+  const hasReferenceImages =
+    (request.referenceImages && request.referenceImages.length > 0) ||
+    request.maskImage;
+  if (!hasReferenceImages) {
+    return false;
+  }
   if (requestSchema === 'openai.image.gpt-edit-form') {
     return true;
   }
@@ -458,7 +333,7 @@ function resolveGPTImagePath(
       : '/images/edits';
   }
 
-  if (binding?.submitPath) {
+  if (binding?.submitPath && binding.submitPath !== '/images/edits') {
     return binding.submitPath;
   }
 
@@ -537,10 +412,20 @@ export const gptImageAdapter: ImageModelAdapter = {
   ],
   defaultModel: 'gpt-image-2',
   async generateImage(context, request) {
+    console.debug('[gpt-image-adapter] generateImage called', {
+      bindingProtocol: context.binding?.protocol,
+      bindingRequestSchema: context.binding?.requestSchema,
+      bindingSubmitPath: context.binding?.submitPath,
+      generationMode: request.generationMode,
+      hasReferenceImages: !!(request.referenceImages && request.referenceImages.length > 0),
+      referenceImagesCount: request.referenceImages?.length ?? 0,
+      hasMaskImage: !!request.maskImage,
+    });
     const isEditRequest = isGPTImageEditRequest(
       request,
       context.binding?.requestSchema
     );
+    console.debug('[gpt-image-adapter] isEditRequest:', isEditRequest);
     const editFormData = isEditRequest
       ? await buildGPTImageEditFormData(request, context.fetcher)
       : null;

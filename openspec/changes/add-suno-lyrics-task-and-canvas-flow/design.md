@@ -3,7 +3,7 @@
 仓库当前已经为 Suno 音乐生成铺好了主路径：
 
 - `runtime-model-discovery` 会把 `lyrics`、`music`、`suno` 等标识统归到 `audio`
-- `provider-routing` 会为 Suno 推断 `tuzi.suno.music` 绑定
+- `provider-routing` 会为 Suno 推断 `for.suno.music` 绑定
 - `audio-api-service` 负责提交 `/suno/submit/music`、轮询 `/suno/fetch/{taskId}` 并提取音频 URL
 - 任务队列、自动插入和任务面板会把 `TaskType.AUDIO` 默认当成“可播放音频资产”
 
@@ -152,7 +152,7 @@ interface ProviderAudioBindingMetadata {
 ```ts
 {
   operation: 'audio',
-  protocol: 'tuzi.suno.music',
+  protocol: 'for.suno.music',
   pollPathTemplate: '/suno/fetch/{taskId}',
   metadata: {
     audio: {

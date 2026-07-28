@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 模型分组工具
  *
  * 将模型列表按 供应商(Provider) → 厂商分类(Vendor) → 具体模型 三级结构分组
@@ -8,8 +8,8 @@
 import type { ModelConfig, ModelVendor } from '../constants/model-config';
 import {
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-  FOROPENCODE_DEFAULT_PROVIDER_NAME,
-  FOROPENCODE_PROVIDER_ICON_URL,
+  FOR_DEFAULT_PROVIDER_NAME,
+  FOR_PROVIDER_ICON_URL,
   type ProviderProfile,
 } from './settings-manager';
 import {
@@ -109,10 +109,10 @@ export function groupModelsByProvider(
     groups.push({
       providerId: pid,
       providerName: isDefault
-        ? profile?.name || FOROPENCODE_DEFAULT_PROVIDER_NAME
+        ? profile?.name || FOR_DEFAULT_PROVIDER_NAME
         : profile?.name || pid,
       providerIconUrl: isDefault
-        ? profile?.iconUrl || FOROPENCODE_PROVIDER_ICON_URL
+        ? profile?.iconUrl || FOR_PROVIDER_ICON_URL
         : profile?.iconUrl,
       vendorCategories,
       totalCount: bucket.length,

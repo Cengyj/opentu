@@ -126,12 +126,12 @@ describe('ppt prompts style consistency', () => {
   it('normalizes common AI outline aliases from PPT generation responses', () => {
     const outline = parseOutlineResponse(
       JSON.stringify({
-        theme: '兔子AI是API中转站',
+        theme: 'For AI是API中转站',
         mainline: '问题-方案-能力-场景-价值',
         pages: [
           {
             page: 1,
-            title: '封面｜兔子AI',
+            title: '封面｜For AI',
             core_points: ['统一 API 中转', '面向 AI 能力接入'],
           },
           {
@@ -148,7 +148,7 @@ describe('ppt prompts style consistency', () => {
       })
     );
 
-    expect(outline.title).toBe('兔子AI是API中转站');
+    expect(outline.title).toBe('For AI是API中转站');
     expect(outline.pages[0].layout).toBe('cover');
     expect(outline.pages[1].layout).toBe('title-body');
     expect(outline.pages[1].bullets).toEqual([
@@ -199,7 +199,7 @@ describe('ppt prompts style consistency', () => {
   it('keeps truncated JSON as a parse failure', () => {
     expect(() =>
       parseOutlineResponse(
-        '{"theme":"兔子AI是API中转站","pages":[{"title":"封面","core_points":["统一 API 中转"]}'
+        '{"theme":"For AI是API中转站","pages":[{"title":"封面","core_points":["统一 API 中转"]}'
       )
     ).toThrow('Failed to parse PPT outline');
   });

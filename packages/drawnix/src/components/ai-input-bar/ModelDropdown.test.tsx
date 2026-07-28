@@ -1,4 +1,4 @@
-﻿// @vitest-environment jsdom
+// @vitest-environment jsdom
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,8 +12,8 @@ vi.mock('../../hooks/use-drawnix', () => ({
 vi.mock('../../hooks/use-provider-profiles', () => ({
   useProviderProfiles: () => [
     {
-      id: 'foropencode-provider',
-      name: 'ForOpenCode Provider',
+      id: 'for-provider',
+      name: 'For Provider',
       enabled: true,
     },
   ],
@@ -21,9 +21,8 @@ vi.mock('../../hooks/use-provider-profiles', () => ({
 
 vi.mock('../../utils/settings-manager', () => ({
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
-  FOROPENCODE_ORIGINAL_PROVIDER_PROFILE_ID: 'foropencode-original',
-  FOROPENCODE_DEFAULT_PROVIDER_NAME: 'ForOpenCode',
-  FOROPENCODE_PROVIDER_ICON_URL: 'https://foropencode.com/icon.png',
+  FOR_DEFAULT_PROVIDER_NAME: 'For',
+  FOR_PROVIDER_ICON_URL: 'https://for.example/icon.png',
   createModelRef: (profileId: string | null, modelId: string) => ({
     profileId,
     modelId,
@@ -62,9 +61,9 @@ describe('ModelDropdown', () => {
     shortCode: 'gpt2',
     type: 'image',
     vendor: ModelVendor.GPT,
-    sourceProfileId: 'foropencode-provider',
-    sourceProfileName: 'ForOpenCode Provider',
-    selectionKey: 'foropencode-provider::gpt-image-2',
+    sourceProfileId: 'for-provider',
+    sourceProfileName: 'For Provider',
+    selectionKey: 'for-provider::gpt-image-2',
   };
 
   function mockRect(
@@ -91,9 +90,9 @@ describe('ModelDropdown', () => {
       shortCode: 'h10i',
       type: 'video',
       vendor: ModelVendor.HAPPYHORSE,
-      sourceProfileId: 'foropencode-provider',
-      sourceProfileName: 'ForOpenCode Provider',
-      selectionKey: 'foropencode-provider::happyhorse-1.0-i2v',
+      sourceProfileId: 'for-provider',
+      sourceProfileName: 'For Provider',
+      selectionKey: 'for-provider::happyhorse-1.0-i2v',
     };
 
     const { container } = render(
@@ -129,13 +128,13 @@ describe('ModelDropdown', () => {
         onSelect={vi.fn()}
       />
     );
-    const wrapper = container.querySelector(
-      '.model-dropdown'
-    ) as HTMLElement;
+    const wrapper = container.querySelector('.model-dropdown') as HTMLElement;
     mockRect(wrapper, { top: 520, left: 42, bottom: 552, width: 180 });
 
     fireEvent.mouseDown(
-      container.querySelector('.model-dropdown__trigger--minimal') as HTMLElement
+      container.querySelector(
+        '.model-dropdown__trigger--minimal'
+      ) as HTMLElement
     );
 
     const menu = document.body.querySelector(
@@ -179,5 +178,87 @@ describe('ModelDropdown', () => {
     expect(menu).toBeTruthy();
     expect(menu.style.width).toBe('680px');
     expect(menu.classList.contains('model-dropdown__menu--down')).toBe(true);
+  });
+
+  it('minimal 变体候选列表为空时不会反显静态默认模型', () => {
+    const onSelect = vi.fn();
+    const { container } = render(
+      <ModelDropdown
+        selectedModel="suno_music"
+        models={[]}
+        onSelect={onSelect}
+      />
+    );
+
+    const trigger = container.querySelector(
+      '.model-dropdown__trigger--minimal'
+    );
+
+    expect(trigger?.textContent).not.toContain('#suno');
+    expect(trigger?.getAttribute('aria-label')).toBe('选择模型 (↑↓ Tab)');
+    expect(onSelect).toHaveBeenCalledWith('', null);
+  });
+
+  it('空模型 ID 仍会清理失效的供应商选择引用', () => {
+    const onSelect = vi.fn();
+
+    render(
+      <ModelDropdown
+        selectedModel=""
+        selectedSelectionKey="old-provider::old-model"
+        models={[]}
+        onSelect={onSelect}
+      />
+    );
+
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(onSelect).toHaveBeenCalledWith('', null);
+  });
+
+  it('失效选择只自动校正一次，不重复触发回调', () => {
+    const onSelect = vi.fn();
+    const models = [baseModel];
+    const { rerender } = render(
+      <ModelDropdown
+        selectedModel="old-model"
+        selectedSelectionKey="old-provider::old-model"
+        models={models}
+        onSelect={onSelect}
+      />
+    );
+
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(onSelect).toHaveBeenCalledWith('gpt-image-2', {
+      profileId: 'for-provider',
+      modelId: 'gpt-image-2',
+    });
+
+    rerender(
+      <ModelDropdown
+        selectedModel="old-model"
+        selectedSelectionKey="old-provider::old-model"
+        models={models}
+        onSelect={onSelect}
+      />
+    );
+
+    expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it('form 变体仍保留静态模型反显以支持自定义输入', () => {
+    const { container } = render(
+      <ModelDropdown
+        selectedModel="suno_music"
+        models={[]}
+        onSelect={vi.fn()}
+        variant="form"
+      />
+    );
+
+    const input = container.querySelector(
+      '.model-dropdown__form-input'
+    ) as HTMLInputElement;
+
+    expect(input.value).toContain('Suno');
   });
 });

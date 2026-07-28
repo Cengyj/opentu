@@ -14,7 +14,8 @@ import { WeComIcon } from '../icons';
 import { ToolButton } from '../tool-button';
 import './feedback-button.scss';
 
-const FEEDBACK_GROUP_QR_CODE_URL = '/wx.jpg';
+const QR_CODE_URL = 'https://static.foropencode.com/wx.png';
+const SERVICE_QR_CODE_URL = '/logo/cardid.jpg';
 
 export const FeedbackButton: React.FC = () => {
   const board = useBoard();
@@ -23,8 +24,10 @@ export const FeedbackButton: React.FC = () => {
 
   // 预加载图片
   useEffect(() => {
-    const image = new Image();
-    image.src = FEEDBACK_GROUP_QR_CODE_URL;
+    const img1 = new Image();
+    img1.src = QR_CODE_URL;
+    const img2 = new Image();
+    img2.src = SERVICE_QR_CODE_URL;
   }, []);
 
   return (
@@ -50,12 +53,20 @@ export const FeedbackButton: React.FC = () => {
           <div className="feedback-qrcode-grid">
             <div className="feedback-qrcode-item">
               <img
-                src={FEEDBACK_GROUP_QR_CODE_URL}
+                src={QR_CODE_URL}
                 alt="用户反馈群二维码"
                 className="feedback-qrcode-image"
               />
               <div className="feedback-qrcode-text">用户反馈群</div>
             </div>
+            {/* <div className="feedback-qrcode-item">
+              <img
+                src={SERVICE_QR_CODE_URL}
+                alt="客服二维码"
+                className="feedback-qrcode-image"
+              />
+              <div className="feedback-qrcode-text">客服</div>
+            </div> */}
           </div>
         </div>
       </PopoverContent>

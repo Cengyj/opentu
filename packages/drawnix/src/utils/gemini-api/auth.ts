@@ -46,9 +46,9 @@ export function promptForApiKey(): Promise<string | null> {
       </p>
       <p style="margin: 0 0 8px 0; color: #666; line-height: 1.5;">
         您可以从以下地址获取 API Key（新建令牌渠道分组选择default）:
-        <a href="https://foropencode.com/token" target="_blank" rel="noopener noreferrer" 
+        <a href="https://foropencode.com/keys" target="_blank" rel="noopener noreferrer"
            style="color: #0052d9; text-decoration: none;">
-          https://foropencode.com/token
+          https://foropencode.com/keys
         </a>
       </p>
       <input type="text" id="apiKeyInput" placeholder="请输入 API Key" 

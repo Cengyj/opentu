@@ -14,11 +14,8 @@ import {
   legacyTaskQueueService,
 } from '../services/task-queue';
 import { taskStorageReader } from '../services/task-storage-reader';
-import {
-  TaskType,
-  TaskStatus,
-  TaskExecutionPhase,
-} from '../types/task.types';
+import { getTaskInterruptionSkipReason } from '../services/task-storage-recovery';
+import { TaskType, TaskStatus, TaskExecutionPhase } from '../types/task.types';
 import { isResumableAsyncImageTask } from '../utils/task-utils';
 
 // Global flag to prevent multiple initializations (persists across HMR)
@@ -46,7 +43,7 @@ function waitForIdle(timeout = 100): Promise<void> {
  * - Migrate data from legacy databases (sw-task-queue → aitu-app)
  * - Load tasks from IndexedDB on mount
  * - Restore interrupted tasks
- * 
+ *
  * @returns boolean - Whether task storage is initialized and ready
  */
 export function useTaskStorage(): boolean {
@@ -65,16 +62,22 @@ export function useTaskStorage(): boolean {
         // 数据迁移：从旧 sw-task-queue 数据库迁移到 aitu-app（一次性）
         // 必须在 taskStorageReader.getAllTasks() 之前完成，
         // 否则读取 aitu-app 时数据还在 sw-task-queue 中，导致首次打开为空
-        const { migrateFromLegacyDB } = await import('../services/app-database');
+        const { migrateFromLegacyDB } = await import(
+          '../services/app-database'
+        );
         await migrateFromLegacyDB();
 
         // Load tasks from IndexedDB (aitu-app)
         const storedTasks = await taskStorageReader.getAllTasks();
-        console.warn(`[useTaskStorage] Loaded ${storedTasks.length} tasks from IndexedDB`);
+        console.warn(
+          `[useTaskStorage] Loaded ${storedTasks.length} tasks from IndexedDB`
+        );
 
         if (storedTasks.length > 0) {
           taskQueueService.restoreTasks(storedTasks);
-          console.warn(`[useTaskStorage] Restored ${storedTasks.length} tasks to memory`);
+          console.warn(
+            `[useTaskStorage] Restored ${storedTasks.length} tasks to memory`
+          );
 
           // Handle interrupted processing tasks based on task type and remoteId
           const processingTasks = storedTasks.filter(
@@ -82,18 +85,35 @@ export function useTaskStorage(): boolean {
           );
 
           if (processingTasks.length > 0) {
-            console.warn(`[useTaskStorage] Found ${processingTasks.length} interrupted processing tasks`);
+            console.warn(
+              `[useTaskStorage] Found ${processingTasks.length} processing task snapshots to inspect`
+            );
 
             processingTasks.forEach((task) => {
-              const isAsyncImageResumable =
-                isResumableAsyncImageTask(task);
+              const skipReason = getTaskInterruptionSkipReason(
+                task,
+                taskQueueService
+              );
+              if (skipReason) {
+                console.warn(
+                  `[useTaskStorage]   task=${task.id} type=${task.type} phase=${
+                    task.executionPhase || 'unknown'
+                  } → KEEP (${skipReason})`
+                );
+                return;
+              }
 
-              const isVideoResumable = task.type === TaskType.VIDEO && !!task.remoteId;
+              const isAsyncImageResumable = isResumableAsyncImageTask(task);
+
+              const isVideoResumable =
+                task.type === TaskType.VIDEO && !!task.remoteId;
               const isAudioResumable =
                 task.type === TaskType.AUDIO && !!task.remoteId;
 
               console.warn(
-                `[useTaskStorage]   task=${task.id} type=${task.type} phase=${task.executionPhase || 'unknown'} remoteId=${task.remoteId || 'none'} → ${
+                `[useTaskStorage]   task=${task.id} type=${task.type} phase=${
+                  task.executionPhase || 'unknown'
+                } remoteId=${task.remoteId || 'none'} → ${
                   isVideoResumable || isAudioResumable || isAsyncImageResumable
                     ? 'KEEP'
                     : 'MARK_FAILED'
@@ -154,10 +174,20 @@ export function useTaskStorage(): boolean {
           );
 
           // 无条件打印汇总，便于定位
-          const failedVideoCount = storedTasks.filter(t => t.status === 'failed' && t.type === TaskType.VIDEO).length;
-          const failedVideoWithRemoteId = storedTasks.filter(t => t.status === 'failed' && t.type === TaskType.VIDEO && t.remoteId).length;
-          const failedAudioCount = storedTasks.filter(t => t.status === 'failed' && t.type === TaskType.AUDIO).length;
-          const failedAudioWithRemoteId = storedTasks.filter(t => t.status === 'failed' && t.type === TaskType.AUDIO && t.remoteId).length;
+          const failedVideoCount = storedTasks.filter(
+            (t) => t.status === 'failed' && t.type === TaskType.VIDEO
+          ).length;
+          const failedVideoWithRemoteId = storedTasks.filter(
+            (t) =>
+              t.status === 'failed' && t.type === TaskType.VIDEO && t.remoteId
+          ).length;
+          const failedAudioCount = storedTasks.filter(
+            (t) => t.status === 'failed' && t.type === TaskType.AUDIO
+          ).length;
+          const failedAudioWithRemoteId = storedTasks.filter(
+            (t) =>
+              t.status === 'failed' && t.type === TaskType.AUDIO && t.remoteId
+          ).length;
           console.warn(
             `[useTaskStorage] Recovery check: ${processingTasks.length} processing, ${failedVideoCount} failed video (${failedVideoWithRemoteId} with remoteId), ${failedAudioCount} failed audio (${failedAudioWithRemoteId} with remoteId), ${failedRemoteTasks.length} recoverable`
           );
@@ -173,7 +203,11 @@ export function useTaskStorage(): boolean {
             failedRemoteTasks.forEach((task) => {
               const errorCode = task.error?.code || '';
               if (!RECOVERABLE_ERROR_CODES.has(errorCode)) {
-                console.warn(`[useTaskStorage] Skip recovery for task ${task.id}: terminal failure (${errorCode || 'no error code'})`);
+                console.warn(
+                  `[useTaskStorage] Skip recovery for task ${
+                    task.id
+                  }: terminal failure (${errorCode || 'no error code'})`
+                );
                 return;
               }
 

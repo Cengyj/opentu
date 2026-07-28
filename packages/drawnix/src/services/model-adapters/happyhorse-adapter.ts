@@ -467,7 +467,7 @@ export const happyHorseVideoAdapter: VideoModelAdapter = {
       );
       attempts += 1;
 
-      let isBusinessFailure = false;
+      let isTerminalTaskFailure = false;
       try {
         const status = await queryHappyHorseVideo(context, taskId);
         consecutiveErrors = 0;
@@ -497,11 +497,11 @@ export const happyHorseVideoAdapter: VideoModelAdapter = {
         }
 
         if (status.status === 'failed' || status.status === 'error') {
-          isBusinessFailure = true;
+          isTerminalTaskFailure = true;
           throw new Error(extractErrorMessage(status.error));
         }
       } catch (err: unknown) {
-        if (isBusinessFailure) {
+        if (isTerminalTaskFailure) {
           throw err;
         }
 

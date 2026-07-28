@@ -1,4 +1,4 @@
-﻿# image-generation Specification
+# image-generation Specification
 
 ## Purpose
 TBD - created by archiving change add-gpt-image-edit-support. Update Purpose after archive.
@@ -25,17 +25,17 @@ The system SHALL send official GPT Image edit requests to `/images/edits` when a
 - **WHEN** the image task is executed
 - **THEN** the GPT Image adapter SHALL send the request to `/images/generations`
 
-### Requirement: Route For GPT Image Through Dedicated Adapter
+### Requirement: Keep GPT Image Routing On Supported Formats
 
-The system SHALL route For GPT Image generation and edit requests through the dedicated For GPT Image adapter when the selected profile resolves to For GPT compatibility. The canonical compatibility identifier is `for-gpt-image`; historical `tuzi-gpt-image` and `tuzi-compatible` values remain legacy aliases that normalize to it.
+The system SHALL route GPT Image generation and edit requests only through the official GPT Image format or the generic OpenAI-compatible basic fallback.
 
-#### Scenario: For GPT request uses For GPT adapter
+#### Scenario: GPT Image compatibility uses the official adapter
 
-- **GIVEN** a provider profile resolves image API compatibility to `for-gpt-image`
+- **GIVEN** a provider profile resolves image API compatibility to `openai-gpt-image`
 - **AND** the selected model is a GPT Image model
 - **WHEN** the image task is executed
-- **THEN** the request SHALL be handled by the dedicated For GPT Image adapter
-- **AND** SHALL NOT rely on GPT-specific translation logic inside the generic default adapter
+- **THEN** the request SHALL be handled by the official GPT Image adapter
+- **AND** SHALL route through the registered official GPT Image adapter only
 
 ### Requirement: Preserve Generic Basic Compatibility
 

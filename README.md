@@ -1,10 +1,10 @@
 <div align="center">
-  <h1>Opentu (foropencode.com)</h1>
+  <h1>Opentu (opentu.ai)</h1>
   <h3>开图 · 以画布为核心的 AI 应用平台</h3>
   <p>连接多模型生成、工具、素材与知识流，让 AI 任务在同一工作区持续执行。</p>
   <p>
     <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-    <a href="https://foropencode.com"><img src="https://img.shields.io/badge/demo-online-brightgreen.svg" alt="Demo"></a>
+    <a href="https://opentu.ai"><img src="https://img.shields.io/badge/demo-online-brightgreen.svg" alt="Demo"></a>
   </p>
 </div>
 
@@ -12,8 +12,8 @@
 
 ## 在线体验
 
-- 正式站点：[foropencode.com](https://foropencode.com)
-- 预览实例：[foropencode.com](https://foropencode.com)
+- 正式站点：[opentu.ai](https://opentu.ai)
+- 预览实例：[pr.opentu.ai](https://pr.opentu.ai)
 
 ## 产品展示
 

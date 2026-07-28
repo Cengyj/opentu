@@ -4404,7 +4404,7 @@ sw.addEventListener('fetch', (event: FetchEvent) => {
     return; // 直接返回，让浏览器处理
   }
 
-  // 放行远程同步 API 请求，让主线程的缓存机制生效
+  // 放行 GitHub API 请求，让主线程的缓存机制生效
   // SW 拦截会导致每次都显示两个请求条目，且可能影响主线程缓存
   if (url.hostname === 'api.github.com') {
     return; // 静默放行，让浏览器直接处理

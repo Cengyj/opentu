@@ -52,7 +52,7 @@ interface Page {
   html: string;
 }
 
-const SITE_URL = 'https://foropencode.com';
+const SITE_URL = 'https://opentu.ai';
 const SITE_NAME = 'Opentu';
 const MANUAL_PATH = '/user-manual';
 const MANUAL_BASE_URL = `${SITE_URL}${MANUAL_PATH}`;

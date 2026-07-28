@@ -274,7 +274,7 @@ class SyncEngine {
       // 验证 Token
       const token = await tokenService.getToken();
       if (!token) {
-        throw new Error('未配置同步访问令牌');
+        throw new Error('未配置 GitHub Token');
       }
       logInfo('Token 验证通过');
 
@@ -1091,7 +1091,7 @@ class SyncEngine {
     try {
       const token = await tokenService.getToken();
       if (!token) {
-        throw new Error('未配置同步访问令牌');
+        throw new Error('未配置 GitHub Token');
       }
 
       // 获取自定义加密密码（如果设置了）
@@ -1310,7 +1310,7 @@ class SyncEngine {
     try {
       const token = await tokenService.getToken();
       if (!token) {
-        throw new Error('未配置同步访问令牌');
+        throw new Error('未配置 GitHub Token');
       }
 
       // 获取自定义解密密码（如果设置了）
@@ -1759,7 +1759,7 @@ class SyncEngine {
     // 检查是否已配置
     if (!tokenService.hasToken()) {
       logDebug('syncBoardDeletion: 无 Token，跳过');
-      return { success: false, error: '未配置同步访问令牌' };
+      return { success: false, error: '未配置 GitHub Token' };
     }
 
     const config = await this.getConfig();
