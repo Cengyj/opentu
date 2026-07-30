@@ -1,5 +1,7 @@
 # Phase 3 架构设计 - 技术框架
 
+> 历史设计说明（当前状态审计：2026-07-29）：本文中的 `ToolErrorOverlay`、加载状态事件和 `retryLoad()` 描述未形成当前可达产品链路。当前运行时只保留 iframe loader 的 `onload` 移除与 `onerror` 文本反馈；不要把下述历史设计当作现行规格。恢复可见错误覆盖层/重试属于候选产品提案，需单独审批。
+
 > Feature: feat/08-multifunctional-toolbox
 > Created: 2025-12-09
 > Status: 设计阶段

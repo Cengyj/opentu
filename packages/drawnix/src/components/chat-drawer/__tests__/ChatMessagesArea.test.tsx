@@ -2,6 +2,7 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { ChatMessagesArea } from '../ChatMessagesArea';
 
 const mockUnifiedMediaViewer = vi.fn();
 
@@ -29,8 +30,6 @@ afterEach(() => {
 
 describe('ChatMessagesArea', () => {
   it('opens media preview when user image is double clicked', async () => {
-    const { ChatMessagesArea } = await import('../ChatMessagesArea');
-
     render(
       <ChatMessagesArea
         handler={{

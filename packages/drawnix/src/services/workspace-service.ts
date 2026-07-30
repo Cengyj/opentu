@@ -21,7 +21,10 @@ import {
   WORKSPACE_DEFAULTS,
   ValidationError,
 } from '../types/workspace.types';
-import { workspaceStorageService } from './workspace-storage-service';
+import {
+  workspaceStorageService,
+  type BoardMetadataUpdate,
+} from './workspace-storage-service';
 import { logDebug, logWarning, logError } from './github-sync/sync-log-service';
 import { registerWorkspaceRuntime } from './workspace-runtime-bridge';
 
@@ -50,7 +53,7 @@ class WorkspaceService {
   private boards: Map<string, Board> = new Map();
   private state: WorkspaceState;
   private events$: Subject<WorkspaceEvent> = new Subject();
-  private initialized: boolean = false;
+  private initialized = false;
   private initializationPromise: Promise<void> | null = null;
 
   private constructor() {
@@ -267,15 +270,10 @@ class WorkspaceService {
     const boards = this.getBoardsInFolder(id);
     if (boards.length > 0) {
       await Promise.all(boards.map(async board => {
-        board.folderId = null;
-        // 同步更新所有相关的 Map
-        this.boards.set(board.id, board);
-        const metadata = this.boardMetadata.get(board.id);
-        if (metadata) {
-          metadata.folderId = null;
-          metadata.updatedAt = Date.now();
-        }
-        await workspaceStorageService.saveBoard(board);
+        await this.persistBoardMetadata(board.id, {
+          folderId: null,
+          updatedAt: Date.now(),
+        });
       }));
     }
 
@@ -338,6 +336,39 @@ class WorkspaceService {
   }
 
   // ========== Board Operations ==========
+
+  /**
+   * Persist metadata without writing a metadata-only Board projection back to
+   * IndexedDB. The storage layer preserves the existing elements and returns
+   * the complete persisted record; this service keeps only the appropriate
+   * in-memory representation.
+   */
+  private async persistBoardMetadata(
+    boardId: string,
+    updates: BoardMetadataUpdate
+  ): Promise<BoardMetadata> {
+    if (!this.boardMetadata.has(boardId)) {
+      throw new Error(`Board ${boardId} not found`);
+    }
+
+    const persisted = await workspaceStorageService.updateBoardMetadata(
+      boardId,
+      updates
+    );
+    const { elements: _elements, ...metadata } = persisted;
+    this.boardMetadata.set(boardId, metadata);
+
+    const loaded = this.loadedBoards.get(boardId);
+    if (loaded) {
+      Object.assign(loaded, updates);
+      this.loadedBoards.set(boardId, loaded);
+      this.boards.set(boardId, loaded);
+    } else {
+      this.boards.set(boardId, { ...metadata, elements: [] } as Board);
+    }
+
+    return metadata;
+  }
 
   /**
    * Generate a unique board name within a folder by appending (n) when needed
@@ -478,7 +509,7 @@ class WorkspaceService {
     }
 
     // 3. 同级重名检查（只检查同一文件夹内的其他画板）
-    const siblings = Array.from(this.boards.values()).filter(
+    const siblings = Array.from(this.boardMetadata.values()).filter(
       (b) => b.folderId === folderId && b.id !== boardId
     );
 
@@ -494,28 +525,22 @@ class WorkspaceService {
   }
 
   async renameBoard(id: string, name: string): Promise<void> {
-    const board = this.boards.get(id);
-    if (!board) throw new Error(`Board ${id} not found`);
+    const metadata = this.boardMetadata.get(id);
+    if (!metadata) throw new Error(`Board ${id} not found`);
 
     // 验证名称
-    const validation = this.validateBoardName(id, name, board.folderId);
+    const validation = this.validateBoardName(id, name, metadata.folderId);
     if (!validation.valid) {
       throw new ValidationError(validation.error!);
     }
 
     const trimmedName = name.trim();
-    board.name = trimmedName;
-    board.updatedAt = Date.now();
-
-    this.boards.set(id, board);
-    // 同步更新 boardMetadata
-    const metadata = this.boardMetadata.get(id);
-    if (metadata) {
-      metadata.name = trimmedName;
-      metadata.updatedAt = board.updatedAt;
-    }
-    await workspaceStorageService.saveBoard(board);
-    this.emit('boardUpdated', board);
+    const updatedAt = Date.now();
+    await this.persistBoardMetadata(id, {
+      name: trimmedName,
+      updatedAt,
+    });
+    this.emit('boardUpdated', this.getBoard(id));
   }
 
   async deleteBoard(id: string): Promise<void> {
@@ -554,7 +579,7 @@ class WorkspaceService {
     targetId?: string,
     position?: 'before' | 'after'
   ): Promise<void> {
-    const board = this.boards.get(id);
+    const board = this.boardMetadata.get(id);
     if (!board) throw new Error(`Board ${id} not found`);
 
     const targetFolder = targetFolderId || null;
@@ -567,8 +592,7 @@ class WorkspaceService {
       }
     }
 
-    board.folderId = targetFolder;
-    board.updatedAt = Date.now();
+    const movedBoardUpdatedAt = Date.now();
 
     // Get all items in target folder (excluding the moved board)
     const boardSiblings = this.getBoardsInFolder(targetFolder).filter(
@@ -577,7 +601,7 @@ class WorkspaceService {
     const folderSiblings = this.getFolderChildren(targetFolder);
 
     // Build ordered list of all items
-    let allItems: Array<{ id: string; type: 'board' | 'folder' }> = [
+    const allItems: Array<{ id: string; type: 'board' | 'folder' }> = [
       ...folderSiblings.map((f) => ({ id: f.id, type: 'folder' as const })),
       ...boardSiblings.map((b) => ({ id: b.id, type: 'board' as const })),
     ].sort((a, b) => {
@@ -613,18 +637,17 @@ class WorkspaceService {
     for (let i = 0; i < allItems.length; i++) {
       const item = allItems[i];
       if (item.type === 'board') {
-        const b = this.boards.get(item.id);
-        if (b) {
-          b.order = i;
-          this.boards.set(item.id, b);
-          // 同步更新 boardMetadata
-          const bMeta = this.boardMetadata.get(item.id);
-          if (bMeta) {
-            bMeta.order = i;
-            bMeta.folderId = b.folderId;
-            bMeta.updatedAt = b.updatedAt;
-          }
-          await workspaceStorageService.saveBoard(b);
+        const bMeta = this.boardMetadata.get(item.id);
+        if (bMeta) {
+          await this.persistBoardMetadata(item.id, {
+            order: i,
+            ...(item.id === id
+              ? {
+                  folderId: targetFolder,
+                  updatedAt: movedBoardUpdatedAt,
+                }
+              : {}),
+          });
         }
       } else {
         const f = this.folders.get(item.id);
@@ -636,7 +659,7 @@ class WorkspaceService {
       }
     }
 
-    this.emit('boardUpdated', board);
+    this.emit('boardUpdated', this.getBoard(id));
     this.emit('treeChanged');
   }
 
@@ -687,7 +710,7 @@ class WorkspaceService {
     const boardSiblings = this.getBoardsInFolder(targetParentId);
 
     // Build ordered list of all items
-    let allItems: Array<{ id: string; type: 'board' | 'folder' }> = [
+    const allItems: Array<{ id: string; type: 'board' | 'folder' }> = [
       ...folderSiblings.map((f) => ({ id: f.id, type: 'folder' as const })),
       ...boardSiblings.map((b) => ({ id: b.id, type: 'board' as const })),
     ].sort((a, b) => {
@@ -723,18 +746,9 @@ class WorkspaceService {
     for (let i = 0; i < allItems.length; i++) {
       const item = allItems[i];
       if (item.type === 'board') {
-        const b = this.boards.get(item.id);
-        if (b) {
-          b.order = i;
-          this.boards.set(item.id, b);
-          // 同步更新 boardMetadata
-          const bMeta = this.boardMetadata.get(item.id);
-          if (bMeta) {
-            bMeta.order = i;
-            bMeta.folderId = b.folderId;
-            bMeta.updatedAt = b.updatedAt;
-          }
-          await workspaceStorageService.saveBoard(b);
+        const bMeta = this.boardMetadata.get(item.id);
+        if (bMeta) {
+          await this.persistBoardMetadata(item.id, { order: i });
         }
       } else {
         const f = this.folders.get(item.id);
@@ -760,18 +774,12 @@ class WorkspaceService {
 
     for (const item of items) {
       if (item.type === 'board') {
-        const board = this.boards.get(item.id);
-        if (board) {
-          board.order = item.order;
-          board.updatedAt = now;
-          this.boards.set(item.id, board);
-          // 同步更新 boardMetadata
-          const bMeta = this.boardMetadata.get(item.id);
-          if (bMeta) {
-            bMeta.order = item.order;
-            bMeta.updatedAt = now;
-          }
-          await workspaceStorageService.saveBoard(board);
+        const metadata = this.boardMetadata.get(item.id);
+        if (metadata) {
+          await this.persistBoardMetadata(item.id, {
+            order: item.order,
+            updatedAt: now,
+          });
         }
       } else {
         const folder = this.folders.get(item.id);
@@ -791,14 +799,19 @@ class WorkspaceService {
    * Copy a board with all its content
    */
   async copyBoard(id: string): Promise<Board> {
-    const sourceBoard = this.boards.get(id);
-    if (!sourceBoard) throw new Error(`Board ${id} not found`);
+    const metadata = this.boardMetadata.get(id);
+    if (!metadata) throw new Error(`Board ${id} not found`);
+
+    const sourceBoard =
+      this.loadedBoards.get(id) ??
+      (await workspaceStorageService.loadBoard(id));
+    if (!sourceBoard) throw new Error(`Board ${id} not found in storage`);
 
     // Generate new name with "副本" suffix
     let newName = `${sourceBoard.name} 副本`;
 
     // Check if name already exists and add number if needed
-    const existingNames = Array.from(this.boards.values())
+    const existingNames = Array.from(this.boardMetadata.values())
       .filter((b) => b.folderId === sourceBoard.folderId)
       .map((b) => b.name);
 
@@ -937,7 +950,7 @@ class WorkspaceService {
 
   async saveBoard(boardId: string, data: BoardChangeData): Promise<void> {
     // 优先从已加载的画板获取
-    let board = this.loadedBoards.get(boardId) || this.boards.get(boardId);
+    const board = this.loadedBoards.get(boardId) || this.boards.get(boardId);
     if (!board) throw new Error(`Board ${boardId} not found`);
 
     board.elements = data.children;

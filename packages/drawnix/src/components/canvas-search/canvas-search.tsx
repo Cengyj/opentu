@@ -66,16 +66,17 @@ export const CanvasSearch: React.FC<CanvasSearchProps> = ({
   const [currentIndex, setCurrentIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const boardChildren = board?.children;
 
   // 搜索所有匹配
   const matches = useMemo(() => {
-    if (!query.trim() || !board) return [];
+    if (!query.trim() || !board || !boardChildren) return [];
 
-    const allTextElements = collectTextElements(board.children, board);
-    const regex = new RegExp(escapeRegex(query), 'gi');
+    const allTextElements = collectTextElements(boardChildren, board);
+    const regex = new RegExp(escapeRegex(query), 'i');
 
     return allTextElements.filter(({ text }) => regex.test(text));
-  }, [query, board]);
+  }, [query, board, boardChildren]);
 
   // 同步搜索关键词到全局 store（驱动文本高亮）
   useEffect(() => {

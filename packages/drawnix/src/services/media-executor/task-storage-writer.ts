@@ -2,10 +2,7 @@
  * Task Storage Writer
  *
  * 主线程直接写入 IndexedDB 中的任务数据。
- * 用于 SW 不可用时的降级模式。
- *
- * 注意：正常情况下应通过 SW 写入以确保一致性。
- * 此模块仅用于降级场景。
+ * 当前任务执行不经过 Service Worker，本模块是正常写入路径。
  */
 
 import { normalizeImageDataUrl } from '@aitu/utils';

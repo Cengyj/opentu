@@ -1,0 +1,135 @@
+{
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "workspace": "/Users/macos/Downloads/opentu-codex-opentu-cleanup-20260708-145354",
+  "gitMetadataAvailable": false,
+  "openSpecCliAvailable": false,
+  "productionArtifact": {
+    "path": "dist/apps/web/index.html",
+    "observedModifiedAt": "2026-07-30 05:02:43",
+    "server": "http://127.0.0.1:7392/?sw=0"
+  },
+  "componentDiagnostic": {
+    "environment": "Vitest 3.2.4, jsdom, packages/drawnix/vite.config.ts",
+    "exploratoryAssertionExitCode": 1,
+    "correctedEvidenceExitCode": 0,
+    "files": { "passed": 1, "total": 1 },
+    "tests": { "passed": 1, "total": 1 },
+    "durationSeconds": 12.21,
+    "raw": {
+      "drawer": {
+        "role": null,
+        "ariaLabel": null,
+        "ariaLabelledBy": null,
+        "initialActiveElement": "body"
+      },
+      "folder": {
+        "tag": "DIV",
+        "role": null,
+        "tabIndex": -1,
+        "ariaExpanded": null
+      },
+      "board": {
+        "tag": "DIV",
+        "role": null,
+        "tabIndex": -1,
+        "ariaCurrent": null,
+        "ariaSelected": null
+      },
+      "treeActionButtonNames": ["", "", ""],
+      "tabState": [
+        { "text": "画布管理", "ariaSelected": null, "ariaPressed": null },
+        { "text": "PPT 编辑", "ariaSelected": null, "ariaPressed": null },
+        { "text": "图层", "ariaSelected": null, "ariaPressed": null }
+      ],
+      "keyboardCalls": { "folderToggle": 0, "boardSwitch": 0 },
+      "pointerCalls": { "folderToggle": 1, "boardSwitch": 1 },
+      "contextMenu": {
+        "itemCount": 5,
+        "activeOnOpen": "body",
+        "firstItemFocusedOnOpen": false,
+        "arrowDownMovedFocus": false
+      },
+      "deleteDialog": {
+        "role": "dialog",
+        "ariaModal": null,
+        "activeElementText": "取消",
+        "cancelButton": true,
+        "deleteButton": true
+      },
+      "englishProviderStillShowsChinese": {
+        "drawerTitle": true,
+        "boardTab": true,
+        "createBoard": true
+      },
+      "searchNoMatch": {
+        "query": "no-such-workspace-item",
+        "existingTreeItemsInFixture": 2,
+        "showsNoBoards": true,
+        "showsCreateFirstBoard": true,
+        "showsNoMatches": false
+      }
+    }
+  },
+  "browserEvidence": {
+    "browser": "Codex in-app Browser Chromium",
+    "exactVersion": "unknown",
+    "viewport": { "width": 1280, "height": 720, "devicePixelRatio": 1 },
+    "network": "127.0.0.1 loopback, no throttling",
+    "cpu": "current macOS host, no throttling",
+    "sampleCount": 1,
+    "drawer": {
+      "x": 58,
+      "y": 0,
+      "width": 380,
+      "height": 720,
+      "role": null,
+      "ariaLabel": null,
+      "ariaLabelledBy": null
+    },
+    "projectTrigger": {
+      "ariaLabel": "关闭项目",
+      "ariaExpanded": null,
+      "ariaPressed": null,
+      "remainedActiveAfterOpen": true
+    },
+    "focusOrder": {
+      "triggerIndex": 13,
+      "firstDrawerFocusableIndex": 31,
+      "interveningTabStops": 17,
+      "nextAfterTrigger": "打开工具箱",
+      "firstDrawerFocusable": "固定抽屉"
+    },
+    "currentBoardRow": {
+      "tag": "DIV",
+      "role": null,
+      "tabIndex": -1,
+      "ariaCurrent": null,
+      "ariaSelected": null,
+      "height": 37.765625
+    },
+    "treeAction": {
+      "buttonAriaLabel": null,
+      "buttonTabIndex": 0,
+      "containerOpacity": "0"
+    },
+    "closeButton": {
+      "ariaLabel": null,
+      "title": null,
+      "tabIndex": 0
+    },
+    "tabs": [
+      { "text": "画布管理", "height": 37.5, "ariaSelected": null, "ariaPressed": null },
+      { "text": "PPT 编辑", "height": 37.5, "ariaSelected": null, "ariaPressed": null },
+      { "text": "图层", "height": 37.5, "ariaSelected": null, "ariaPressed": null }
+    ],
+    "resizeHandle": { "role": null, "tabIndex": -1, "width": 8 },
+    "searchNoMatchScreenshot": "project-drawer-search-no-match-before.png",
+    "normalScreenshot": "project-drawer-desktop-before.png",
+    "compactViewportBlocked": true
+  },
+  "performanceClaim": null,
+  "visualAfterClaim": null,
+  "productionBehaviorChanged": false,
+  "temporaryDiagnosticRemoved": true
+}

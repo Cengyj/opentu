@@ -1090,7 +1090,7 @@ const AIVideoGeneration = ({
 
         // 批量生成逻辑
         const batchTaskIds: string[] = [];
-        // 始终生成 batchId，即使 count=1，这样可以跳过 SW 的重复检测
+        // 始终生成 batchId，即使 count=1，也保留统一的任务关联元数据
         const batchId = externalBatchId || `video_batch_${Date.now()}`;
 
         for (let i = 0; i < count; i++) {
@@ -1123,7 +1123,7 @@ const AIVideoGeneration = ({
                 totalDuration: parseFloat(effectiveDuration),
               },
             }),
-            // 批量生成信息（始终包含 batchId 以跳过重复检测）
+            // 批量生成信息（始终包含 batchId 以关联同一批次或外部工作流）
             batchId,
             batchIndex: i + 1,
             batchTotal: count,

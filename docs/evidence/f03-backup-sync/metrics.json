@@ -1,0 +1,182 @@
+{
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "scope": "F-03 backup/restore and GitHub sync interface/security read-only diagnostics",
+  "gitMetadata": false,
+  "openSpecCli": {
+    "available": false,
+    "strictValidationExitCode": 127,
+    "claim": "manual structure and conflict checks only"
+  },
+  "componentDiagnostic": {
+    "environment": {
+      "nodePath": "/Users/macos/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "vitest": "3.2.4",
+      "dom": "jsdom",
+      "samplesPerState": 1,
+      "realStorageOrNetwork": false
+    },
+    "exploratoryRun": {
+      "exitCode": 1,
+      "files": { "passed": 0, "failed": 1, "total": 1 },
+      "tests": { "passed": 1, "failed": 3, "total": 4 },
+      "durationMs": 14100,
+      "reasons": [
+        "pointer file-input click spy observed 2 calls instead of the assumed 1",
+        "TDesign cloud-sync root exposed no dialog role",
+        "shared barrel initialized unrelated config writer and produced indexedDB test-isolation noise"
+      ]
+    },
+    "isolatedRun": {
+      "exitCode": 0,
+      "files": { "passed": 1, "failed": 0, "total": 1 },
+      "tests": { "passed": 4, "failed": 0, "total": 4 },
+      "durationMs": 9430,
+      "testTimeMs": 480
+    },
+    "backup": {
+      "dialogLabelledBy": null,
+      "dialogAriaLabel": null,
+      "initialFocusText": "备份",
+      "tablistCount": 0,
+      "tabCount": 0,
+      "activeTabAriaSelected": null,
+      "englishProviderChineseTitleCount": 1,
+      "dropzoneTag": "DIV",
+      "dropzoneRole": null,
+      "dropzoneTabIndex": -1,
+      "enterFileClicks": 0,
+      "pointerFileClicks": 2,
+      "mergeAriaPressed": "true"
+    },
+    "backupProgress": {
+      "fixturePercentage": 37,
+      "progressContainerRole": null,
+      "progressContainerAriaLive": null,
+      "progressbarPresent": false,
+      "progressbarValueNow": null,
+      "messageRole": null,
+      "messageAriaLive": null
+    },
+    "cloudDisconnected": {
+      "dialogRole": null,
+      "dialogLabelledBy": null,
+      "englishProviderChineseHeaderCount": 1,
+      "tokenType": "password",
+      "tokenLabels": 0,
+      "tokenAriaLabel": null,
+      "tokenAriaLabelledBy": null,
+      "errorRole": null,
+      "errorAriaLive": null
+    },
+    "cloudConnectedFixture": {
+      "dialogRole": null,
+      "gistHeaderTag": "DIV",
+      "gistHeaderRole": null,
+      "gistHeaderTabIndex": -1,
+      "gistHeaderAriaExpanded": null,
+      "gistLoadsAfterEnter": 0,
+      "gistLoadsAfterPointer": 1,
+      "recycleHeaderTag": "DIV",
+      "recycleHeaderRole": null,
+      "recycleHeaderTabIndex": -1,
+      "recycleHeaderAriaExpanded": null,
+      "recycleLoadsAfterEnter": 0,
+      "recycleLoadsAfterPointer": 1,
+      "autoSyncAriaLabel": null,
+      "autoSyncAriaLabelledBy": null,
+      "customPasswordType": "text",
+      "customPasswordLabels": 0,
+      "deleteButtonText": "",
+      "deleteButtonAriaLabel": null
+    }
+  },
+  "tokenFallbackDiagnostic": {
+    "environment": {
+      "vitest": "3.2.4",
+      "dom": "node",
+      "cryptoStub": "undefined",
+      "fixtureIsCredential": false,
+      "samples": 1
+    },
+    "exitCode": 0,
+    "files": { "passed": 1, "failed": 0, "total": 1 },
+    "tests": { "passed": 1, "failed": 0, "total": 1 },
+    "durationMs": 685,
+    "testTimeMs": 5,
+    "result": {
+      "prefix": "OPENTU_FB:",
+      "isReportedEncrypted": true,
+      "differentPasswordRecoversPlaintext": true,
+      "sentinelLength": 35
+    }
+  },
+  "productionBrowser": {
+    "surface": "in-app Chromium",
+    "url": "http://127.0.0.1:7393/?sw=0",
+    "build": "existing dist/apps/web from the recorded successful F-03 build; no Git commit identity available",
+    "viewportCssPx": { "width": 1280, "height": 720 },
+    "devicePixelRatio": 1,
+    "networkThrottle": "none configured",
+    "cpuThrottle": "none configured",
+    "samples": 1,
+    "githubState": "disconnected",
+    "browserStorageInspected": false,
+    "backup": {
+      "role": "dialog",
+      "ariaLabel": null,
+      "ariaLabelledBy": null,
+      "initialFocusTag": "BUTTON",
+      "initialFocusText": "备份",
+      "tablistCount": 0,
+      "tabCount": 0,
+      "dropzoneTag": "DIV",
+      "dropzoneRole": null,
+      "dropzoneTabIndex": -1,
+      "focusAfterCancel": "BODY"
+    },
+    "cloudSync": {
+      "rootTag": "DIV",
+      "rootTabIndex": 0,
+      "role": null,
+      "ariaModal": null,
+      "ariaLabel": null,
+      "ariaLabelledBy": null,
+      "initialFocus": "cloud-sync root",
+      "closeTag": "SPAN",
+      "closeTabIndex": -1,
+      "closeRole": null,
+      "closeAriaLabel": null,
+      "tokenType": "password",
+      "tokenLabels": 0,
+      "tokenPlaceholder": "ghp_xxxxxxxxxxxx",
+      "escapeClosed": true,
+      "focusAfterEscape": "BODY"
+    },
+    "screenshots": [
+      {
+        "path": "docs/evidence/f03-backup-sync/backup-restore-desktop-before.jpg",
+        "bytes": 55413,
+        "kind": "before"
+      },
+      {
+        "path": "docs/evidence/f03-backup-sync/cloud-sync-disconnected-desktop-before.jpg",
+        "bytes": 36544,
+        "kind": "before"
+      }
+    ],
+    "cleanup": {
+      "tabClosed": true,
+      "serverStopped": true,
+      "remoteRequestsTriggeredByProduct": 0
+    }
+  },
+  "claims": {
+    "performanceImprovement": false,
+    "visualImprovement": false,
+    "afterScreenshotAvailable": false,
+    "compactGeometryMeasured": false,
+    "realCredentialUsed": false,
+    "productRuntimeChanged": false
+  }
+}

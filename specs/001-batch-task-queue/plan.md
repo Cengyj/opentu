@@ -3,6 +3,8 @@
 **分支**: `001-batch-task-queue` | **日期**: 2025-11-22 | **规格**: [spec.md](./spec.md)  
 **输入**: 功能规格来自 `/specs/001-batch-task-queue/spec.md`
 
+> **2026-07-30 当前实现说明**：本文是 2025 年的历史计划，不是当前源码地图。`TaskToolbar`/`TaskSummary` 已不在可达实现中；当前入口为 `Drawnix → UnifiedToolbar → BottomActionsSection → ToolButton → TaskQueuePanel`，入口文件是 `packages/drawnix/src/components/toolbar/bottom-actions-section.tsx`。下列规划路径、性能目标和测试文件名必须由当前源码与实际命令重新验证，不能把历史计划当作现有测试或行为证据。
+
 ## 摘要
 
 实现异步内容生成任务队列系统，允许用户提交图片和视频生成请求而无需等待完成。系统将在浏览器本地存储任务数据，通过页面底部固定工具栏提供任务监控和管理界面。核心技术方案采用 React + TypeScript + localforage，集成到现有的 Opentu 白板应用架构中。

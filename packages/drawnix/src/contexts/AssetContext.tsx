@@ -48,7 +48,10 @@ import {
 import { TaskType } from '../types/task.types';
 import { AssetContext } from './asset-context-instance';
 import { audioPlaylistService } from '../services/audio-playlist-service';
-import { setGlobalAssetMap } from '../stores/asset-map-store';
+import {
+  setGlobalAssetMap,
+  setGlobalAssetMapStatus,
+} from '../stores/asset-map-store';
 import {
   getAssetContentHash,
   getLocalAssetGroupKey,
@@ -467,6 +470,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
         console.error('Failed to initialize asset storage service:', err);
         const error = err as Error;
         setError(error.message);
+        setGlobalAssetMapStatus('error');
       }
     };
 
@@ -775,6 +779,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
     }
 
     const run = (async () => {
+      setGlobalAssetMapStatus('loading');
       setLoading(true);
       setError(null);
 
@@ -886,6 +891,10 @@ export function AssetProvider({ children }: AssetProviderProps) {
           loadedAt: Date.now(),
           assetCount: allAssets.length,
         };
+        setGlobalAssetMap(
+          new Map(allAssets.map((asset) => [asset.id, asset])),
+          'ready'
+        );
 
         // 7. 延迟异步填充缺失的文件大小（不阻塞加载）
         // 使用 requestIdleCallback 在浏览器空闲时执行
@@ -958,6 +967,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
       } catch (err: unknown) {
         console.error('Failed to load assets:', err);
         setError(err instanceof Error ? err.message : String(err));
+        setGlobalAssetMapStatus('error');
         MessagePlugin.error({
           content: '加载素材失败，请刷新页面重试',
           duration: 3000,
@@ -1547,7 +1557,10 @@ export function AssetProvider({ children }: AssetProviderProps) {
 
   // 同步 assets 到模块级 store，供 CardElement 等脱离 Context 的组件使用
   useEffect(() => {
-    setGlobalAssetMap(new Map(assets.map((a) => [a.id, a])));
+    if (!lastSuccessfulLoadRef.current) {
+      return;
+    }
+    setGlobalAssetMap(new Map(assets.map((a) => [a.id, a])), 'ready');
   }, [assets]);
 
   // Context value

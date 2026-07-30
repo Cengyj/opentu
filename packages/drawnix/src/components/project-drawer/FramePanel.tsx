@@ -1823,29 +1823,23 @@ export const FramePanel: React.FC<FramePanelProps> = ({
     (fromIndex: number, toIndex: number) => {
       if (!board) return;
 
-      const framePositions: number[] = [];
       const orderedFrames: PlaitFrame[] = [];
 
-      board.children.forEach((element, index) => {
+      board.children.forEach((element) => {
         if (isFrameElement(element)) {
-          framePositions.push(index);
           orderedFrames.push(element as PlaitFrame);
         }
       });
 
-      if (framePositions.length <= 1) return;
+      if (orderedFrames.length <= 1) return;
 
       const nextFrames = [...orderedFrames];
       const [moved] = nextFrames.splice(fromIndex, 1);
       nextFrames.splice(toIndex, 0, moved);
-
-      for (let i = framePositions.length - 1; i >= 0; i -= 1) {
-        Transforms.removeNode(board, [framePositions[i]]);
-      }
-
-      for (let i = 0; i < framePositions.length; i += 1) {
-        Transforms.insertNode(board, nextFrames[i], [framePositions[i]]);
-      }
+      FrameTransforms.reorderPPTFrames(
+        board,
+        nextFrames.map((frame) => frame.id)
+      );
     },
     [board]
   );

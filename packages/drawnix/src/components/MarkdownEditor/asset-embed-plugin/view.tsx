@@ -17,7 +17,11 @@ import React, {
 import { createRoot, type Root } from 'react-dom/client';
 import { $view } from '@milkdown/kit/utils';
 import { normalizeImageDataUrl } from '@aitu/utils';
-import { subscribeAssetMap, getAssetMapSnapshot } from '../../../stores/asset-map-store';
+import {
+  subscribeAssetMap,
+  getAssetMapSnapshot,
+  getAssetMapStatusSnapshot,
+} from '../../../stores/asset-map-store';
 import { AssetType } from '../../../types/asset.types';
 import {
   AUDIO_NODE_DEFAULT_HEIGHT,
@@ -74,6 +78,10 @@ const AssetEmbedView: React.FC<AssetEmbedViewProps> = ({
   updateAttrs,
 }) => {
   const assetMap = useSyncExternalStore(subscribeAssetMap, getAssetMapSnapshot);
+  const assetMapStatus = useSyncExternalStore(
+    subscribeAssetMap,
+    getAssetMapStatusSnapshot
+  );
   const asset = assetMap.get(assetId);
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [draftSize, setDraftSize] = useState<{ width: number; height: number } | null>(null);
@@ -274,9 +282,9 @@ const AssetEmbedView: React.FC<AssetEmbedViewProps> = ({
     </div>
   );
 
-  // asset map 为空说明资产还在加载中，显示占位而非"已删除"
+  // Only unresolved projection states are loading; a ready map may legitimately be empty.
   if (!asset) {
-    if (assetMap.size === 0) {
+    if (assetMapStatus !== 'ready') {
       return <div className="collimind-asset-embed__loading" style={frameStyle} />;
     }
     return (

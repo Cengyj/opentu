@@ -229,7 +229,7 @@ function applyReferenceImagesToWorkflowSteps(
 /**
  * 场景1-3: 将直接生成场景转换为工作流定义
  *
- * 这些场景通过正则解析用户输入，直接生成图片/视频/音频/文本
+ * 这些场景使用 AI 输入栏已选择的模型、参数和数量，直接生成图片/视频/音频/文本
  * 步骤中包含完整的工具调用信息（mcp、args、options），调用方可直接执行
  */
 export function convertDirectGenerationToWorkflow(

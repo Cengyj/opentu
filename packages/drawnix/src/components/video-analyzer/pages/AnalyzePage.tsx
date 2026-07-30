@@ -1017,9 +1017,10 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
               </button>
             </div>
           )}
-          {error && <div className="va-error">{error}</div>}
         </>
       )}
+
+      {error && <div className="va-error">{error}</div>}
 
       {/* 结果摘要 */}
       {analysis && (

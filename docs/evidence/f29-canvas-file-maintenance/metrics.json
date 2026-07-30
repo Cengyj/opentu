@@ -1,0 +1,292 @@
+{
+  "date": "2026-07-30T11:43:00+08:00",
+  "feature": "F-29 canvas file import/export and maintenance",
+  "sourceState": {
+    "gitMetadata": false,
+    "historyAndCleanlinessVerifiable": false,
+    "runtimeFilesChanged": 0,
+    "permanentTestFilesChanged": 0,
+    "temporaryDiagnosticFilesRemaining": 0
+  },
+  "environment": {
+    "node": "v24.14.0",
+    "nodePath": "/Users/macos/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "vitest": "3.2.4",
+    "testEnvironment": "jsdom",
+    "browserVersion": "unknown",
+    "browserSurface": "in-app Browser",
+    "browserBuild": "existing dist/apps/web",
+    "viewport": "1280x720",
+    "supplementalViewports": ["320x568", "390x844", "640x360"],
+    "devicePixelRatio": 1,
+    "locale": "zh-CN",
+    "themeObservation": "light appearance; no data-theme attribute",
+    "network": "loopback server; no throttle",
+    "browserSamplesPerRecordedState": 1
+  },
+  "registryCoverage": {
+    "builtInManifests": 12,
+    "builtInManifestsWithOwners": 12,
+    "dialogTypes": 4,
+    "dialogTypesWithOwners": 4,
+    "commandEntries": 37,
+    "commandTargetEntriesWithOwners": 37,
+    "newFeatureOwners": ["F-29", "F-30", "F-31"]
+  },
+  "diagnostics": {
+    "networkFailureCleanup": {
+      "initialMediaElements": 1,
+      "fetchMethods": ["HEAD", "GET"],
+      "rejectedFetches": 2,
+      "removeCalls": 1,
+      "remainingElements": 0,
+      "successMessages": ["Cleaned 1 invalid media"],
+      "errorMessages": 0,
+      "exitCode": 0,
+      "testFiles": "1/1",
+      "tests": "1/1",
+      "testMs": 72,
+      "processSeconds": 1.66
+    },
+    "cleanupIndexRace": {
+      "initialIds": ["target-image", "existing-shape"],
+      "insertedWhilePending": "concurrent-new-shape@0",
+      "response": "HEAD 404",
+      "removePath": [0],
+      "finalIds": ["target-image", "existing-shape"],
+      "exitCode": 0,
+      "testFiles": "1/1",
+      "tests": "1/1",
+      "testMs": 68,
+      "processSeconds": 1.65
+    },
+    "exportSnapshotRace": {
+      "entryMediaIds": ["first"],
+      "addedWhilePending": "second",
+      "exportedElementIds": ["first", "second"],
+      "embeddedUrls": ["/__aitu_cache__/image/a.png"],
+      "cacheBlobReads": 1,
+      "exitCode": 0,
+      "testFiles": "1/1",
+      "tests": "1/1",
+      "testMs": 5,
+      "processSeconds": 1.25
+    },
+    "filePromiseObservation": {
+      "saveCalls": 1,
+      "saveThenObserved": 0,
+      "saveCallbackReturn": "undefined",
+      "openCalls": 1,
+      "openFulfilThenObserved": 1,
+      "openRejectCatchObserved": 0,
+      "openCallbackReturn": "undefined",
+      "errorFeedbackCalls": 0,
+      "exitCode": 0,
+      "testFiles": "1/1",
+      "tests": "2/2",
+      "testMs": [60, 8],
+      "processSeconds": 1.64
+    },
+    "embeddedMediaPartial": {
+      "exportCacheBlob": null,
+      "exportRetainedVirtualUrl": true,
+      "exportEmbeddedMediaPresent": false,
+      "exportWarnings": 1,
+      "importCacheWriteCalls": 1,
+      "importCacheWriteRejected": true,
+      "importResolvedParsedData": true,
+      "importConsoleErrors": 1,
+      "exitCode": 0,
+      "testFiles": "1/1",
+      "tests": "2/2",
+      "testMs": [3, 18],
+      "processSeconds": 1.23
+    }
+  },
+  "commandResults": [
+    {
+      "scope": "incorrect direct Vitest config",
+      "exitCode": 1,
+      "testFiles": "0 collected; 1 failed suite",
+      "tests": 0,
+      "reason": "@plait-board/react-board alias unresolved",
+      "processSeconds": 1.48
+    },
+    {
+      "scope": "four workspace-aware temporary diagnostic runs",
+      "exitCode": 0,
+      "testFiles": "4/4",
+      "tests": "5/5"
+    },
+    {
+      "scope": "existing with-hotkey.test.ts",
+      "exitCode": 0,
+      "testFiles": "1/1",
+      "tests": "21/21",
+      "testMs": 22,
+      "processSeconds": 1.21,
+      "f29Assertions": 0
+    }
+  ],
+  "browser": {
+    "appMenuItems": 13,
+    "initialFocusedMenuItem": "打开",
+    "focusAfterArrowDown": "保存文件",
+    "focusAfterEnd": "版本",
+    "menuItemsAfterEscape": 0,
+    "focusReturnedToMenuTrigger": false,
+    "compactApplicationMenu": {
+      "viewport390x844": {
+        "itemCount": 13,
+        "itemHeightsCssPx": {
+          "minimum": 32,
+          "maximum": 32
+        },
+        "exportArrowRight": {
+          "ariaExpanded": false,
+          "menuCount": 1,
+          "pngItemCount": 0,
+          "jpgItemCount": 0
+        }
+      },
+      "viewport320x568": {
+        "clientHeightCssPx": 416,
+        "scrollHeightCssPx": 510,
+        "endItemFullyVisibleAfterEnd": true
+      },
+      "viewport640x360": {
+        "clientHeightCssPx": 208,
+        "scrollHeightCssPx": 510,
+        "internallyScrollable": true
+      }
+    },
+    "clearConfirmation": {
+      "named": true,
+      "described": true,
+      "initialFocus": "cancel",
+      "desktop1280x720": {
+        "closeMethod": "Escape",
+        "focusAfterClose": "BODY"
+      },
+      "compact390x844": {
+        "closeMethod": "pointer Cancel",
+        "focusAfterClose": "BODY"
+      },
+      "geometry": {
+        "320x568": {
+          "dialogWidthCssPx": 288,
+          "dialogHeightCssPx": 186.1875,
+          "cancelButtonCssPx": [62, 36],
+          "confirmButtonCssPx": [62, 36],
+          "fullyInViewport": true
+        },
+        "390x844": {
+          "dialogWidthCssPx": 358,
+          "dialogHeightCssPx": 160.59375,
+          "cancelButtonCssPx": [62, 36],
+          "confirmButtonCssPx": [62, 36],
+          "fullyInViewport": true
+        },
+        "640x360": {
+          "dialogWidthCssPx": 440,
+          "dialogHeightCssPx": 160.59375,
+          "cancelButtonCssPx": [62, 36],
+          "confirmButtonCssPx": [62, 36],
+          "fullyInViewport": true
+        }
+      },
+      "bodyScrollLockedAtMeasuredViewports": true,
+      "ariaModalObserved": null,
+      "sharedConfirmDialogConsumerFiles": 30,
+      "confirmActivated": false,
+      "boardDeletionTriggered": false,
+      "tabContainmentClassification": "unknown because the Browser control layer did not expose reliable Tab semantics"
+    },
+    "commandSearch": "保存",
+    "commandSearchLabels": ["保存为 JSON"],
+    "filePickerOpened": false,
+    "downloadTriggered": false,
+    "clearOrCleanupTriggered": false,
+    "realStorageInspected": false,
+    "realClipboardInspected": false,
+    "tabsAfterCleanup": 0,
+    "port7400ListenerAfterCleanup": false
+  },
+  "screenshots": [
+    {
+      "file": "app-menu-desktop-1280x720-before.jpg",
+      "sha256": "f02303be1c3e2350f0a7fe8708d2762813e91e487b070cba6a870dd4d178ab85"
+    },
+    {
+      "file": "command-palette-desktop-1280x720-before.jpg",
+      "sha256": "93572841e41b7a67898365d3d1cd8f46297bcaf49694b9ede85e1ee2cfff96ad"
+    },
+    {
+      "file": "command-palette-save-desktop-1280x720-before.jpg",
+      "sha256": "1fd9a5a740afdc177d8e9df0eeb212cef3f66adf2b068e86e7e903234d6d90d2"
+    },
+    {
+      "file": "app-menu-compact-390x844-before.jpg",
+      "width": 390,
+      "height": 844,
+      "bytes": 37913,
+      "sha256": "5f71ee68c4d410910f57c8c60e4abd68e6407e91eb4b1f96e81834a291dec0e1"
+    },
+    {
+      "file": "clear-confirm-compact-390x844-before.jpg",
+      "width": 390,
+      "height": 844,
+      "bytes": 29720,
+      "sha256": "940cf1c703204b803ddc9bf1a168437172b14443b07eb7de036cb8b91d899f82"
+    }
+  ],
+  "openSpec": {
+    "cliAvailable": false,
+    "strictExitCode": 127,
+    "activeChanges": 124,
+    "completeTaskLists": 10,
+    "partialTaskLists": 102,
+    "zeroCompleteTaskLists": 12,
+    "approvalTextTaskLists": 95,
+    "f29Changes": {
+      "prevent-network-failure-media-cleanup": {
+        "requirements": 3,
+        "scenarios": 11,
+        "tasks": 18,
+        "tasksComplete": 3
+      },
+      "stabilize-drawnix-file-export-snapshot": {
+        "requirements": 3,
+        "scenarios": 9,
+        "tasks": 17,
+        "tasksComplete": 3
+      },
+      "improve-drawnix-file-transfer-feedback": {
+        "requirements": 4,
+        "scenarios": 12,
+        "tasks": 18,
+        "tasksComplete": 3
+      },
+      "improve-canvas-clear-confirmation-interface": {
+        "requirements": 3,
+        "scenarios": 10,
+        "tasks": 18,
+        "tasksComplete": 4
+      }
+    },
+    "f29CapabilitiesWithSingleOwner": 4,
+    "f29UniqueRequirementNames": "13/13"
+  },
+  "performance": {
+    "runtimeChange": false,
+    "beforeAfterSamples": 0,
+    "claim": null
+  },
+  "visual": {
+    "beforeScreenshots": 5,
+    "afterScreenshots": 0,
+    "improvementClaim": null,
+    "compactBrowserEvidence": "one current-production sample each at 320x568, 390x844 and 640x360; real coarse-pointer hardware not measured",
+    "englishRuntimeEvidence": "not forced through storage or script"
+  }
+}

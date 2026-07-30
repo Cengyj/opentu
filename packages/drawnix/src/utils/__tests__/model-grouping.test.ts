@@ -88,8 +88,8 @@ describe('model-grouping', () => {
     expect(groups[0]?.vendorCategories[0]?.vendor).toBe(ModelVendor.GEMINI);
     expect(groups[0]?.vendorCategories[0]?.label).toBe('Gemini');
     expect(groups[0]?.vendorCategories[0]?.models.map((model) => model.id)).toEqual([
-      'omni-flash-components',
       'omni-flash',
+      'omni-flash-components',
     ]);
   });
 });

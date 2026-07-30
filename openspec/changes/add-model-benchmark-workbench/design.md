@@ -13,8 +13,17 @@
 - Do not implement full AI scoring in V1—manual ratings drive “效果最好”.
 
 ## Decisions
-1. The workbench stores `BenchmarkSession` → `BenchmarkEntry` records in a new service backed by `KVStorage` (similar to prompt storage) keyed by `sessionId`.
+1. The workbench stores `BenchmarkSession` → `BenchmarkEntry` records in a dedicated service backed by `KVStorage`, separate from task history. The current implementation uses one whole-store key rather than one key per `sessionId`; initialization and write ordering are governed by `ensure-model-benchmark-storage-consistency`.
 2. Execution will call `resolveAdapterForInvocation` with the chosen `modelRef`/`modelId`/`routeType` and run `generateImage/Video/Audio` or `sendChatMessage` (for text) via the existing adapters, capturing start/finish timestamps and HTTP duration.
-3. Settings dialog renders quick buttons per provider/model entry; click triggers `toolWindowService.openTool` with component props selecting the session mode (“same model other providers”, etc.).
-4. Sorting modes implemented as pure client filtering on `BenchmarkEntry` metadata; default ranking uses success rate + 90th percentile completion time to favor faster results, with cost as tiebreaker.
+3. Settings dialog renders quick buttons per provider/model entry. The current global atom handoff is not instance-scoped and is not one-shot; `scope-model-benchmark-launch-handoff` owns the correction without changing benchmark selection semantics.
+4. Sorting modes are pure client ranking over `BenchmarkEntry` metadata, but the reachable UI must explicitly select and persist the session ranking mode. Cost-dependent modes must remain truthful when cost is unavailable rather than treating `null` as measured zero.
 5. Manual rating (`score` 0-5) and `favorite`/`reject` flags are stored per entry; these influence composite ranking but do not change metrics.
+6. Cost capture must use an existing provider/model price source with explicit units and request quantity. When no compatible price is known, `estimatedCost` remains `null` and the UI/export labels it unknown; no fabricated estimate or zero fallback is permitted.
+7. Stop behavior and terminal ownership are specified by `control-model-benchmark-run-lifecycle`; this change retains the original user requirement but does not duplicate its cancellation/recovery state machine.
+
+## Preserved Invariants
+
+- Benchmark results remain separate from the task queue and are never automatically inserted into the canvas or media library.
+- Provider routing, model references, prompts, concurrency selection, manual feedback, and existing persisted sessions remain compatible.
+- Missing price metadata is represented as unknown, not success at zero cost.
+- Cost/ranking/stop implementation must not make an additional provider request merely to compute or display metadata.

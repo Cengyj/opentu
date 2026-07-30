@@ -1,9 +1,8 @@
 /**
  * useFilteredTaskQueue Hook
  * 
- * 用于弹窗中的任务列表，支持按类型过滤和分页加载。
- * 与 useTaskQueue 不同，这个 hook 直接从 SW 查询数据，
- * 支持类型过滤，并且不会影响全局任务缓存。
+ * 用于弹窗中的任务列表，基于共享内存状态按类型过滤。
+ * 当前活跃集合一次加载；分页返回字段为兼容现有组件保留。
  */
 
 import { useCallback, useMemo } from 'react';

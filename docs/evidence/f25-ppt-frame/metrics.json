@@ -1,0 +1,208 @@
+{
+  "featureId": "F-25",
+  "feature": "Frame/PPT creation, editing, ordering, outline generation, slideshow, and PPTX export",
+  "capturedAt": "2026-07-30T00:43:00+08:00",
+  "sourceState": {
+    "gitMetadata": false,
+    "limitation": "Cannot verify worktree cleanliness or history because this directory is not a Git repository.",
+    "openSpecCliAvailable": false,
+    "openSpecStrictExitCodes": [127, 127, 127]
+  },
+  "browser": {
+    "surface": "Codex in-app Browser",
+    "engine": "Chromium",
+    "appUrl": "http://127.0.0.1:7200/?board=8be2a894-1253-463c-b67f-b799c3af21bc",
+    "viewportCssPx": { "width": 1280, "height": 720 },
+    "devicePixelRatio": 1,
+    "network": "normal host network; not throttled",
+    "cpu": "not throttled",
+    "theme": "light",
+    "locale": "zh-CN",
+    "providerCalls": 0,
+    "credentialRead": false,
+    "credentialSent": false,
+    "browserStateAfterEvidence": "the previous in-app Browser tab binding was no longer present, so no live drawer state remained to restore"
+  },
+  "warmPanelSwitch": {
+    "definition": "page Date.now elapsed from canvas-management to PPT-editing tab activation until the PPT search input was visible",
+    "cache": "warm app, board, and project drawer",
+    "trials": 5,
+    "samplesMs": [316, 317, 313, 319, 314],
+    "medianMs": 316,
+    "minMs": 313,
+    "maxMs": 319,
+    "coldStartMeasured": false,
+    "beforeAfterComparison": false,
+    "performanceConclusion": false,
+    "limitations": "Includes browser driver, polling, render, and scheduling overhead. No production performance optimization was made."
+  },
+  "syntheticPptx": {
+    "file": "synthetic-ppt-export.pptx",
+    "bytes": 54775,
+    "slides": 2,
+    "source": "real exportFramesToPPT path with local synthetic board/image data",
+    "providerCalls": 0,
+    "networkCalls": 0,
+    "renderedImages": [
+      { "file": "rendered/slide-1.png", "width": 1600, "height": 900 },
+      { "file": "rendered/slide-2.png", "width": 1600, "height": 900 }
+    ],
+    "overflowTestExitCode": 0,
+    "manualInspection": "no clipping, missing image, or order reversal",
+    "transitions": [
+      { "slide": 1, "xml": "<p:fade/>" },
+      { "slide": 2, "xml": "<p:push dir=\"l\"/>" }
+    ],
+    "fallbackMedia": ["image-1-1.png", "image-1-2.svg", "image-2-1.png", "image-2-2.svg"]
+  },
+  "orderRegression": {
+    "preFix": {
+      "testFilesPassed": 1,
+      "testFilesFailed": 1,
+      "receivedPageIndices": [3, 1, 2],
+      "expectedPageIndices": [1, 2, 3]
+    },
+    "postFixFinal": {
+      "testFiles": 1,
+      "testsPassed": 3,
+      "testsFailed": 0,
+      "exitCode": 0,
+      "invariants": [
+        "root Frame order and pageIndex agree",
+        "bound image remains present",
+        "custom name remains present",
+        "generic Frame collection gains no pptMeta",
+        "one undo restores node and metadata order"
+      ]
+    }
+  },
+  "exportFailureDiagnostic": {
+    "input": "image-first Frame whose primary image URL returns HTTP 404",
+    "publicPromiseResolved": true,
+    "slideAddImageCalls": 0,
+    "pptxWriteFileCalls": 1,
+    "classification": "confirmed content-loss/full-success mismatch; implementation blocked by report-ppt-export-content-loss approval"
+  },
+  "accessibility": {
+    "confirmedUnnamedGroups": [
+      "PPT slide/outline view buttons",
+      "PPT add/play/export/arrange icon actions",
+      "custom width and height inputs are not distinctly associated",
+      "slideshow tools, pen color/style/width, and previous/next navigation"
+    ],
+    "hiddenFocusRisk": "slideshow inactivity opacity is independent of keyboard focus",
+    "implementationBlockedBy": "improve-ppt-editor-accessibility"
+  },
+  "commands": [
+    {
+      "name": "focused Frame order/history final",
+      "exitCode": 0,
+      "result": "1 file passed, 3 tests passed"
+    },
+    {
+      "name": "11-file PPT/Frame targeted Vitest",
+      "exitCode": 1,
+      "result": "10 files passed, 1 settings-mock collection failure; 84/84 executed tests passed"
+    },
+    {
+      "name": "targeted ESLint for changed F-25 files",
+      "exitCode": 0,
+      "result": "0 errors, 27 warnings"
+    },
+    {
+      "name": "Drawnix typecheck",
+      "exitCode": 0,
+      "result": "completed with no TypeScript diagnostics"
+    },
+    {
+      "name": "pnpm typecheck",
+      "exitCode": 0,
+      "result": "5/5 projects passed"
+    },
+    {
+      "name": "pnpm check:cycles",
+      "exitCode": 0,
+      "result": "no static runtime import cycles"
+    },
+    {
+      "name": "final full Drawnix Vitest",
+      "exitCode": 1,
+      "result": "188 files: 183 passed, 4 failed, 1 skipped; 1164 tests: 1160 passed, 3 failed, 1 skipped; existing four failure clusters"
+    },
+    {
+      "name": "utils Vitest",
+      "exitCode": 0,
+      "result": "25/25 files and 471/471 tests passed"
+    },
+    {
+      "name": "react-board Vitest in root run",
+      "exitCode": 0,
+      "result": "1/1 file and 8/8 tests passed"
+    },
+    {
+      "name": "pnpm build:web",
+      "exitCode": 0,
+      "result": "app 7931 modules, 1m51s; service worker 54 modules, 1.89s"
+    },
+    {
+      "name": "pnpm size",
+      "exitCode": 1,
+      "result": "AI Chat 844.43 kB gzip exceeded 140 kB; other reported groups remained within their current limits"
+    },
+    {
+      "name": "pnpm verify:startup",
+      "exitCode": 0,
+      "result": "startup CSS/app/runtime/index all within 512000-byte limits; no chunk cycles"
+    },
+    {
+      "name": "pnpm lint",
+      "exitCode": 1,
+      "result": "existing broad source/module-boundary errors and warnings; targeted F-25 lint is the scoped signal"
+    },
+    {
+      "name": "Presentation render_slides.py",
+      "exitCode": 0,
+      "result": "2 slides rendered at 1600x900"
+    },
+    {
+      "name": "Presentation slides_test.py",
+      "exitCode": 0,
+      "result": "no overflow detected"
+    },
+    {
+      "name": "Playwright smoke",
+      "exitCode": 1,
+      "result": "2/2 tests blocked before page execution by missing chromium_headless_shell-1200"
+    },
+    {
+      "name": "Playwright feature/visual/responsive focused cases",
+      "exitCode": 1,
+      "result": "one case in each project blocked before page execution by the same missing executable"
+    }
+  ],
+  "bundleSizeGzipKb": {
+    "startupApp": 1.94,
+    "startupRuntime": 1.01,
+    "aiChat": 844.43,
+    "diagramEngines": 934.93,
+    "officeData": 269.19,
+    "editorEngines": 858.24,
+    "mediaViewer": 12.19
+  },
+  "screenshots": [
+    "empty-ppt-editor-desktop-1280x720.png",
+    "responsive-override-observed-390x219.png",
+    "rendered/slide-1.png",
+    "rendered/slide-2.png"
+  ],
+  "responsive": {
+    "desktop1280x720": "observed",
+    "requested390x844": "not achieved; actual capture was 390x219",
+    "tablet": "blocked",
+    "mobile": "blocked",
+    "darkTheme": "blocked",
+    "englishRuntime": "blocked",
+    "formalE2E": "blocked",
+    "blocker": "in-app viewport override and missing Playwright chromium_headless_shell-1200"
+  }
+}

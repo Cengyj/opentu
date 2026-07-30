@@ -302,16 +302,17 @@ function getAllImageExportItems(
   );
 }
 
-function getRequiredImageExportItems(
+function getAvailableImageExportItems(
   record: ComicRecord,
   imageSources: ComicImageExportSource[]
 ): PageImageExportItem[] {
-  return getImageExportItems(record, imageSources).map((item) => {
-    if (!item.source) {
-      throw new Error(`第 ${item.page.pageNumber} 页缺少图片，无法导出`);
-    }
-    return { page: item.page, source: item.source };
-  });
+  const items = getImageExportItems(record, imageSources).filter(
+    (item): item is PageImageExportItem => Boolean(item.source)
+  );
+  if (items.length === 0) {
+    throw new Error('没有可导出的页面图片');
+  }
+  return items;
 }
 
 export function buildComicExportManifest(
@@ -488,7 +489,7 @@ export async function exportComicAsPptx(
   ]);
   const files = buildComicExportFiles(record, options);
   const imageSources = resolveComicImageSources(record, options.imageSources);
-  const imageItems = getRequiredImageExportItems(record, imageSources);
+  const imageItems = getAvailableImageExportItems(record, imageSources);
   const pageSize = getPptxPageSize(imageItems);
   const pptx = new PptxGenJS();
   pptx.defineLayout?.({
@@ -532,7 +533,7 @@ export async function exportComicAsPdf(
   ]);
   const files = buildComicExportFiles(record, options);
   const imageSources = resolveComicImageSources(record, options.imageSources);
-  const imageItems = getRequiredImageExportItems(record, imageSources);
+  const imageItems = getAvailableImageExportItems(record, imageSources);
   const pageSize = getPdfPageSize(imageItems);
   const orientation =
     pageSize.width >= pageSize.height ? 'landscape' : 'portrait';

@@ -1,0 +1,142 @@
+{
+  "body": {
+    "bottom": 1236,
+    "clientWidth": 389,
+    "display": "flex",
+    "height": 1178,
+    "overflowX": "hidden",
+    "right": 579,
+    "scrollWidth": 982,
+    "selector": ".kb-drawer__body",
+    "width": 389,
+    "x": 190,
+    "y": 58
+  },
+  "content": {
+    "bottom": 1220,
+    "clientWidth": 366,
+    "display": "block",
+    "height": 954,
+    "overflowX": "hidden",
+    "right": 855,
+    "scrollWidth": 366,
+    "selector": ".kb-note-editor__content",
+    "width": 368,
+    "x": 487,
+    "y": 266
+  },
+  "drawer": {
+    "bottom": 1236,
+    "clientWidth": 389,
+    "display": "flex",
+    "height": 1178,
+    "overflowX": "visible",
+    "right": 579,
+    "scrollWidth": 389,
+    "selector": ".kb-drawer",
+    "width": 389,
+    "x": 190,
+    "y": 58
+  },
+  "editor": {
+    "bottom": 1236,
+    "clientWidth": 400,
+    "display": "flex",
+    "height": 1178,
+    "overflowX": "hidden",
+    "right": 871,
+    "scrollWidth": 400,
+    "selector": ".kb-drawer__editor",
+    "width": 400,
+    "x": 471,
+    "y": 58
+  },
+  "rightSidebars": [
+    {
+      "bottom": 1236,
+      "clientWidth": 300,
+      "display": "flex",
+      "height": 1178,
+      "index": 0,
+      "right": 1172,
+      "scrollWidth": 300,
+      "width": 300,
+      "x": 872,
+      "y": 58
+    }
+  ],
+  "sidebar": {
+    "bottom": 1236,
+    "clientWidth": 280,
+    "display": "flex",
+    "height": 1178,
+    "overflowX": "visible",
+    "right": 470,
+    "scrollWidth": 280,
+    "selector": ".kb-drawer__sidebar",
+    "width": 280,
+    "x": 190,
+    "y": 58
+  },
+  "title": {
+    "bottom": 112,
+    "clientWidth": 368,
+    "display": "flex",
+    "height": 38,
+    "overflowX": "visible",
+    "right": 855,
+    "scrollWidth": 368,
+    "selector": ".kb-note-editor__title-row",
+    "width": 368,
+    "x": 487,
+    "y": 74
+  },
+  "viewport": {
+    "devicePixelRatio": 1,
+    "documentScrollWidth": 390,
+    "innerHeight": 844,
+    "innerWidth": 390
+  },
+  "visibleButtons": [
+    {
+      "aria": null,
+      "i": 0,
+      "right": 791,
+      "title": null,
+      "visible": false,
+      "width": 28,
+      "x": 763
+    },
+    {
+      "aria": null,
+      "i": 1,
+      "right": 823,
+      "title": null,
+      "visible": false,
+      "width": 28,
+      "x": 795
+    },
+    {
+      "aria": null,
+      "i": 2,
+      "right": 855,
+      "title": null,
+      "visible": false,
+      "width": 28,
+      "x": 827
+    }
+  ],
+  "winbox": {
+    "bottom": 710,
+    "clientWidth": 400,
+    "display": "block",
+    "height": 700,
+    "overflowX": "hidden",
+    "right": 590,
+    "scrollWidth": 405,
+    "selector": ".winbox",
+    "width": 400,
+    "x": 190,
+    "y": 10
+  }
+}

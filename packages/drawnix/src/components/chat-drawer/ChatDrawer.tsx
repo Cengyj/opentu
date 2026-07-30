@@ -554,8 +554,8 @@ export const ChatDrawer = forwardRef<ChatDrawerRef, ChatDrawerProps>(
       return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isOpen, onOpenChange]);
 
-    // Subscribe to SW workflow events to keep ChatDrawer in sync
-    // This ensures ChatDrawer shows the same status as WorkZone when SW updates workflow state
+    // Subscribe to workflowSubmissionService events. These currently come from
+    // the main-thread fallback engine and recovery bridge, not Service Worker execution.
     useEffect(() => {
       let subscription: { unsubscribe: () => void } | null = null;
 

@@ -1,0 +1,248 @@
+{
+  "featureId": "F-22",
+  "feature": "Model Benchmark Workbench",
+  "capturedAt": "2026-07-29T22:48:00+08:00",
+  "sourceState": {
+    "gitMetadata": false,
+    "limitation": "Cannot verify worktree cleanliness or history because this directory is not a Git repository."
+  },
+  "browser": {
+    "surface": "Codex in-app Browser",
+    "engine": "Chromium",
+    "appUrl": "http://127.0.0.1:7200/?board=8be2a894-1253-463c-b67f-b799c3af21bc",
+    "viewportCssPx": { "width": 1280, "height": 720 },
+    "devicePixelRatio": 1,
+    "network": "normal host network; not throttled",
+    "cpu": "not throttled",
+    "theme": "light",
+    "locale": "zh-CN",
+    "providerCalls": 0,
+    "settingsMutation": false,
+    "realCredentialRead": false,
+    "realCredentialSent": false
+  },
+  "emptyState": {
+    "historySessions": 0,
+    "modalities": ["text", "image", "video", "audio"],
+    "compareModes": ["cross-provider", "cross-model", "custom"],
+    "availableTargets": 0,
+    "defaultConcurrency": 2,
+    "startButtonText": "开始测试 (0)",
+    "startButtonDisabled": true,
+    "rankingControlPresent": false,
+    "stopControlPresent": false,
+    "screenshot": "workbench-empty-desktop-1280x720.png"
+  },
+  "windowGeometry": {
+    "viewport": { "x": 0, "y": 0, "width": 1280, "height": 720 },
+    "winbox": { "x": 0, "y": 0, "width": 1280, "height": 860, "bottom": 860 },
+    "workbenchRoot": { "x": 0, "y": 48, "width": 1280, "height": 812, "bottom": 860 },
+    "bodyScrollSize": { "width": 1280, "height": 720 },
+    "documentScrollSize": { "width": 1280, "height": 720 },
+    "main": { "clientHeight": 812, "scrollHeight": 812, "bottom": 860 },
+    "sessionList": { "clientHeight": 650, "scrollHeight": 650, "bottom": 844 },
+    "belowViewportCssPx": 140,
+    "ownership": "Existing fix-tool-window-viewport-transition change; no duplicate F-22 proposal."
+  },
+  "warmOpenObservation": {
+    "definition": "Browser-control elapsed time from toolbox model-benchmark card click until .model-benchmark is visible",
+    "cache": "warm application session",
+    "trials": 5,
+    "samplesMs": [362, 346, 430, 363, 350],
+    "medianMs": 362,
+    "minMs": 346,
+    "maxMs": 430,
+    "coldStartMeasured": false,
+    "beforeAfterComparison": false,
+    "performanceConclusion": false,
+    "limitations": "Includes Browser control/driver overhead and is retained only as current-state observation."
+  },
+  "settingsShortcut": {
+    "defaultProviderModelCount": 0,
+    "codexProviderModelCount": 0,
+    "shortcutRendered": false,
+    "classification": "environment/external-data blocker; no model or credential was added"
+  },
+  "isolatedDiagnostics": {
+    "runtime": "Node.js 24.14.0, Vitest 3.2.4",
+    "testFiles": 1,
+    "tests": 8,
+    "passed": 8,
+    "exitCode": 0,
+    "durationSeconds": 2.10,
+    "allExternalBoundariesMocked": true,
+    "temporaryTestRemoved": true,
+    "facts": [
+      "a session created before a delayed startup read was overwritten by the older loaded snapshot",
+      "reverse completion of two whole-state writes regressed simulated durable state from two sessions to one",
+      "persisted running session and entry states loaded unchanged",
+      "two concurrent runSession calls issued two mocked provider calls for one entry",
+      "removing a running session did not cancel its deferred mocked provider call",
+      "successful entry cost remained null and sentinel raw response data reached KV state",
+      "sentinel provider Error.message reached KV errorSummary and analytics errorMessage",
+      "the global launch atom returned the same non-null request on repeated reads"
+    ]
+  },
+  "commands": [
+    {
+      "name": "isolated F-22 diagnostic",
+      "exitCode": 0,
+      "result": "1 file passed, 8 tests passed, 2.10 s"
+    },
+    {
+      "name": "model-benchmark-service.test.ts",
+      "exitCode": 0,
+      "result": "1 file passed, 6 tests passed, 1.31 s"
+    },
+    {
+      "name": "nx run drawnix:typecheck --skip-nx-cache",
+      "exitCode": 0,
+      "result": "target succeeded in 33 s"
+    },
+    {
+      "name": "targeted ESLint for seven F-22 chain files",
+      "exitCode": 1,
+      "result": "3 existing Workbench errors, 22 warnings; no runtime file changed"
+    },
+    {
+      "name": "openspec validate add-model-benchmark-workbench --strict",
+      "exitCode": 127,
+      "result": "OpenSpec CLI unavailable; manual audit completed"
+    },
+    {
+      "name": "four new F-22 openspec strict validations",
+      "exitCode": 127,
+      "result": "each command unavailable; manual structure/scenario/name audit completed"
+    },
+    {
+      "name": "openspec validate fix-tool-window-viewport-transition --strict after F-22 scenario update",
+      "exitCode": 127,
+      "result": "OpenSpec CLI unavailable; manual audit completed"
+    },
+    {
+      "name": "openspec validate improve-model-benchmark-content-accessibility --strict",
+      "exitCode": 127,
+      "result": "OpenSpec CLI unavailable; manual audit passed with 3 requirements, 9 scenarios, 6/24 tasks, unique names, and one capability owner"
+    }
+  ],
+  "contentAccessibility20260730": {
+    "environment": {
+      "surface": "Codex in-app Browser / Chromium",
+      "appUrl": "http://127.0.0.1:7394/?sw=0",
+      "build": "current dist/apps/web; no runtime code changed after the recorded F-22 screenshot",
+      "viewportCssPx": { "width": 1280, "height": 720 },
+      "devicePixelRatio": 1,
+      "networkThrottle": "none configured",
+      "cpuThrottle": "none configured",
+      "samplesPerState": 1,
+      "providerCalls": 0,
+      "storageInspected": false,
+      "realCredentialRead": false
+    },
+    "root": {
+      "x": 0,
+      "y": 48,
+      "width": 1280,
+      "height": 812,
+      "scrollWidth": 1280,
+      "scrollHeight": 812
+    },
+    "selectionControls": {
+      "modalityButtons": 4,
+      "comparisonButtons": 3,
+      "historyFilterButtons": 5,
+      "ariaPressedValues": [null],
+      "ariaSelectedValues": [null],
+      "ariaCurrentValues": [null],
+      "imageActivation": {
+        "activeClassMoved": true,
+        "focusText": "图片",
+        "promptChangedToImagePreset": true,
+        "programmaticSelectedState": null,
+        "restoredToTextAfterObservation": true
+      }
+    },
+    "controlGeometryCssPx": {
+      "exportButton": { "width": 76, "height": 28 },
+      "historyFilters": { "width": 34, "height": 34 },
+      "modalityButtons": { "width": 58, "height": 32 },
+      "comparisonButtons": {
+        "height": 34,
+        "widths": [104, 91, 91]
+      },
+      "knowledgeButton": { "width": 340, "height": 36 },
+      "startButton": { "width": 182, "height": 40 },
+      "classification": "desktop fact only; no formal F-22 compact target threshold or compact runtime sample"
+    },
+    "inputRelationships": [
+      {
+        "purpose": "history search",
+        "labels": 0,
+        "ariaLabel": null,
+        "ariaLabelledBy": null,
+        "nameSource": "placeholder"
+      },
+      {
+        "purpose": "model selector",
+        "labels": 0,
+        "ariaLabel": null,
+        "ariaLabelledBy": null,
+        "nameSource": "placeholder; visible concept is a separate generic node"
+      },
+      {
+        "purpose": "provider selector",
+        "labels": 0,
+        "ariaLabel": null,
+        "ariaLabelledBy": null,
+        "nameSource": "placeholder; visible concept is a separate generic node"
+      },
+      {
+        "purpose": "prompt",
+        "labels": 0,
+        "ariaLabel": null,
+        "ariaLabelledBy": null,
+        "nameSource": "placeholder"
+      },
+      {
+        "purpose": "concurrency",
+        "labels": 0,
+        "ariaLabel": "最大并发",
+        "ariaLabelledBy": null,
+        "nameSource": "explicit aria-label; non-problem"
+      }
+    ],
+    "semanticPositives": [
+      "native content buttons support Enter and Space",
+      "history uses an aside/complementary region",
+      "content uses a main region",
+      "empty result has an h3",
+      "session delete, knowledge context, and concurrency controls have names"
+    ],
+    "cleanup": {
+      "tabClosed": true,
+      "serverStopped": true,
+      "providerRequestsTriggered": 0
+    },
+    "focusedRegression": {
+      "command": "absolute Node + Vitest model-benchmark-service.test.ts",
+      "exitCode": 0,
+      "files": { "passed": 1, "failed": 0, "total": 1 },
+      "tests": { "passed": 6, "failed": 0, "total": 6 },
+      "durationSeconds": 1.12
+    },
+    "claims": {
+      "performanceImprovement": false,
+      "visualImprovement": false,
+      "afterScreenshotAvailable": false,
+      "compactGeometryMeasured": false,
+      "darkThemeMeasured": false,
+      "productRuntimeChanged": false
+    }
+  },
+  "responsive": {
+    "desktop1280x720": "measured",
+    "tablet768x1024": "blocked",
+    "mobile390x844": "blocked",
+    "blocker": "In-app Browser does not expose viewport emulation; formal Playwright lacks chromium_headless_shell revision 1200."
+  }
+}

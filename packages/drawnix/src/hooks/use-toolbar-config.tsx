@@ -70,18 +70,28 @@ export const ToolbarConfigProvider: React.FC<ToolbarConfigProviderProps> = ({
 
   // 初始化配置
   useEffect(() => {
-    const initConfig = () => {
+    let cancelled = false;
+
+    const initConfig = async () => {
       try {
-        const loadedConfig = toolbarConfigService.initialize();
-        setConfig(loadedConfig);
+        const loadedConfig = await toolbarConfigService.initializeAsync();
+        if (!cancelled) {
+          setConfig(loadedConfig);
+        }
       } catch (error) {
         console.error('[ToolbarConfigProvider] Failed to initialize:', error);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    initConfig();
+    void initConfig();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 计算可见和隐藏按钮列表

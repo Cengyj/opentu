@@ -4,8 +4,8 @@
  * Core service for managing the task queue lifecycle.
  * Implements singleton pattern and uses RxJS for event-driven architecture.
  *
- * In fallback mode (SW disabled), this service directly writes to IndexedDB
- * via taskStorageWriter to ensure data persistence.
+ * Execution and persistence currently run on the main thread; taskStorageWriter
+ * writes lifecycle snapshots directly to IndexedDB.
  */
 
 import { Subject, Observable } from 'rxjs';
@@ -1913,17 +1913,26 @@ class TaskQueueService {
       sanitizeGenerationParams(params)
     );
 
-    // Create new task - starts as PROCESSING since it will be executed immediately
+    // Character extraction is owned by useTaskExecutor because it also persists
+    // the created character record. Other task types execute in this service.
+    const usesDedicatedTaskExecutor = type === TaskType.CHARACTER;
+
+    // Immediate tasks start as PROCESSING; the dedicated executor consumes
+    // character tasks from PENDING and advances them to PROCESSING itself.
     const now = Date.now();
     const task: Task = {
       id: generateTaskId(),
       type,
-      status: TaskStatus.PROCESSING,
+      status: usesDedicatedTaskExecutor
+        ? TaskStatus.PENDING
+        : TaskStatus.PROCESSING,
       params: sanitizedParams,
       createdAt: now,
       updatedAt: now,
-      startedAt: now,
-      executionPhase: TaskExecutionPhase.SUBMITTING,
+      ...(!usesDedicatedTaskExecutor && {
+        startedAt: now,
+        executionPhase: TaskExecutionPhase.SUBMITTING,
+      }),
       // Initialize progress for video tasks
       ...((type === TaskType.VIDEO ||
         type === TaskType.AUDIO ||
@@ -1954,13 +1963,15 @@ class TaskQueueService {
     // 归档超出限制的旧任务
     this.enforceRetentionLimit();
 
-    // Execute task asynchronously (fire-and-forget)
-    this.executeTask(task).catch((error) => {
-      console.error('[TaskQueueService] Task execution error:', error);
-    });
+    if (!usesDedicatedTaskExecutor) {
+      // Execute task asynchronously (fire-and-forget)
+      this.executeTask(task).catch((error) => {
+        console.error('[TaskQueueService] Task execution error:', error);
+      });
 
-    // 任务开始执行后剥离大字段（base64 参考图等）
-    this.stripLargeParams(task.id);
+      // 任务开始执行后剥离大字段（base64 参考图等）
+      this.stripLargeParams(task.id);
+    }
 
     // console.log(`[TaskQueueService] Created task ${task.id} (${type})`);
     return task;
@@ -2203,7 +2214,11 @@ class TaskQueueService {
       return;
     }
 
-    // Reset task for retry - set to PROCESSING for immediate execution
+    const usesDedicatedTaskExecutor = task.type === TaskType.CHARACTER;
+
+    // Immediate tasks return to PROCESSING. Character tasks return to PENDING
+    // so the dedicated executor that owns character persistence can consume
+    // the taskUpdated event.
     const now = Date.now();
     trackTaskAnalytics('generation_retry_after_failure', task, {
       previousStatus: task.status,
@@ -2212,27 +2227,33 @@ class TaskQueueService {
     });
     this.blockedTaskIds.delete(taskId);
     this.currentSessionTaskIds.add(taskId);
-    this.updateTaskStatus(taskId, TaskStatus.PROCESSING, {
-      error: undefined,
-      result: undefined,
-      startedAt: now, // Set new start time
-      completedAt: undefined, // Clear completion time
-      remoteId: undefined, // Clear remote ID for fresh submission
-      executionPhase: TaskExecutionPhase.SUBMITTING,
-      insertedToCanvas: false,
-      progress:
-        task.type === TaskType.VIDEO ||
-        task.type === TaskType.AUDIO ||
-        (task.type === TaskType.CHAT &&
-          (typeof task.params.videoAnalyzerAction === 'string' ||
-            typeof task.params.musicAnalyzerAction === 'string'))
-          ? 0
-          : undefined, // Reset progress for async media
-    });
+    this.updateTaskStatus(
+      taskId,
+      usesDedicatedTaskExecutor ? TaskStatus.PENDING : TaskStatus.PROCESSING,
+      {
+        error: undefined,
+        result: undefined,
+        startedAt: usesDedicatedTaskExecutor ? undefined : now,
+        completedAt: undefined, // Clear completion time
+        remoteId: undefined, // Clear remote ID for fresh submission
+        executionPhase: usesDedicatedTaskExecutor
+          ? undefined
+          : TaskExecutionPhase.SUBMITTING,
+        insertedToCanvas: false,
+        progress:
+          task.type === TaskType.VIDEO ||
+          task.type === TaskType.AUDIO ||
+          (task.type === TaskType.CHAT &&
+            (typeof task.params.videoAnalyzerAction === 'string' ||
+              typeof task.params.musicAnalyzerAction === 'string'))
+            ? 0
+            : undefined, // Reset progress for async media
+      }
+    );
 
     // Execute task after retry
     const updatedTask = this.tasks.get(taskId);
-    if (updatedTask) {
+    if (updatedTask && !usesDedicatedTaskExecutor) {
       this.executeTask(updatedTask).catch((error) => {
         console.error('[TaskQueueService] Retry execution error:', error);
       });

@@ -149,6 +149,19 @@ describe('video-analyzer task sync', () => {
     expect(syncedAgain?.record.id).toBe('record-prompt');
   });
 
+  it('coalesces concurrent synchronization of the same completed task', async () => {
+    const task = createPromptGenerateTask();
+
+    const [first, second] = await Promise.all([
+      syncVideoAnalyzerTask(task),
+      syncVideoAnalyzerTask(task),
+    ]);
+
+    expect(mockStore.records).toHaveLength(1);
+    expect(first?.record.id).toBe('record-prompt');
+    expect(second?.record.id).toBe('record-prompt');
+  });
+
   it('syncs rewritten shots with characters and bgm into the record', async () => {
     const analysis = createAnalysis();
     mockStore.records = [{

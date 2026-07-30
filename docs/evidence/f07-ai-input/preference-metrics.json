@@ -1,0 +1,95 @@
+{
+  "date": "2026-07-30T00:00:00+08:00",
+  "classification": "functional persistence and empty-model browser evidence; not a performance benchmark",
+  "source": {
+    "artifact": "dist/apps/web",
+    "url": "http://127.0.0.1:7400/?sw=0",
+    "gitMetadataAvailable": false,
+    "openSpecCliAvailable": false,
+    "formalPlaywrightRevision1200Available": false
+  },
+  "browser": {
+    "surface": "Codex in-app Chromium",
+    "exactVersion": "not exposed",
+    "viewport": { "width": 1280, "height": 720 },
+    "locale": "zh-CN",
+    "themeObserved": "light",
+    "cpuThrottle": "none configured",
+    "networkThrottle": "none configured",
+    "browserStorageInspected": false,
+    "providerProfileCreated": false,
+    "providerTaskSubmitted": false,
+    "sendButtonClicked": false,
+    "consoleErrorCapture": "not separately queried for this subcycle",
+    "syntheticPromptCleared": true,
+    "testTabClosed": true,
+    "remainingBrowserTabCount": 0,
+    "serverStopped": true,
+    "port7400ListeningAfterCleanup": false
+  },
+  "preferenceRecovery": {
+    "freshOrigin": {
+      "generationType": "image",
+      "model": "gpt-image-2",
+      "parameterSummary": "自动, 1K, 自动",
+      "countSummary": "1个"
+    },
+    "visibleEdits": {
+      "generationType": "image",
+      "model": "gpt-image-2",
+      "parameterSummary": "16:9 横版, 2K, 标准",
+      "countSummary": "2个"
+    },
+    "afterImageTextImageRoundTrip": {
+      "generationType": "image",
+      "model": "gpt-image-2",
+      "parameterSummary": "16:9 横版, 2K, 标准",
+      "countSummary": "1个",
+      "parameterRestored": true,
+      "countRestored": false,
+      "countClassification": "specified normalization in text mode; no model-scoped count requirement"
+    },
+    "afterReload": {
+      "generationType": "image",
+      "model": "gpt-image-2",
+      "parameterSummary": "16:9 横版, 2K, 标准",
+      "countSummary": "2个",
+      "allVisibleFieldsRestored": true
+    },
+    "afterTabCloseAndReopen": {
+      "generationType": "image",
+      "model": "gpt-image-2",
+      "parameterSummary": "16:9 横版, 2K, 标准",
+      "countSummary": "2个",
+      "allVisibleFieldsRestored": true
+    }
+  },
+  "emptyModelFinding": {
+    "issueId": "AI-INPUT-MODEL-001",
+    "targetGenerationType": "audio",
+    "selectableTargetModelCount": 0,
+    "modelButtonSummary": "选择模型 (↑↓ Tab)",
+    "staleParameterSummary": "自动, 1K, 自动",
+    "probePrompt": "F07 local validation only",
+    "sendDisabledAttribute": null,
+    "sendClass": "ai-input-bar__send-btn active",
+    "providerTaskSubmitted": false,
+    "screenshot": {
+      "file": "empty-audio-model-stale-params-desktop-before.png",
+      "encodedType": "JPEG/JFIF despite .png suffix",
+      "width": 1280,
+      "height": 720,
+      "bytes": 45871,
+      "sha256": "c5ed610ef553e851e44dfd27f67bbbf4a60d27f7e09bff584569ba17b9ca4c00"
+    }
+  },
+  "taskStatus": {
+    "addAiGenerationStatePersistence": "6/7",
+    "pageCloseReopenRecoveryVerified": true,
+    "modelSwitchCompatibilityVerified": false,
+    "modelSwitchCompatibilityBlocker": "confirmed empty-target-model defect requires approved runtime change",
+    "addModelScopedGenerationPreferences": "12/16",
+    "mediaTwoModelManualMatrixVerified": false,
+    "sameIdCrossProviderUiVerified": false
+  }
+}

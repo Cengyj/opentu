@@ -1,0 +1,109 @@
+{
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "classification": {
+    "supersededHypothesis": "F13-LOAD-TTL-STALE-HYP-001",
+    "confirmedIssue": "F13-LOAD-TTL-STALE-002",
+    "status": "confirmed_approval_blocked",
+    "evidenceStrength": {
+      "sourceAndControlledSequence": "high",
+      "productionFrequency": "unknown",
+      "browserPerformance": "unmeasured"
+    }
+  },
+  "environment": {
+    "node": "24.14.0",
+    "vitest": "3.2.4",
+    "dom": "jsdom",
+    "network": false,
+    "realStorage": false,
+    "providerCalls": false,
+    "credentialsRead": false
+  },
+  "diagnostic": {
+    "command": "pnpm --dir packages/drawnix test src/contexts/AssetContext.ttl.diagnostic.test.tsx",
+    "exitCode": 0,
+    "files": { "passed": 1, "total": 1 },
+    "tests": { "passed": 1, "total": 1 },
+    "testDurationMs": 87,
+    "vitestDurationSeconds": 2.0,
+    "wallDurationSeconds": 3.3,
+    "temporaryFileRemoved": true,
+    "loadTtlMs": 8000,
+    "checkpoints": [
+      {
+        "name": "initial_success",
+        "clockMs": 10000,
+        "successfulLoadAgeMs": 0,
+        "localReads": 1,
+        "taskReads": 1,
+        "cacheReads": 1,
+        "visibleAssetCount": 0,
+        "assetIds": [],
+        "providerCacheSubscribers": 0
+      },
+      {
+        "name": "committed_task_cache_notification_and_reopen_inside_ttl",
+        "clockMs": 11000,
+        "successfulLoadAgeMs": 1000,
+        "localReads": 1,
+        "taskReads": 1,
+        "cacheReads": 1,
+        "visibleAssetCount": 0,
+        "assetIds": [],
+        "providerCacheSubscribers": 0
+      },
+      {
+        "name": "reopen_after_ttl",
+        "clockMs": 18001,
+        "successfulLoadAgeMs": 8001,
+        "localReads": 2,
+        "taskReads": 2,
+        "cacheReads": 2,
+        "visibleAssetCount": 1,
+        "assetIds": ["task-new"],
+        "providerCacheSubscribers": 0
+      }
+    ]
+  },
+  "scopeControls": {
+    "directContextUploadUpdatesProjection": true,
+    "modalUnmountsOnClose": true,
+    "providerPersistsAcrossModalClose": true,
+    "assetContextTaskSubscriptionFound": false,
+    "assetContextUnifiedCacheSubscriptionFound": false,
+    "assetContextVisibilityOrFocusRefreshFound": false,
+    "crossTabPushPathFound": false
+  },
+  "performanceClaim": null,
+  "change": {
+    "id": "refresh-media-library-projection-on-open",
+    "requirements": 3,
+    "scenarios": 6,
+    "whenClauses": 6,
+    "thenClauses": 6,
+    "tasks": 20,
+    "tasksChecked": 4,
+    "strictValidationExitCode": 127,
+    "strictValidationClassification": "tool_unavailable",
+    "uniqueRequirementNames": 3,
+    "mediaLibraryActiveOwners": [
+      "ensure-media-library-write-consistency",
+      "fix-media-library-responsive-interaction",
+      "fix-media-library-selection-contract",
+      "refresh-media-library-projection-on-open"
+    ]
+  },
+  "openSpecRepositorySnapshot": {
+    "activeNonArchiveChanges": 124,
+    "changesWithDeltaSpecs": 124,
+    "fullyCheckedTaskLists": 10,
+    "partiallyCheckedTaskLists": 102,
+    "zeroCheckedTaskLists": 12,
+    "taskListsWithApprovalWording": 95
+  },
+  "runtimeChanges": false,
+  "permanentTestChanges": false,
+  "visualChanges": false,
+  "storageOrSchemaChanges": false
+}

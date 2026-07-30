@@ -27,13 +27,13 @@ export interface UseTaskQueueReturn {
   failedTasks: Task[];
   /** Cancelled tasks */
   cancelledTasks: Task[];
-  /** Whether data is being loaded from SW */
+  /** Whether the active task set is being restored */
   isLoading: boolean;
   /** Whether more tasks are being loaded */
   isLoadingMore: boolean;
   /** Whether there are more tasks to load */
   hasMore: boolean;
-  /** Total count of tasks in SW */
+  /** Total count in the currently loaded active task set */
   totalCount: number;
   /** Loaded count of tasks */
   loadedCount: number;
@@ -296,9 +296,8 @@ export function useTaskQueue(): UseTaskQueueReturn {
     // All tasks loaded from IndexedDB on mount, no pagination needed
   }, []);
 
-  // 注意：任务状态更新主要依赖 SW 的广播事件
-  // visibility 监听器会在页面变为可见时同步第一页
-  // 不再使用轮询，避免重置分页状态和内存问题
+  // 任务状态由 TaskQueueService 的页面内 RxJS 事件增量同步。
+  // 归档历史使用独立的 IndexedDB 分页列表。
 
   const getTask = useCallback((taskId: string) => {
     return taskQueueService.getTask(taskId);

@@ -1,0 +1,182 @@
+{
+  "featureId": "F-10/F-28",
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "sourceState": {
+    "gitMetadata": false,
+    "historyDiffAndCleanlinessCheck": "unavailable"
+  },
+  "environment": {
+    "os": "Darwin 22.6.0 x86_64",
+    "node": "24.14.0",
+    "vite": "6.4.1",
+    "browser": "Codex in-app Chromium; exact revision unavailable",
+    "defaultViewport": { "width": 1280, "height": 720 },
+    "responsiveViewports": [
+      { "width": 390, "height": 844 },
+      { "width": 320, "height": 568 }
+    ],
+    "devicePixelRatio": 1,
+    "network": "default; no provider request",
+    "cpu": "default; unthrottled",
+    "uiLanguage": "zh",
+    "themeObservation": "light-looking application palette"
+  },
+  "privacy": {
+    "visibleLocalTaskCount": 1,
+    "taskRowsIncludedInScreenshots": 0,
+    "recordedTaskPromptUrlIdErrorCredentialTelemetryOrLog": false,
+    "storageOrTelemetryRead": false
+  },
+  "liveEntry": {
+    "source": "BottomActionsSection -> ToolButton",
+    "tag": "BUTTON",
+    "type": "button",
+    "ariaLabel": "任务队列",
+    "dataTestId": "toolbar-tasks",
+    "positiveControl": true
+  },
+  "desktopDrawer": {
+    "viewport": "1280x720",
+    "root": {
+      "tag": "DIV",
+      "role": null,
+      "ariaLabel": null,
+      "ariaLabelledby": null,
+      "tabIndex": -1,
+      "dialogDescendantCount": 0
+    },
+    "activeElementAfterPointerOpen": "toolbar-tasks",
+    "focusOrder": {
+      "focusableElements": 41,
+      "triggerIndexZeroBased": 27,
+      "panelFocusableBeforeTrigger": 12,
+      "nextFourAfterTrigger": "AI-input controls, not task queue"
+    },
+    "buttonsInCurrentPanel": {
+      "total": 11,
+      "unnamed": 7,
+      "unnamedOperations": ["close", "all type", "image type", "video type", "audio type", "character type", "delete task"]
+    },
+    "statusTabs": {
+      "count": 5,
+      "roles": [null, null, null, null, null],
+      "ariaSelected": [null, null, null, null, null],
+      "tabIndexes": [-1, -1, -1, -1, -1]
+    },
+    "typeFilters": {
+      "count": 6,
+      "iconOnlyUnnamed": 5,
+      "activeAriaPressed": null,
+      "activeState": "CSS class only"
+    },
+    "selectionMode": {
+      "checkboxCount": 2,
+      "inputNames": [null, null],
+      "inputTabIndexes": [-1, -1],
+      "labelNames": [null, null],
+      "labelTabIndexes": [0, 0]
+    }
+  },
+  "temporaryComponentDiagnostic": {
+    "command": "pnpm exec vitest run src/components/task-queue/__tests__/TaskQueueAccessibility.diagnostic.test.tsx --config vitest.config.ts --reporter verbose",
+    "workingDirectory": "packages/drawnix",
+    "exitCode": 0,
+    "files": { "passed": 1, "failed": 0, "total": 1 },
+    "tests": { "passed": 1, "failed": 0, "total": 1 },
+    "durationSeconds": 12.68,
+    "controlledTasks": ["completed image", "processing video", "failed image with details"],
+    "actionButtons": { "total": 11, "unnamed": 7 },
+    "preview": { "tag": "DIV", "role": null, "tabIndex": -1 },
+    "errorDetails": { "tag": "SPAN", "role": null, "tabIndex": -1 },
+    "selectionLabel": { "accessibleName": null, "tabIndex": 0 },
+    "progressbarCount": 0,
+    "liveRegionCount": 0,
+    "environmentNoise": "ConfigWriter indexedDB is not defined during module initialization; assertion and exit unaffected",
+    "testRetained": false
+  },
+  "responsive": {
+    "samplesPerViewport": 1,
+    "unit": "CSS px",
+    "performanceMeasurement": false,
+    "viewport390x844": {
+      "drawer": { "x": 0, "y": 0, "width": 390, "height": 844, "right": 390 },
+      "filter": { "x": 12, "y": 114, "width": 366, "height": 40, "right": 378 },
+      "compactTargets": {
+        "pin": { "width": 30, "height": 36 },
+        "close": { "width": 30, "height": 36 },
+        "typeFilters": { "width": 30, "height": 36 },
+        "multiSelect": { "width": 68, "height": 28 },
+        "taskDelete": { "width": 24, "height": 36 },
+        "insert": { "width": 44, "height": 26 }
+      }
+    },
+    "viewport320x568": {
+      "drawer": { "x": 0, "y": 0, "width": 320, "height": 568, "right": 320 },
+      "filter": { "x": 12, "width": 296, "right": 308, "clientWidth": 296, "scrollWidth": 366 },
+      "typeFilters": { "x": 12, "width": 204, "right": 216 },
+      "searchRow": { "x": 222, "width": 86, "right": 308 },
+      "multiSelect": { "x": 310, "width": 68, "right": 378 },
+      "contentOverflowWidth": 70,
+      "multiSelectOverflowBeyondDrawer": 58,
+      "clipped": true
+    }
+  },
+  "visualEvidence": {
+    "before390": {
+      "path": "docs/evidence/f10-task-queue-accessibility/mobile-task-queue-header-before.png",
+      "bytes": 6372,
+      "sha256": "57a9f7d13281c67117da0390cb767a209f4dd53cdd18d837b9032788f9f8e43e"
+    },
+    "before320": {
+      "path": "docs/evidence/f10-task-queue-accessibility/mobile-task-queue-header-320-before.png",
+      "bytes": 5382,
+      "sha256": "c727b4bdeb1a1a679d4baaafce5a932dc84e79e779bd20d9c248b1352eb334c1"
+    },
+    "after": null,
+    "reasonAfterMissing": "user-observable runtime changes require OpenSpec approval"
+  },
+  "cleanup": {
+    "removedUnreachableFiles": [
+      "packages/drawnix/src/components/task-queue/TaskToolbarButton.tsx",
+      "packages/drawnix/src/components/task-queue/TaskSummary.tsx"
+    ],
+    "removedDedicatedStyle": ".task-toolbar-button",
+    "liveRuntimePathChanged": false,
+    "bundlePerformanceClaim": false
+  },
+  "cleanupVerification": {
+    "sourceAbsenceAndReferenceSearch": { "exitCode": 0, "result": "removed files absent; no source import/export/registry/package export or dedicated class reference" },
+    "focusedTests": { "exitCode": 0, "filesPassed": 6, "filesTotal": 6, "testsPassed": 37, "testsTotal": 37 },
+    "drawnixTypecheck": { "exitCode": 0 },
+    "fullTypecheck": { "exitCode": 0, "projectsPassed": 5, "projectsTotal": 5 },
+    "cycles": { "exitCode": 0, "runtimeCycles": 0 },
+    "fullTests": {
+      "exitCode": 1,
+      "drawnix": { "filesPassed": 184, "filesFailed": 4, "filesSkipped": 1, "filesTotal": 189, "testsPassed": 1161, "testsFailed": 3, "testsSkipped": 1, "testsTotal": 1165 },
+      "reactBoard": { "filesPassed": 1, "filesTotal": 1, "testsPassed": 8, "testsTotal": 8 },
+      "baselineComparison": "same four failure clusters and counts as the latest pre-cleanup baseline; no task-queue failure"
+    },
+    "taskDirectoryLint": { "exitCode": 1, "errors": 3, "warnings": 33, "classification": "pre-existing findings in retained files; no removed-file or new-source finding" },
+    "buildWeb": { "exitCode": 0, "applicationModules": 7931, "applicationDurationSeconds": 99, "serviceWorkerModules": 54, "serviceWorkerDurationSeconds": 1.48 },
+    "size": { "exitCode": 1, "onlyBudgetFailure": "AI Chat 844.43/140 kB gzip", "taskQueuePerformanceClaim": false },
+    "startup": { "exitCode": 0, "chunkCycles": 0 },
+    "buildSourceSideEffectsRestored": {
+      "versionJsonSha256": "be431dce15bee9b9951a10d8a32f1effec7637013228e64480bedf54d778bc34",
+      "indexHtmlSha256": "19b4f0d7e750fa7f1e485abf3ee4737535a9ca550224b3f5e65f77fcacbe52e8",
+      "serviceWorkerSha256": "78a242d3211f75739d8824d3c222797096029291be9849e39ca84c32fd642977"
+    },
+    "browserCleanup": "task drawer closed, local test tabs finalized, Vite session stopped explicitly"
+  },
+  "openspec": {
+    "change": "improve-task-queue-responsive-accessibility",
+    "requirements": 5,
+    "scenarios": 12,
+    "tasksCompleted": 6,
+    "tasksTotal": 24,
+    "implementationApprovalRequired": true,
+    "cliAvailable": false,
+    "strictValidationExitCode": 127,
+    "manualValidation": "complete: 4 required files present; 1 ADDED operation; 5 unique requirements; 12 level-4 scenarios with WHEN/THEN; every requirement has at least one scenario; no same-name requirement in formal or active specs; neighboring active-change ownership reviewed; CLI strict validation remains blocked with exit 127"
+  }
+}

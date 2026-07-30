@@ -1,0 +1,107 @@
+{
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "workspace": "/Users/macos/Downloads/opentu-codex-opentu-cleanup-20260708-145354",
+  "gitMetadataAvailable": false,
+  "openSpecCliAvailable": false,
+  "browserUsedInThisSubcycle": false,
+  "tests": [
+    {
+      "name": "existing-app-recovery-persistence",
+      "exitCode": 0,
+      "files": { "passed": 2, "total": 2 },
+      "tests": { "passed": 2, "total": 2 },
+      "vitestDurationSeconds": 2.58
+    },
+    {
+      "name": "existing-app-shell-cdn",
+      "exitCode": 0,
+      "files": { "passed": 2, "total": 2 },
+      "tests": { "passed": 20, "total": 20 },
+      "vitestDurationSeconds": 1.4
+    },
+    {
+      "name": "error-fallback-semantics-diagnostic",
+      "exitCode": 0,
+      "files": { "passed": 1, "total": 1 },
+      "tests": { "passed": 1, "total": 1 },
+      "vitestDurationSeconds": 8.22,
+      "raw": {
+        "dialogCount": 0,
+        "alertDialogCount": 0,
+        "alertCount": 0,
+        "progressbarCount": 0,
+        "activeElement": "body",
+        "detailAriaExpandedBefore": null,
+        "detailAriaExpandedAfter": null,
+        "detailAriaControlsBefore": null,
+        "detailAriaControlsAfter": null,
+        "detailVisibleAfterClick": true
+      }
+    },
+    {
+      "name": "version-update-early-late-event-diagnostic",
+      "exitCode": 0,
+      "files": { "passed": 1, "total": 1 },
+      "tests": { "passed": 2, "total": 2 },
+      "vitestDurationSeconds": 9.78,
+      "raw": {
+        "beforeMount": { "promptVisible": false, "fetchCalls": 0 },
+        "afterMount": { "promptVisible": true, "fetchCalls": 1 }
+      }
+    },
+    {
+      "name": "version-update-english-semantics-diagnostic",
+      "exploratoryAssertionExitCode": 1,
+      "correctedEvidenceExitCode": 0,
+      "files": { "passed": 1, "total": 1 },
+      "tests": { "passed": 1, "total": 1 },
+      "vitestDurationSeconds": 8.89,
+      "raw": {
+        "promptText": "新版本 v2.0.0 已就绪",
+        "buttonNames": ["查看更新内容", "立即更新"],
+        "statusCount": 0,
+        "alertCount": 0,
+        "dialogCount": 0,
+        "ariaModalCount": 0,
+        "chineseHeaderVisible": true
+      }
+    }
+  ],
+  "performanceClaim": null,
+  "visualBeforeAfterClaim": null,
+  "temporaryDiagnosticsRemoved": true,
+  "productionBehaviorChanged": false,
+  "openSpecManualValidation": [
+    {
+      "change": "fix-version-update-notification-delivery",
+      "requirements": 2,
+      "scenarios": 6,
+      "whenClauses": 6,
+      "thenClauses": 6,
+      "tasks": 21,
+      "completedEvidenceTasks": 4,
+      "strictExitCode": 127
+    },
+    {
+      "change": "improve-startup-recovery-interface-accessibility",
+      "requirements": 5,
+      "scenarios": 11,
+      "whenClauses": 11,
+      "thenClauses": 11,
+      "tasks": 25,
+      "completedEvidenceTasks": 5,
+      "strictExitCode": 127
+    },
+    {
+      "change": "improve-version-update-interface-accessibility",
+      "requirements": 4,
+      "scenarios": 8,
+      "whenClauses": 8,
+      "thenClauses": 8,
+      "tasks": 22,
+      "completedEvidenceTasks": 4,
+      "strictExitCode": 127
+    }
+  ]
+}

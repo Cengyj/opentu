@@ -2,6 +2,7 @@
 import React from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { UserMessageBubble } from '../UserMessageBubble';
 
 afterEach(() => {
   cleanup();
@@ -10,7 +11,6 @@ afterEach(() => {
 describe('UserMessageBubble', () => {
   it('click image triggers preview callback', async () => {
     const onPreviewImages = vi.fn();
-    const { UserMessageBubble } = await import('../UserMessageBubble');
 
     render(
       <UserMessageBubble

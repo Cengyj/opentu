@@ -261,7 +261,7 @@ async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
 
     return {
       ...actual,
-      generateTaskId: () => 'task-image-edit-1',
+    generateTaskId: () => 'task-image-edit-1',
     };
   });
 
@@ -277,7 +277,7 @@ async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
   };
 }
 
-describe('task-queue-service image edit retry persistence', () => {
+describe('task-queue-service lifecycle integration', () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -330,6 +330,44 @@ describe('task-queue-service image edit retry persistence', () => {
     expect(storedTasks.get(task.id)?.params.referenceImages).toEqual([
       'data:image/png;base64,source',
     ]);
+  });
+
+  it('preserves the selected provider model reference when retrying a task', async () => {
+    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness([
+      TaskStatus.FAILED,
+      TaskStatus.COMPLETED,
+    ]);
+    const modelRef = {
+      profileId: 'provider-a',
+      modelId: 'shared-image-model',
+    };
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Retry with the original provider',
+        model: modelRef.modelId,
+        modelRef,
+        size: '1x1',
+      },
+      TaskType.IMAGE
+    );
+
+    await flushAsyncWork();
+    expect(taskQueueService.getTask(task.id)?.status).toBe(TaskStatus.FAILED);
+    expect(taskQueueService.getTask(task.id)?.invocationRoute).toMatchObject({
+      providerProfileId: 'provider-a',
+      modelId: 'shared-image-model',
+      binding: {
+        id: 'provider-a:shared-image-model:image',
+      },
+    });
+
+    taskQueueService.retryTask(task.id);
+    await flushAsyncWork();
+
+    expect(mocks.generateImage).toHaveBeenCalledTimes(2);
+    expect(mocks.generateImage.mock.calls[0]?.[0]?.modelRef).toEqual(modelRef);
+    expect(mocks.generateImage.mock.calls[1]?.[0]?.modelRef).toEqual(modelRef);
   });
 
   it('allows explicit manual retry for completed image tasks and clears stale results', async () => {
@@ -442,6 +480,66 @@ describe('task-queue-service image edit retry persistence', () => {
     taskQueueService.trackExternalTask(clone(task));
 
     expect(taskQueueService.isTaskOwnedByCurrentSession(task.id)).toBe(true);
+  });
+
+  it('defers character tasks to the dedicated task executor instead of failing them in the media executor', async () => {
+    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const createdStatuses: TaskStatus[] = [];
+    const updatedStatuses: TaskStatus[] = [];
+    const subscription = taskQueueService
+      .observeTaskUpdates()
+      .subscribe((event) => {
+        if (event.type === 'taskCreated') {
+          createdStatuses.push(event.task.status);
+        } else if (event.type === 'taskUpdated') {
+          updatedStatuses.push(event.task.status);
+        }
+      });
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Extract this character',
+        model: 'sora-2-character',
+        sourceVideoTaskId: 'remote-video-1',
+        sourceLocalTaskId: 'local-video-1',
+        characterTimestamps: '0,5',
+      },
+      TaskType.CHARACTER
+    );
+
+    expect(task.status).toBe(TaskStatus.PENDING);
+    expect(task.startedAt).toBeUndefined();
+    expect(task.executionPhase).toBeUndefined();
+    expect(createdStatuses).toEqual([TaskStatus.PENDING]);
+
+    await flushAsyncWork();
+
+    expect(taskQueueService.getTask(task.id)?.status).toBe(TaskStatus.PENDING);
+    expect(mocks.generateImage).not.toHaveBeenCalled();
+    expect(mocks.waitForTaskCompletion).not.toHaveBeenCalled();
+
+    taskQueueService.updateTaskStatus(task.id, TaskStatus.FAILED, {
+      error: {
+        code: 'CHARACTER_ERROR',
+        message: 'Character extraction failed',
+      },
+    });
+    taskQueueService.retryTask(task.id);
+
+    expect(taskQueueService.getTask(task.id)?.status).toBe(TaskStatus.PENDING);
+    expect(taskQueueService.getTask(task.id)?.startedAt).toBeUndefined();
+    expect(taskQueueService.getTask(task.id)?.executionPhase).toBeUndefined();
+    expect(updatedStatuses.at(-1)).toBe(TaskStatus.PENDING);
+
+    await flushAsyncWork();
+
+    expect(taskQueueService.getTask(task.id)?.status).toBe(TaskStatus.PENDING);
+    expect(mocks.generateImage).not.toHaveBeenCalled();
+    expect(mocks.waitForTaskCompletion).not.toHaveBeenCalled();
+
+    subscription.unsubscribe();
   });
 
   it('keeps a cancelled active task from being overwritten by late executor completion', async () => {
@@ -641,4 +739,5 @@ describe('task-queue-service image edit retry persistence', () => {
 
     subscription.unsubscribe();
   });
+
 });

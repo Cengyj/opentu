@@ -97,7 +97,11 @@ import { setCapabilitiesBoard } from '../../services/sw-capabilities/handler';
 import { initializeLongVideoChainService } from '../../services/long-video-chain-service';
 import { gridImageService } from '../../services/photo-wall';
 import type { MCPTaskResult } from '../../mcp/types';
-import { parseAIInput, type GenerationType } from '../../utils/ai-input-parser';
+import {
+  getAlignedImageDimensions,
+  parseAIInput,
+  type GenerationType,
+} from '../../utils/ai-input-parser';
 import {
   convertToWorkflow,
   convertSkillFlowToWorkflow,
@@ -2020,10 +2024,11 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const SelectionWatcherBoardRef = useRef<any>(null);
 
     // 使用工作流提交 Hook
-    const { submitWorkflow: submitWorkflowToSW } = useWorkflowSubmission({
-      boardRef: SelectionWatcherBoardRef,
-      workZoneIdRef: currentWorkZoneIdRef,
-    });
+    const { submitWorkflow: prepareWorkflowSubmission } =
+      useWorkflowSubmission({
+        boardRef: SelectionWatcherBoardRef,
+        workZoneIdRef: currentWorkZoneIdRef,
+      });
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -3171,17 +3176,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           const graphicsItems = effectiveContent.filter(
             (item) => item.type === 'graphics' && item.url
           );
-          const imageDimensions = [...imageItems, ...graphicsItems]
-            .map((item) => {
-              if (item.width && item.height) {
-                return { width: item.width, height: item.height };
-              }
-              return undefined;
-            })
-            .filter(
-              (dim): dim is { width: number; height: number } =>
-                dim !== undefined
-            );
+          const imageDimensions = getAlignedImageDimensions([
+            ...imageItems,
+            ...graphicsItems,
+          ]);
 
           const selection = {
             texts: effectiveContent
@@ -3221,7 +3219,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           // 收集所有参考媒体（图片 + 图形 + 视频）
           const referenceImages = [...selection.images, ...selection.graphics];
 
-          // 创建工作流定义（仅用于 WorkZone 显示，实际工作流由 submitWorkflowToSW 创建）
+          // 创建唯一的工作流定义；同一对象同时用于 UI 状态和后续主线程执行。
           let workflow: WorkflowDefinition;
           if (
             effectiveGenerationType === 'agent' &&
@@ -3657,7 +3655,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           currentRetryContextRef.current = retryContext;
 
           try {
-            const { usedSW } = await submitWorkflowToSW(
+            const { usedSW } = await prepareWorkflowSubmission(
               parsedParams,
               referenceImages,
               retryContext,
@@ -3709,10 +3707,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
               return;
             }
-          } catch (swError) {
+          } catch (handoffError) {
             console.warn(
-              '[AIInputBar] SW execution failed, falling back to main thread:',
-              swError
+              '[AIInputBar] Workflow UI handoff failed; continuing main-thread execution:',
+              handoffError
             );
           }
           if (effectiveGenerationType === 'image') {
@@ -4173,7 +4171,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         selectedModel,
         selectedModelRef,
         workflowControl,
-        submitWorkflowToSW,
+        prepareWorkflowSubmission,
         addPromptHistory,
         selectedParams,
         knowledgeContextRefs,

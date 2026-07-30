@@ -1,0 +1,56 @@
+{
+  "capturedAt": "2026-07-29",
+  "source": "current Vite source at http://127.0.0.1:7200/",
+  "browser": "Codex in-app Chromium",
+  "devicePixelRatio": 1,
+  "language": "zh-CN",
+  "themeEvidence": {
+    "bodyBackground": "rgb(255, 255, 255)",
+    "bodyColor": "rgb(45, 52, 54)",
+    "batchRootBackground": "rgb(245, 245, 245)",
+    "batchRootColor": "rgb(45, 52, 54)"
+  },
+  "networkThrottling": "none",
+  "cpuThrottling": "none",
+  "providerRequests": 0,
+  "desktop1280x720": {
+    "viewport": { "width": 1280, "height": 720 },
+    "winbox": { "x": 40, "y": 0, "width": 1200, "height": 800, "right": 1240, "bottom": 800 },
+    "batchRoot": { "x": 40, "y": 48, "width": 1200, "height": 752, "right": 1240, "bottom": 800 },
+    "table": { "x": 74, "y": 213, "width": 836, "height": 310, "right": 910, "bottom": 523 },
+    "document": { "clientWidth": 1280, "scrollWidth": 1280, "clientHeight": 720, "scrollHeight": 720 },
+    "observation": "The 800 CSS px tool window exceeds the 720 CSS px viewport by 80 px while the document exposes no vertical scroll recovery."
+  },
+  "mobile390x844AfterDesktopTransition": {
+    "viewport": { "width": 390, "height": 844 },
+    "winbox": { "x": 40, "y": 0, "width": 400, "height": 784, "right": 440, "bottom": 784 },
+    "batchRoot": { "x": 40, "y": 48, "width": 400, "height": 612, "right": 440, "bottom": 660 },
+    "table": { "x": 54, "y": 265, "width": 506, "height": 286, "right": 560, "bottom": 551 },
+    "tableContainer": { "x": 53, "y": 264, "width": 374, "height": 360, "right": 427, "bottom": 624 },
+    "tableScroll": { "clientWidth": 372, "scrollWidth": 506, "clientHeight": 343, "scrollHeight": 343 },
+    "document": { "clientWidth": 390, "scrollWidth": 390, "clientHeight": 844, "scrollHeight": 844 },
+    "observation": "The transitioned tool window ends 50 CSS px outside the viewport; the screenshot shows the close control outside the visible area. This matches the pending shared tool-window viewport change."
+  },
+  "tablet768x1024": {
+    "viewport": { "width": 768, "height": 1024 },
+    "winbox": { "x": 40, "y": 0, "width": 400, "height": 784, "right": 440, "bottom": 784 },
+    "batchRoot": { "x": 40, "y": 48, "width": 400, "height": 632, "right": 440, "bottom": 680 },
+    "table": { "x": 62, "y": 277, "width": 614, "height": 286, "right": 676, "bottom": 563 },
+    "tableContainer": { "x": 61, "y": 276, "width": 358, "height": 360, "right": 419, "bottom": 636 },
+    "tableScroll": { "clientWidth": 356, "scrollWidth": 614 },
+    "document": { "clientWidth": 768, "scrollWidth": 768 }
+  },
+  "accessibility": {
+    "defaultRows": 5,
+    "promptCells": 5,
+    "promptCellSequentialTabStops": 0,
+    "batchRootTabIndex": -1,
+    "unnamedVisibleToolbarIconButtons": 5,
+    "pointerThenKeyboardControl": {
+      "afterPromptCellClickActiveElement": ".batch-image-generation",
+      "afterEnter": "textarea[placeholder='输入提示词...']",
+      "afterEscapeEditorCount": 0
+    },
+    "observation": "Keyboard editing works only after a pointer-selected cell programmatically focuses the root; the inactive grid cells expose neither a tab stop nor a gridcell/button interaction contract."
+  }
+}

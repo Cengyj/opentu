@@ -25,6 +25,16 @@ import {
 
 type VideoAnalyzerTaskAction = 'analyze' | 'rewrite' | 'prompt-generate';
 
+type VideoAnalyzerTaskSyncResult = {
+  records: AnalysisRecord[];
+  record: AnalysisRecord;
+};
+
+const inFlightTaskSyncs = new Map<
+  string,
+  Promise<VideoAnalyzerTaskSyncResult | null>
+>();
+
 function getTaskAction(task: Task): VideoAnalyzerTaskAction | null {
   return readTaskAction(task, 'videoAnalyzerAction', [
     'analyze',
@@ -130,10 +140,9 @@ function getTaskProductInfo(
   return migrateProductInfo(raw as Partial<ProductInfo>, fallbackDuration);
 }
 
-export async function syncVideoAnalyzerTask(task: Task): Promise<{
-  records: AnalysisRecord[];
-  record: AnalysisRecord;
-} | null> {
+async function runVideoAnalyzerTaskSync(
+  task: Task
+): Promise<VideoAnalyzerTaskSyncResult | null> {
   if (task.status !== 'completed') {
     return null;
   }
@@ -262,6 +271,23 @@ export async function syncVideoAnalyzerTask(task: Task): Promise<{
     pendingRewriteTaskId: null,
     storyboardGeneratedAt: Date.now(),
   }, updateRecord);
+}
+
+export function syncVideoAnalyzerTask(
+  task: Task
+): Promise<VideoAnalyzerTaskSyncResult | null> {
+  const existingSync = inFlightTaskSyncs.get(task.id);
+  if (existingSync) {
+    return existingSync;
+  }
+
+  const sync = runVideoAnalyzerTaskSync(task).finally(() => {
+    if (inFlightTaskSyncs.get(task.id) === sync) {
+      inFlightTaskSyncs.delete(task.id);
+    }
+  });
+  inFlightTaskSyncs.set(task.id, sync);
+  return sync;
 }
 
 export function isVideoAnalyzerTask(task: Task): boolean {

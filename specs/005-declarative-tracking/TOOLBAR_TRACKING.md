@@ -3,6 +3,8 @@
 **Date**: 2025-12-05
 **Task**: Add declarative tracking to all UnifiedToolbar buttons
 
+> **Current implementation note (2026-07-30)**: This is a historical tracking summary. The task entry is now owned by `BottomActionsSection`; the live path is `UnifiedToolbar → BottomActionsSection → ToolButton`, while the event identity remains `toolbar_click_tasks`.
+
 ## Summary
 
 Added `track` attributes to all interactive elements in the UnifiedToolbar, including:
@@ -91,8 +93,8 @@ Added `data-track` prop support (using standard HTML data attribute):
 |--------|-------------|-------------|
 | Feedback | `toolbar_click_feedback` | Show feedback QR code |
 
-#### TaskToolbarButton
-**File**: `packages/drawnix/src/components/task-queue/TaskToolbarButton.tsx`
+#### BottomActionsSection task entry
+**File**: `packages/drawnix/src/components/toolbar/bottom-actions-section.tsx`
 
 | Button | Track Event | Description |
 |--------|-------------|-------------|
@@ -154,9 +156,9 @@ All toolbar tracking events follow the pattern: `toolbar_click_{action}`
 - **ZoomToolbar**: 5 button/menu events
 - **ThemeToolbar**: 1 select event
 - **FeedbackButton**: 1 button event
-- **TaskToolbarButton**: 1 button event
+- **BottomActionsSection task entry**: 1 button event
 
-**Total**: 30 declarative tracking events across the UnifiedToolbar
+**Historical total for this 2025 rollout**: 30 declarative tracking events across the UnifiedToolbar. This is not a current registry count.
 
 ## Verification
 

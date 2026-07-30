@@ -143,7 +143,6 @@ const MVCreator: React.FC = () => {
           existingRecord={currentRecord}
           onComplete={handleComplete}
           onRecordsChange={setRecords}
-          onCreateNew={handleRestart}
           onNext={currentRecord?.editedShots?.length ? () => setPage('script') : undefined}
         />
       )}

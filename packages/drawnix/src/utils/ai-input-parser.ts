@@ -78,6 +78,17 @@ export interface ImageWithDimensions {
   dimensions?: ImageDimensions;
 }
 
+export function getAlignedImageDimensions(
+  items: Array<{ width?: number; height?: number }>
+): Array<ImageDimensions | undefined> {
+  return items.map((item) => {
+    if (item.width && item.height) {
+      return { width: item.width, height: item.height };
+    }
+    return undefined;
+  });
+}
+
 /**
  * 选中元素的分类信息
  */
@@ -91,7 +102,7 @@ export interface SelectionInfo {
   /** 选中的图形转换为的图片 URL */
   graphics: string[];
   /** 图片尺寸信息（按顺序对应 images + graphics） */
-  imageDimensions?: ImageDimensions[];
+  imageDimensions?: Array<ImageDimensions | undefined>;
   /** 单张普通图片自动识别出的局部编辑蒙版 URL */
   maskImage?: string;
 }

@@ -13,47 +13,7 @@ import {
   WorkflowStep,
 } from '../workflow-converter';
 import type { ParsedGenerationParams } from '../../../utils/ai-input-parser';
-import { initializeMCP } from '../../../mcp';
-
-vi.hoisted(() => {
-  const createObjectStore = () => ({
-    createIndex: () => undefined,
-    count: () => ({ onsuccess: null, onerror: null, result: 0 }),
-    get: () => ({ onsuccess: null, onerror: null, result: undefined }),
-    put: () => ({ onsuccess: null, onerror: null }),
-  });
-  const createDatabase = () => ({
-    objectStoreNames: { contains: () => true },
-    createObjectStore: () => createObjectStore(),
-    transaction: () => ({
-      objectStore: () => createObjectStore(),
-    }),
-    close: () => undefined,
-    onclose: null,
-  });
-
-  Object.defineProperty(globalThis, 'indexedDB', {
-    value: {
-      open: () => {
-        const request = {
-          result: createDatabase(),
-          error: null,
-          onsuccess: null,
-          onerror: null,
-          onupgradeneeded: null,
-          onblocked: null,
-          transaction: null,
-        };
-        queueMicrotask(() => {
-          request.onupgradeneeded?.({ target: request });
-          request.onsuccess?.(new Event('success'));
-        });
-        return request;
-      },
-    },
-    configurable: true,
-  });
-});
+import { mcpRegistry } from '../../../mcp/registry';
 
 // Helper to create mock ParsedGenerationParams
 const createMockParams = (overrides: Partial<ParsedGenerationParams> = {}): ParsedGenerationParams => ({
@@ -98,7 +58,19 @@ const knowledgeContextRefs = [
 
 describe('workflow-converter', () => {
   beforeAll(() => {
-    initializeMCP();
+    mcpRegistry.register({
+      name: 'generate_image',
+      description: 'Generate an image',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string' },
+          referenceImages: { type: 'array' },
+        },
+        required: ['prompt'],
+      },
+      execute: vi.fn(),
+    });
   });
 
   describe('convertDirectGenerationToWorkflow', () => {

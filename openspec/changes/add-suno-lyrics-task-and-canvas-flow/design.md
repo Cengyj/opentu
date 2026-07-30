@@ -82,6 +82,14 @@
     - 可选的内部 `notifyHook`
   - 音乐专属参数在歌词动作下不显示、不提交
 
+- Decision: 歌词 selector 按可执行 action capability 过滤，而不是按模型 ID 是否包含 `suno` 过滤
+
+  - 文本模型继续可用于文本歌词草稿
+  - Suno alias 若强制 `sunoAction: lyrics` 可进入歌词 selector
+  - generic Suno capability 只有在解析后的 provider binding 支持 `lyrics` 时可进入
+  - 强制 `music` 的 continuation/upload alias 和 `advanced` capability 不进入歌词 selector
+  - selector 与提交前校验复用同一 capability predicate，避免 UI 与 service 分叉
+
 ## Proposed Data Shape
 
 ```ts
@@ -209,6 +217,9 @@ interface ProviderAudioBindingMetadata {
 - 风险: 画布文本插入格式不稳定，影响可读性
   - Mitigation: 在服务层统一生成 markdown 模板，不把格式拼装分散到多个组件里
 
+- 风险: 旧偏好保存了现在不再可选的 music-only alias
+  - Mitigation: 保留原始偏好但在当前歌词 selector 中回退到第一个可执行歌词模型；不改写或删除用户配置，切换到其他上下文时仍可恢复
+
 ## Implementation Outline
 
 1. 扩展 Suno 请求和 binding metadata，加入 `lyrics` 动作
@@ -217,3 +228,4 @@ interface ProviderAudioBindingMetadata {
 4. 让 AI 输入栏按动作切换参数面板
 5. 让任务队列、恢复与重试按 `resultKind` 分支
 6. 让手动插入与自动插入把歌词结果落到文本插入链路
+7. 用 binding/alias action capability 统一歌词候选、旧偏好回退和提交前校验

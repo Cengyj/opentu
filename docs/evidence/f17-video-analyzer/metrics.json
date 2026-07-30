@@ -1,0 +1,81 @@
+{
+  "feature": "F-17 爆款视频生成/视频分析器",
+  "capturedAt": "2026-07-29T17:24:16+08:00",
+  "environment": {
+    "surface": "Codex in-app Browser",
+    "page": "http://127.0.0.1:7200/",
+    "theme": "light",
+    "networkThrottling": "none",
+    "cpuThrottling": "none",
+    "deviceScaleFactor": 1,
+    "notes": [
+      "The application was served by the repository Vite development server.",
+      "Viewport override was reset after the 390x844 measurement."
+    ]
+  },
+  "steps": [
+    "At the default 1280x720 viewport, close the existing video analyzer and reopen it from the toolbar.",
+    "Measure the WinBox, .video-analyzer root, body overflow, and PDF hint; capture screenshot 01.",
+    "Apply an explicit 390x844 browser viewport without closing the tool.",
+    "Measure visible geometry and controls; capture screenshot 02.",
+    "Reset the viewport to the default desktop dimensions without closing the tool.",
+    "Measure the same window again; capture screenshot 03.",
+    "Inspect the open window and all input, textarea, and select elements for focus and naming attributes."
+  ],
+  "measurements": {
+    "desktopInitial": {
+      "screenshot": "01-desktop-initial-1280x720.png",
+      "viewport": { "width": 1280, "height": 720, "deviceScaleFactor": 1 },
+      "body": { "clientWidth": 1280, "scrollWidth": 1280 },
+      "winbox": { "x": 300, "y": 10, "width": 680, "height": 700, "right": 980, "bottom": 710 },
+      "videoAnalyzer": { "x": 300, "y": 58, "width": 680, "height": 652, "right": 980, "bottom": 710 },
+      "pdfHint": { "clientWidth": 149, "scrollWidth": 289, "text": "可选，上传后仅支持 Gemini 模型，PDF 不超过 20MB" }
+    },
+    "mobile": {
+      "screenshot": "02-mobile-390x844.png",
+      "viewport": { "width": 390, "height": 844, "deviceScaleFactor": 1 },
+      "body": { "clientWidth": 390, "scrollWidth": 390 },
+      "winbox": { "x": 300, "y": 10, "width": 400, "height": 700, "right": 700, "bottom": 710, "visibleWidth": 90 },
+      "videoAnalyzer": { "x": 300, "y": 58, "width": 389, "height": 1028.703125, "right": 689, "bottom": 1086.703125, "visibleWidth": 90 },
+      "historyButton": { "x": 589, "width": 40, "right": 629, "visibleWidth": 0 },
+      "starredButton": { "x": 637, "width": 40, "right": 677, "visibleWidth": 0 },
+      "promptInput": { "x": 316, "y": 829, "width": 357, "height": 122.703125, "right": 673, "visibleWidth": 74, "visibleHeight": 15 }
+    },
+    "desktopAfterViewportReset": {
+      "screenshot": "03-desktop-after-mobile-viewport.png",
+      "viewport": { "width": 1280, "height": 720, "deviceScaleFactor": 1 },
+      "body": { "clientWidth": 1280, "scrollWidth": 1280 },
+      "winbox": { "x": 300, "y": 10, "width": 400, "height": 700, "right": 700, "bottom": 710 },
+      "videoAnalyzer": { "x": 300, "y": 58, "width": 400, "height": 652, "right": 700, "bottom": 710 }
+    },
+    "accessibility": {
+      "activeElementAfterOpen": "BODY",
+      "winbox": { "role": null, "ariaLabel": null, "ariaLabelledby": null, "tabIndex": null },
+      "formControlCount": 10,
+      "controlsWithId": 0,
+      "controlsWithName": 0,
+      "controlsWithAriaLabel": 0,
+      "controlsWithAriaLabelledby": 0,
+      "controlsWithAssociatedLabel": 0,
+      "controlsWithoutPlaceholder": [
+        { "index": 0, "tag": "input", "type": "file" },
+        { "index": 6, "tag": "input", "type": "number", "className": "va-form-input" },
+        { "index": 7, "tag": "select", "className": "va-form-select" }
+      ],
+      "creativeBriefComboKeyboardSample": {
+        "field": "导演风格",
+        "steps": ["focus the empty input", "press ArrowDown", "press Enter", "press Escape"],
+        "valueBefore": "",
+        "valueAfter": "",
+        "menuOpenAfterEnter": true,
+        "menuOpenAfterEscape": true,
+        "inputRole": null,
+        "inputAriaExpanded": null,
+        "inputAriaControls": null,
+        "renderedOptionCount": 30,
+        "firstOptionRole": null,
+        "firstOptionTabIndex": null
+      }
+    }
+  }
+}

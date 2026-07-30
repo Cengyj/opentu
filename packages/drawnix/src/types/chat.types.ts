@@ -353,18 +353,3 @@ export interface SessionItemProps {
   onDelete: () => void;
   onRename: (newTitle: string) => void;
 }
-
-// ============================================================================
-// Hook Return Types
-// ============================================================================
-
-/** useChatSessions Hook 返回类型 */
-export interface UseChatSessionsReturn {
-  sessions: ChatSession[];
-  activeSession: ChatSession | null;
-  isLoading: boolean;
-  createSession: () => Promise<ChatSession>;
-  selectSession: (sessionId: string) => void;
-  deleteSession: (sessionId: string) => Promise<void>;
-  updateSessionTitle: (sessionId: string, title: string) => Promise<void>;
-}

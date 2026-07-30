@@ -1,0 +1,126 @@
+{
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "feature": "F-23 knowledge-base search index concurrency",
+  "sourceState": {
+    "gitMetadata": false,
+    "historyAndCleanlinessVerifiable": false,
+    "runtimeFilesChanged": 0,
+    "permanentTestFilesChanged": 0,
+    "temporaryDiagnosticFilesRemaining": 0
+  },
+  "environment": {
+    "node": "v24.14.0",
+    "nodePath": "/Users/macos/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "vitest": "3.2.4",
+    "testEnvironment": "jsdom",
+    "storageBoundary": "synthetic in-memory mocked knowledge-base service",
+    "browserStorageAccessed": false,
+    "networkRequests": 0,
+    "samplesPerSize": 5
+  },
+  "coldOverlapSuccess": {
+    "durableNoteCount": 1,
+    "metaReads": 2,
+    "directoryReads": 2,
+    "contentReads": 2,
+    "secondResultIds": ["note-0"],
+    "laterFirstResultIds": ["note-0", "note-0"],
+    "finalDocumentCount": 2,
+    "finalIsIndexed": true
+  },
+  "warmOverlapSuccess": {
+    "initialIndexedIds": ["base"],
+    "addedDurableIds": ["new"],
+    "metaReads": 2,
+    "directoryReads": 2,
+    "contentReadIds": ["new", "new"],
+    "secondResultIds": ["base", "new"],
+    "laterFirstResultIds": ["base", "new", "new"],
+    "finalDocumentCount": 3,
+    "durableNoteCount": 2
+  },
+  "coldOverlapMixedOutcome": {
+    "firstError": "synthetic first build failure",
+    "secondResultIds": ["note-0"],
+    "finalDocumentCount": 1,
+    "finalIsIndexed": true
+  },
+  "coldSamplesMs": {
+    "0": {
+      "raw": [0.062039999999797146, 0.0188620000001265, 0.026849000000083834, 0.03632200000015473, 0.017370000000028085],
+      "median": 0.026849000000083834,
+      "range": [0.017370000000028085, 0.062039999999797146],
+      "readsPerSample": { "meta": 1, "directories": 1, "content": 0 }
+    },
+    "100": {
+      "raw": [10.734928999999966, 9.648805000000038, 10.985241999999971, 7.223439999999982, 6.826579000000038],
+      "median": 9.648805000000038,
+      "range": [6.826579000000038, 10.985241999999971],
+      "readsPerSample": { "meta": 1, "directories": 1, "content": 100 }
+    },
+    "1000": {
+      "raw": [122.86666600000012, 114.16786200000001, 108.90222399999993, 85.90983900000015, 88.85716200000002],
+      "median": 108.90222399999993,
+      "range": [85.90983900000015, 122.86666600000012],
+      "readsPerSample": { "meta": 1, "directories": 1, "content": 1000 }
+    }
+  },
+  "commands": [
+    {
+      "scope": "incorrect workspace-root filter with package include",
+      "exitCode": 1,
+      "testFiles": "0 collected",
+      "tests": 0,
+      "classification": "tool invocation error"
+    },
+    {
+      "scope": "corrected cold/failure/sample diagnostic",
+      "exitCode": 0,
+      "testFiles": "1/1",
+      "tests": "3/3",
+      "testDurationMs": 581,
+      "vitestDurationSeconds": 1.99,
+      "processWallSeconds": 3.25
+    },
+    {
+      "scope": "corrected warm-sync diagnostic",
+      "exitCode": 0,
+      "testFiles": "1/1",
+      "tests": "1/1",
+      "testDurationMs": 9,
+      "vitestDurationSeconds": 1.89,
+      "processWallSeconds": 3.59
+    },
+    {
+      "scope": "existing F-23 focused baseline after proposal/evidence update",
+      "exitCode": 0,
+      "testFiles": "9/9",
+      "tests": "41/41",
+      "testDurationSeconds": 1.24,
+      "vitestDurationSeconds": 4.44,
+      "processWallSeconds": 5.7
+    }
+  ],
+  "openSpec": {
+    "change": "stabilize-knowledge-base-search-index-initialization",
+    "cliAvailable": false,
+    "strictExitCode": 127,
+    "requirements": 3,
+    "scenarios": 9,
+    "whenClauses": 9,
+    "thenClauses": 9,
+    "tasks": 15,
+    "tasksComplete": 4,
+    "capability": "knowledge-base-search-index-consistency",
+    "activeCapabilityOwners": 1,
+    "uniqueRequirementNames": "3/3"
+  },
+  "performanceClaim": null,
+  "visual": {
+    "runtimeOrCssChanged": false,
+    "beforeScreenshots": 0,
+    "afterScreenshots": 0,
+    "claim": null
+  }
+}

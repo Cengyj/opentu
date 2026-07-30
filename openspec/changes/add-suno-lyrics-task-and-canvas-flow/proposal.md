@@ -33,6 +33,7 @@
 - 在任务队列中为歌词任务提供独立展示与操作，而不是复用音频卡片假设
 - 在画布中将歌词结果插入为文本或 markdown 卡片，而不是音频节点
 - 在音频输入模式中增加动作切换，并让音乐专属参数只在 `music` 动作下展示
+- 让歌词模型选择器只暴露文本模型或实际支持 `lyrics` 的 Suno capability；强制 `music` 的 continuation/upload/advanced alias 不得伪装成歌词模型
 
 ## Scope
 
@@ -44,6 +45,7 @@
 - 任务队列中的歌词任务展示、重试、恢复和插入能力
 - 画布文本插入路径对歌词结果的适配
 - 自动插入路径根据结果类型在音频卡片与文本内容之间分流
+- 歌词模型候选、旧偏好回退与提交前校验使用同一 executable-action capability
 
 ### Out Of Scope
 
@@ -79,3 +81,10 @@
   - 音乐结果继续进入音频节点
   - 歌词结果进入文本插入链路
 - 本变更不会把歌词能力建成新的模态，而是在现有 `audio` 能力族中补齐新的动作和结果类型
+
+## Current-Source Evidence Addendum
+
+- `music-analyzer/utils.ts:176-197` 把所有 ID 含 `suno` 的 audio model 收入歌词候选，并用相同字符串规则判断歌词路由。
+- `suno-model-aliases.ts:40-64` 明确把 continue/uploaded alias 强制为 `sunoAction: music`。
+- `audio-api-service.ts:221-238` 让 alias forced params 优先于 caller 显式 `sunoAction: lyrics`。
+- 因此选择 continuation alias 时，UI 会按歌词任务创建，service 却提交 music；这是 capability 过滤契约缺口，不能通过更改显示名称修复。

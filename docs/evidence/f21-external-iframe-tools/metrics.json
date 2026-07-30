@@ -1,0 +1,336 @@
+{
+  "featureId": "F-21",
+  "feature": "Chat-MJ, Banana Prompt, and Pose Library external iframe tools",
+  "capturedAt": "2026-07-29T22:10:00+08:00",
+  "sourceState": {
+    "gitMetadata": false,
+    "limitation": "Cannot verify worktree cleanliness or history because this directory is not a Git repository."
+  },
+  "browser": {
+    "surface": "Codex in-app Browser",
+    "engine": "Chromium",
+    "appUrl": "http://127.0.0.1:7200/?board=8be2a894-1253-463c-b67f-b799c3af21bc",
+    "viewportCssPx": {
+      "width": 1280,
+      "height": 720
+    },
+    "network": "normal host network; not throttled",
+    "cpu": "not throttled",
+    "theme": "light",
+    "locale": "zh-CN",
+    "runs": 1,
+    "performanceConclusion": false,
+    "reason": "Only one observational run was made; timing is retained as UX-state evidence, not a speed claim."
+  },
+  "tools": {
+    "banana-prompt": {
+      "entryCount": 1,
+      "iframe": {
+        "src": "https://www.aiwind.org",
+        "title": "香蕉提示词",
+        "sandbox": "allow-scripts allow-same-origin allow-popups allow-forms allow-top-navigation-by-user-activation",
+        "allow": null,
+        "rectCssPx": {
+          "x": 240,
+          "y": 103,
+          "width": 800,
+          "height": 552
+        }
+      },
+      "firstCheckMs": 3000,
+      "firstCheckResult": "usable cross-origin body content was present",
+      "consoleDelta": [
+        "AdSense head tag doesn't support data-nscript attribute."
+      ],
+      "screenshot": "banana-loaded-1280x720.png"
+    },
+    "pose-library": {
+      "entryCount": 1,
+      "iframe": {
+        "src": "https://www.posemaniacs.com/zh-Hans/poses",
+        "title": "动作场景库",
+        "sandbox": "allow-scripts allow-same-origin allow-popups allow-forms allow-top-navigation-by-user-activation",
+        "allow": null,
+        "rectCssPx": {
+          "x": 190,
+          "y": 53,
+          "width": 900,
+          "height": 652
+        }
+      },
+      "firstCheckMs": 3000,
+      "firstCheckResult": "blank iframe area and no Opentu loading or recovery message",
+      "laterWaitMs": 10000,
+      "laterCheckResult": "usable cross-origin body content and pose grid were present",
+      "loadTimeBoundMs": {
+        "greaterThan": 3000,
+        "lessThanOrEqualTo": 13000
+      },
+      "screenshots": [
+        "pose-loading-blank-1280x720.png",
+        "pose-loaded-1280x720.png"
+      ]
+    },
+    "chat-mj": {
+      "entryCount": 1,
+      "realCredentialRead": false,
+      "realCredentialSent": false,
+      "credentialFreeExternalCheck": {
+        "url": "https://vercel.ddaiai.com/#/",
+        "title": "ChatGPT Web Midjourney Proxy",
+        "result": "existing external shell rendered without form or generation interaction"
+      },
+      "sentinelDiagnostic": {
+        "sentinel": "F21_SENTINEL_KEY_DO_NOT_USE",
+        "testFiles": 1,
+        "tests": 2,
+        "passed": 2,
+        "exitCode": 0,
+        "durationSeconds": 3.64,
+        "facts": [
+          "processToolUrl placed the sentinel in a URL whose origin was https://vercel.ddaiai.com",
+          "the sentinel was in the fragment, not pathname or search",
+          "with an empty mocked key, the placeholder remained and toolWindowService still created an open instance"
+        ],
+        "temporaryTestRemoved": true
+      }
+    }
+  },
+  "clipboardPermissionInvestigation": {
+    "capturedAt": "2026-07-30",
+    "publicBananaDocument": {
+      "requestedUrl": "https://www.aiwind.org",
+      "finalUrl": "https://www.aiwind.org/",
+      "httpStatus": 200,
+      "htmlBytes": 453805,
+      "htmlSha256": "f8ac33b15e2fbdc3b4837be393944149df98cbea70ea98e8d4088ed53faec1d2",
+      "scriptCount": 20,
+      "copyBundlePath": "/_next/static/chunks/f03595ad43de9b1b.js",
+      "copyBundleSha256": "8a38595cdff445d292a42526bbd4463dd0b63c30d29e85c6e99958453cbf5b73",
+      "relevantOffsets": [29297, 29363, 29373, 29677],
+      "controlFlowFacts": [
+        "When navigator.clipboard exists and the document is a secure context, the copy handler awaits navigator.clipboard.writeText(prompt).",
+        "The textarea plus document.execCommand('copy') fallback runs only when the Clipboard API is absent or the context is not secure.",
+        "A writeText rejection enters the catch branch, logs 'Failed to copy', and exits without running the fallback."
+      ],
+      "credentialsRead": false,
+      "externalFormOrCopyActionInvoked": false,
+      "systemClipboardReadOrWritten": false
+    },
+    "crossOriginPolicyProbe": {
+      "exitCode": 0,
+      "chromiumVersion": "149.0.7827.55",
+      "executablePath": "/Users/macos/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-x64/chrome-headless-shell",
+      "parentOrigin": "http://127.0.0.1:55320",
+      "childOrigin": "http://127.0.0.1:55319",
+      "freshPageSamples": 5,
+      "permissionGrant": ["clipboard-read", "clipboard-write"],
+      "clipboardApiCalled": false,
+      "systemClipboardReadOrWritten": false,
+      "samples": [
+        {
+          "sample": 1,
+          "withoutAllow": {"writePolicy": false, "readPolicy": false, "writePermission": "denied", "readPermission": "denied"},
+          "writeOnly": {"writePolicy": true, "readPolicy": false, "writePermission": "prompt", "readPermission": "denied"},
+          "withAllow": {"writePolicy": true, "readPolicy": true, "writePermission": "prompt", "readPermission": "prompt"}
+        },
+        {
+          "sample": 2,
+          "withoutAllow": {"writePolicy": false, "readPolicy": false, "writePermission": "denied", "readPermission": "denied"},
+          "writeOnly": {"writePolicy": true, "readPolicy": false, "writePermission": "prompt", "readPermission": "denied"},
+          "withAllow": {"writePolicy": true, "readPolicy": true, "writePermission": "prompt", "readPermission": "prompt"}
+        },
+        {
+          "sample": 3,
+          "withoutAllow": {"writePolicy": false, "readPolicy": false, "writePermission": "denied", "readPermission": "denied"},
+          "writeOnly": {"writePolicy": true, "readPolicy": false, "writePermission": "prompt", "readPermission": "denied"},
+          "withAllow": {"writePolicy": true, "readPolicy": true, "writePermission": "prompt", "readPermission": "prompt"}
+        },
+        {
+          "sample": 4,
+          "withoutAllow": {"writePolicy": false, "readPolicy": false, "writePermission": "denied", "readPermission": "denied"},
+          "writeOnly": {"writePolicy": true, "readPolicy": false, "writePermission": "prompt", "readPermission": "denied"},
+          "withAllow": {"writePolicy": true, "readPolicy": true, "writePermission": "prompt", "readPermission": "prompt"}
+        },
+        {
+          "sample": 5,
+          "withoutAllow": {"writePolicy": false, "readPolicy": false, "writePermission": "denied", "readPermission": "denied"},
+          "writeOnly": {"writePolicy": true, "readPolicy": false, "writePermission": "prompt", "readPermission": "denied"},
+          "withAllow": {"writePolicy": true, "readPolicy": true, "writePermission": "prompt", "readPermission": "prompt"}
+        }
+      ],
+      "directTopLevelControl": {
+        "writePolicy": true,
+        "readPolicy": true,
+        "writePermission": "granted",
+        "readPermission": "granted"
+      },
+      "scopeNote": "The write-only group directly measures the proposed WinBox boundary. The with-allow control intentionally declared both read and write to match the existing canvas control."
+    }
+  },
+  "windowControls": {
+    "sampleTool": "banana-prompt",
+    "minimizeCssPx": {
+      "width": 32,
+      "height": 32
+    },
+    "maximizeCssPx": {
+      "width": 32,
+      "height": 32
+    },
+    "closeCssPx": {
+      "width": 32,
+      "height": 32
+    },
+    "nativeTitle": null,
+    "ariaLabel": null,
+    "ownership": "Existing improve-tool-window-accessibility change; no duplicate F-21 proposal."
+  },
+  "responsive": {
+    "desktop1280x720": "measured",
+    "directChromium": {
+      "engineVersion": "149.0.7827.55",
+      "executablePath": "/Users/macos/Library/Caches/ms-playwright/chromium_headless_shell-1228/chrome-headless-shell-mac-x64/chrome-headless-shell",
+      "appUrl": "http://127.0.0.1:7396/",
+      "source": "current Vite development server",
+      "contexts": "fresh isolated browser context per viewport/tool",
+      "locale": "zh-CN",
+      "theme": "light",
+      "deviceScaleFactor": 1,
+      "network": "normal host network; not throttled",
+      "cpu": "not throttled",
+      "runsPerToolViewport": 1,
+      "firstCheckMs": 3000,
+      "samples": [
+        {
+          "tool": "banana-prompt",
+          "viewportCssPx": {"width": 390, "height": 844},
+          "documentCssPx": {"clientWidth": 390, "scrollWidth": 390, "clientHeight": 844, "scrollHeight": 844},
+          "winboxCssPx": {"x": 8, "y": 122, "width": 374, "height": 600, "right": 382, "bottom": 722},
+          "iframeCssPx": {"x": 8, "y": 170, "width": 374, "height": 552, "right": 382, "bottom": 722},
+          "closeControlCssPx": {"x": 340, "y": 128.5, "width": 30, "height": 30, "right": 370, "bottom": 158.5},
+          "winboxVisibleAreaCssPx2": 224400,
+          "winboxTotalAreaCssPx2": 224400,
+          "visibleAtFirstCheck": "blank white iframe area with no Opentu lifecycle feedback",
+          "externalBodyTextLength": 10,
+          "iframeAllow": null,
+          "screenshot": "banana-mobile-390x844-before.png",
+          "bytes": 26066,
+          "sha256": "4994008dfc347b0c7a40a356cf728ed45648d7d470540b3d150b3499192dbc68"
+        },
+        {
+          "tool": "pose-library",
+          "viewportCssPx": {"width": 390, "height": 844},
+          "documentCssPx": {"clientWidth": 390, "scrollWidth": 390, "clientHeight": 844, "scrollHeight": 844},
+          "winboxCssPx": {"x": 8, "y": 72, "width": 374, "height": 700, "right": 382, "bottom": 772},
+          "iframeCssPx": {"x": 8, "y": 120, "width": 374, "height": 652, "right": 382, "bottom": 772},
+          "closeControlCssPx": {"x": 340, "y": 78.5, "width": 30, "height": 30, "right": 370, "bottom": 108.5},
+          "winboxVisibleAreaCssPx2": 261800,
+          "winboxTotalAreaCssPx2": 261800,
+          "visibleAtFirstCheck": "blank white iframe area with no Opentu lifecycle feedback",
+          "externalBodyTextLength": 300,
+          "iframeAllow": null,
+          "screenshot": "pose-mobile-390x844-before.png",
+          "bytes": 19505,
+          "sha256": "2fc4149dedf1659881dfb61063aab25773782705265f7c949d6e58ac217c8197"
+        },
+        {
+          "tool": "banana-prompt",
+          "viewportCssPx": {"width": 768, "height": 1024},
+          "documentCssPx": {"clientWidth": 768, "scrollWidth": 768, "clientHeight": 1024, "scrollHeight": 1024},
+          "winboxCssPx": {"x": 8, "y": 212, "width": 752, "height": 600, "right": 760, "bottom": 812},
+          "iframeCssPx": {"x": 8, "y": 260, "width": 752, "height": 552, "right": 760, "bottom": 812},
+          "closeControlCssPx": {"x": 718, "y": 218.5, "width": 30, "height": 30, "right": 748, "bottom": 248.5},
+          "winboxVisibleAreaCssPx2": 451200,
+          "winboxTotalAreaCssPx2": 451200,
+          "visibleAtFirstCheck": "blank white iframe area with no Opentu lifecycle feedback",
+          "externalBodyTextLength": 10,
+          "iframeAllow": null,
+          "screenshot": "banana-tablet-768x1024-before.png",
+          "bytes": 53985,
+          "sha256": "df58d2dc3796432b8e68fd937be88f8bceefe6ae1afe78c418fbb8c07d15a913"
+        },
+        {
+          "tool": "pose-library",
+          "viewportCssPx": {"width": 768, "height": 1024},
+          "documentCssPx": {"clientWidth": 768, "scrollWidth": 768, "clientHeight": 1024, "scrollHeight": 1024},
+          "winboxCssPx": {"x": 8, "y": 162, "width": 752, "height": 700, "right": 760, "bottom": 862},
+          "iframeCssPx": {"x": 8, "y": 210, "width": 752, "height": 652, "right": 760, "bottom": 862},
+          "closeControlCssPx": {"x": 718, "y": 168.5, "width": 30, "height": 30, "right": 748, "bottom": 198.5},
+          "winboxVisibleAreaCssPx2": 526400,
+          "winboxTotalAreaCssPx2": 526400,
+          "visibleAtFirstCheck": "blank white iframe area with no Opentu lifecycle feedback",
+          "externalBodyTextLength": 416,
+          "iframeAllow": null,
+          "screenshot": "pose-tablet-768x1024-before.png",
+          "bytes": 39956,
+          "sha256": "0ff0f34509dab2fb463d4d15aede9ff5333d0ab4ef7ff67f5bf0121f99ff7823"
+        }
+      ],
+      "geometryConclusion": "All four WinBox rectangles and close controls were inside the viewport; document scroll width equalled client width. No F-21-specific outer-window overflow was observed in these samples.",
+      "lifecycleConclusion": "All four 3-second screenshots showed a blank white iframe area without Opentu lifecycle feedback. This extends F21-WINDOW-LOAD-FEEDBACK-003 evidence; it is not a loading-speed benchmark."
+    },
+    "formalPlaywright": {
+      "status": "blocked",
+      "reason": "The configured chromium_headless_shell revision 1200 is absent. Direct revision-1228 evidence is not reported as a formal suite pass."
+    },
+    "remainingCoverage": "dark theme, English, high DPI, zoom, keyboard/focus, reduced motion, slow/offline/error/retry and post-fix comparisons"
+  },
+  "commands": [
+    {
+      "name": "sentinel diagnostic",
+      "exitCode": 0,
+      "result": "1 file passed, 2 tests passed"
+    },
+    {
+      "name": "tool-window-service focused tests",
+      "exitCode": 0,
+      "result": "1 file passed, 4 tests passed"
+    },
+    {
+      "name": "nx run drawnix:typecheck",
+      "exitCode": 0,
+      "result": "target succeeded"
+    },
+    {
+      "name": "targeted ESLint for 10 F-21 chain files",
+      "exitCode": 0,
+      "result": "0 errors, 19 warnings"
+    },
+    {
+      "name": "nx run drawnix:lint",
+      "exitCode": 1,
+      "result": "baseline failure: 377 errors, 1742 warnings; hover checker also reported 4 unrelated files"
+    },
+    {
+      "name": "openspec validate secure-external-tool-credential-launch --strict",
+      "exitCode": 127,
+      "result": "OpenSpec CLI unavailable"
+    },
+    {
+      "name": "openspec validate improve-external-iframe-load-recovery --strict",
+      "exitCode": 127,
+      "result": "OpenSpec CLI unavailable"
+    },
+    {
+      "name": "public Banana bundle inspection",
+      "exitCode": 0,
+      "result": "HTTP 200; 453805-byte HTML; 20 scripts; current copy branch and rejection behavior recorded without invoking copy"
+    },
+    {
+      "name": "five-sample local cross-origin clipboard policy probe",
+      "exitCode": 0,
+      "result": "without allow write false/denied 5/5; write-only write true/prompt and read false/denied 5/5; Clipboard API not called"
+    },
+    {
+      "name": "openspec validate allow-banana-prompt-clipboard-write --strict",
+      "exitCode": 127,
+      "result": "OpenSpec CLI unavailable"
+    },
+    {
+      "name": "direct F-21 responsive Chromium probe",
+      "exitCode": 0,
+      "result": "4 isolated samples at 390x844 and 768x1024; all windows fully in viewport; all iframe areas visibly blank without Opentu feedback at 3000ms"
+    }
+  ]
+}

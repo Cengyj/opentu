@@ -4,6 +4,7 @@ import type { VideoCharacter } from '../../../services/video-analysis-service';
 export interface CharacterDescriptionListProps {
   characters: VideoCharacter[];
   onChange: (characterId: string, description: string) => void;
+  onSelectSubjectAsset?: (characterId: string) => void;
   placeholder?: string;
 }
 
@@ -29,6 +30,7 @@ export function autoResizeTextarea(element: HTMLTextAreaElement | null) {
 export const CharacterDescriptionList: React.FC<CharacterDescriptionListProps> = ({
   characters,
   onChange,
+  onSelectSubjectAsset,
   placeholder = '主体外貌描述（英文，用于文生图）',
 }) => {
   if (characters.length === 0) {
@@ -51,6 +53,16 @@ export const CharacterDescriptionList: React.FC<CharacterDescriptionListProps> =
               placeholder={placeholder}
             />
           </div>
+          {onSelectSubjectAsset && (
+            <div className="va-character-ref">
+              <button
+                type="button"
+                onClick={() => onSelectSubjectAsset(character.id)}
+              >
+                选择主体素材
+              </button>
+            </div>
+          )}
         </div>
       ))}
     </div>

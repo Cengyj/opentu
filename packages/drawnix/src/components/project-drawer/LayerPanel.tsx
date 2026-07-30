@@ -420,14 +420,6 @@ export const LayerPanel: React.FC = () => {
   const { board } = useDrawnix();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
-  const [lockedIds, setLockedIds] = useState<Set<string>>(() => {
-    if (!board?.children) return new Set<string>();
-    const ids = new Set<string>();
-    (board.children as PlaitElement[]).forEach((el) => {
-      if ((el as any).locked && el.id) ids.add(el.id);
-    });
-    return ids;
-  });
 
   const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => {
@@ -456,13 +448,13 @@ export const LayerPanel: React.FC = () => {
         typeLabel: typeInfo.typeLabel,
         icon: typeInfo.icon,
         hidden: hiddenIds.has(element.id!),
-        locked: lockedIds.has(element.id!) || !!(element as any).locked,
+        locked: !!(element as any).locked,
       });
     });
 
     return items.reverse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [board, refreshKey, hiddenIds, lockedIds]);
+  }, [board, board?.children, refreshKey, hiddenIds]);
 
   const handleLayerClick = useCallback(
     (item: LayerItem) => {
@@ -534,17 +526,7 @@ export const LayerPanel: React.FC = () => {
       e.stopPropagation();
       if (!board) return;
       const id = item.element.id!;
-      const willLock = !lockedIds.has(id);
-
-      setLockedIds((prev) => {
-        const next = new Set(prev);
-        if (willLock) {
-          next.add(id);
-        } else {
-          next.delete(id);
-        }
-        return next;
-      });
+      const willLock = !item.locked;
 
       const currentIndex = (board.children as PlaitElement[]).findIndex(
         (child) => child.id === id
@@ -555,7 +537,7 @@ export const LayerPanel: React.FC = () => {
 
       Transforms.setNode(board, { locked: willLock } as any, [currentIndex]);
     },
-    [board, lockedIds]
+    [board]
   );
 
   if (!board) {

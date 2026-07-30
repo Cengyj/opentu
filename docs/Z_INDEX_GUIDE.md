@@ -1,5 +1,20 @@
 # Z-Index 层级管理规范
 
+> **2026-07-30 状态说明**：本文下方的大部分数字表、问题清单和 Phase 计划是历史迁移草案，不是当前运行时的单一事实源，不能据此批量修改代码。当前 TypeScript owner 是 `packages/drawnix/src/constants/z-index.ts`，Sass owner 是 `packages/drawnix/src/styles/z-index.scss`；两者部分同名值仍不相等。共享 `PopoverContent` 当前在 caller style 之后强制写入 `z-index: 5000`，WinBox manager 也从 5000 紧凑分配。任何统一必须先有具体遮挡证据和独立审批。
+>
+> F-26 已取得一条具体运行证据：1280×720 下，Settings 与应用菜单都计算为 5000，菜单与窗口重叠 114,395.25 CSS px²，3/3 重叠采样点均命中 WinBox；无 WinBox 时同一菜单中心命中菜单。该窄问题由审批 change `fix-application-menu-window-stacking` 所有。它不授权统一其他 Popover、TDesign portal、tooltip、drawer、dialog 或局部 stacking context。
+
+## 当前可执行边界
+
+- React/TypeScript caller 使用 `Z_INDEX`；Sass caller 使用 `$z-*`/`z()`。修改前必须反查真实 consumer，不能假定同名值相等。
+- WinBox 实际层级由 `winbox-manager-service.ts` 写入 `--aitu-winbox-z-index`，`winbox-custom.scss` 以 `!important` 应用；默认从 5000 开始按激活顺序递增。
+- `PopoverContent` 的当前默认有效值是 5000，且 caller 的 `style.zIndex` 会被尾部写入覆盖。这是当前实现事实，不是推荐的新 API 契约。
+- `DROPDOWN_PORTAL` 当前为 10000，多个明确的 portal caller 使用它；不得因为“数值很大”直接认定为缺陷。
+- 组件内部的 1、2、10、100 等相对值可能只在局部 stacking context 内生效；静态命中本身不构成全局层级缺陷。
+- 验收具体问题时记录两个 surface 的 DOMRect、computed z-index、stacking context、交叠面积和 `elementFromPoint` 顶层命中，并提供同视口 before/after 截图。
+
+## 历史迁移草案（保留作背景，不作为当前数值规范）
+
 ## 当前问题分析
 
 经过代码审查，发现以下z-index混乱问题：

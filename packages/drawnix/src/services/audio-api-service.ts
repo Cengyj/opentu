@@ -474,7 +474,7 @@ function extractAudioClips(payload: any): AudioClipRecord[] {
 }
 
 function resolveClipIdentifier(clip: AudioClipRecord): string | undefined {
-  return normalizeOptionalString(clip.clip_id) || normalizeOptionalString(clip.id);
+  return normalizeOptionalString(clip.clip_id);
 }
 
 function createClipIdentifierMemory(): ClipIdentifierMemory {
@@ -840,7 +840,7 @@ export function extractAudioGenerationResult(
     .map((clip) => clip.audioUrl)
     .filter((url): url is string => typeof url === 'string' && url.trim().length > 0);
   const clipIds = clipsWithAudio
-    .map((clip) => clip.clipId || clip.id)
+    .map((clip) => clip.clipId)
     .filter((clipId): clipId is string => typeof clipId === 'string' && clipId.length > 0);
 
   return {
@@ -852,7 +852,7 @@ export function extractAudioGenerationResult(
     imageUrl: primaryClip?.imageLargeUrl || primaryClip?.imageUrl,
     format: inferAudioFormat(primaryUrl),
     providerTaskId: response.taskId || undefined,
-    primaryClipId: primaryClip?.clipId || primaryClip?.id,
+    primaryClipId: primaryClip?.clipId,
     clipIds: clipIds.length > 0 ? clipIds : undefined,
     clips: clipsWithAudio.length > 0 ? clipsWithAudio : undefined,
     raw: response.raw,

@@ -9,8 +9,8 @@
 
 ## 目录
 
-- [AI 生成流程](#ai-生成流程service-worker-模式)
-- [Service Worker 任务队列架构](#service-worker-任务队列架构)
+- [AI 生成流程](#ai-生成流程主线程任务队列)
+- [任务队列架构](#任务队列架构)
 - [Service Worker 预缓存机制](#service-worker-预缓存机制)
 - [工作流提交机制](#工作流提交机制)
 - [WorkZone 画布元素](#workzone-画布元素)
@@ -22,101 +22,58 @@
 
 ## 核心功能流程
 
-### AI 生成流程（Service Worker 模式）
+### AI 生成流程（主线程任务队列）
 
-项目使用 Service Worker 作为后台任务执行器，实现页面刷新不影响任务执行。
+当前生成任务在页面主线程创建和执行。Service Worker 不负责创建、取消、重试或执行 LLM/媒体任务；刷新恢复依赖 IndexedDB 中的任务快照和供应商 `remoteId`，而不是依赖旧页面关闭后继续运行的 SW 执行器。
 
 ```
 用户输入
   ↓
 AIInputBar (输入组件)
   ↓
-swTaskQueueService.createTask() (应用层)
-  ↓ postMessage
-Service Worker (后台)
-  ├── SWTaskQueue.submitTask() (任务管理)
-  ├── ImageHandler / VideoHandler (执行器)
-  └── taskQueueStorage (IndexedDB 持久化)
-  ↓ broadcastToClients
-应用层接收状态更新
+taskQueueService.createTask() (主线程单例)
+  ├── 参数校验与清理
+  ├── TaskQueueService.executeTask()
+  │   └── media-executor / 模型适配器 / 供应商路由
+  ├── taskStorageWriter (aitu-app / IndexedDB)
+  └── RxJS TaskEvent
+  ↓
+useTaskQueue / 工作流同步 / 生成锚点 / 自动插入订阅更新
   ↓
 Canvas 插入 / 媒体库缓存
 ```
 
 **核心特性**：
 - **页面刷新恢复**：任务状态持久化到 IndexedDB，刷新后自动恢复
-- **多标签页同步**：通过 `broadcastToClients` 向所有标签页广播状态
+- **页面内状态同步**：通过 `TaskQueueService.observeTaskUpdates()` 的 RxJS 事件更新任务面板、工作流、锚点和自动插入
 - **视频任务恢复**：通过 `remoteId` 恢复轮询，继续等待视频生成完成
+- **Service Worker 边界**：负责静态/CDN 缓存、缩略图、升级、日志和调试 RPC；`apps/web/src/sw/task-queue/` 中保留的 storage/types/debug 工具不构成当前任务执行路径
 
-### Service Worker 任务队列架构
+### 任务队列架构
 
-```
-apps/web/src/sw/
-├── index.ts                       # SW 主入口
-└── task-queue/
-    ├── queue.ts                   # 任务队列核心 (SWTaskQueue)
-    ├── storage.ts                 # IndexedDB 存储 (TaskQueueStorage)
-    ├── types.ts                   # 类型定义
-    ├── handlers/                  # 任务处理器
-    │   ├── image.ts               # 图片生成处理器
-    │   ├── video.ts               # 视频生成处理器
-    │   ├── character.ts           # 角色生成处理器
-    │   └── chat.ts                # 聊天处理器
-    ├── workflow-executor.ts       # 工作流执行器
-    ├── workflow-types.ts          # 工作流类型
-    ├── chat-workflow/             # 聊天工作流
-    │   ├── executor.ts            # 聊天工作流执行器
-    │   └── types.ts               # 聊天工作流类型
-    ├── mcp/                       # MCP 工具系统
-    │   ├── tools.ts               # 工具注册
-    │   └── executor.ts            # 工具执行器
-    └── utils/
-        └── index.ts               # 工具函数导出
-```
-
-**应用层服务**：
 ```
 packages/drawnix/src/services/
-├── sw-client/
-│   ├── client.ts                  # SW 通信客户端 (SWTaskQueueClient)
-│   ├── types.ts                   # 消息类型定义
-│   └── index.ts                   # 导出
-├── sw-task-queue-service.ts       # SW 任务队列服务
-├── sw-chat-service.ts             # SW 聊天服务
-├── sw-chat-workflow-service.ts    # SW 聊天工作流服务
-└── task-queue/
-    └── index.ts                   # 任务队列入口（自动选择 SW/传统模式）
-```
+├── task-queue/
+│   └── index.ts                   # 明确导出主线程 taskQueueService
+├── task-queue-service.ts          # 内存 Map、执行、状态、取消、重试、事件与保留策略
+├── task-storage-reader.ts         # aitu-app 任务读取、轻量摘要和归档分页
+├── task-storage-recovery.ts       # 启动恢复竞态判定
+├── media-executor/
+│   ├── fallback-executor.ts       # 主线程媒体执行与远端视频恢复
+│   └── task-storage-writer.ts     # aitu-app / IndexedDB 写入
+└── media-generation/              # 工作流使用的图片/视频薄代理
 
-**通信协议**：
-```typescript
-// 应用层 → Service Worker
-type MainToSWMessage =
-  | { type: 'TASK_QUEUE_INIT'; geminiConfig; videoConfig }
-  | { type: 'TASK_SUBMIT'; taskId; taskType; params }
-  | { type: 'TASK_CANCEL'; taskId }
-  | { type: 'TASK_RETRY'; taskId }
-  | { type: 'TASK_GET_ALL' }
-  | { type: 'CHAT_START'; chatId; params }
-  | { type: 'WORKFLOW_SUBMIT'; workflow }
-  // ...
-
-// Service Worker → 应用层
-type SWToMainMessage =
-  | { type: 'TASK_CREATED'; task }
-  | { type: 'TASK_STATUS'; taskId; status; progress }
-  | { type: 'TASK_COMPLETED'; taskId; result }
-  | { type: 'TASK_FAILED'; taskId; error; retryCount }
-  | { type: 'WORKFLOW_STEP_STATUS'; workflowId; stepId; status }
-  // ...
+packages/drawnix/src/hooks/
+├── useTaskStorage.ts              # 迁移、加载、中断任务分类
+├── useTaskExecutor.ts             # 遗留 pending、角色和可恢复异步任务
+└── useTaskQueue.ts                # Jotai UI 状态与 RxJS 事件桥接
 ```
 
 **IndexedDB 存储结构**：
-- `tasks` - 任务数据（图片/视频/角色生成）
-- `config` - API 配置（apiKey, baseUrl）
-- `workflows` - 工作流数据
-- `chat-workflows` - 聊天工作流数据
-- `pending-tool-requests` - 待处理的主线程工具请求
+- 当前任务记录写入 `aitu-app` 的 `tasks` store。
+- `taskStorageWriter` 保存任务参数、执行阶段、`remoteId`、路由快照、结果、错误及画布/素材标记。
+- 启动时 `useTaskStorage` 先执行旧 `sw-task-queue` 数据库的一次性迁移，再读取 `aitu-app`。
+- Service Worker 自身仍有用于迁移、调试和维护的旧 task storage；它不是当前主线程任务记录的正常写入入口。
 
 **任务生命周期**：
 ```
@@ -124,6 +81,8 @@ PENDING → PROCESSING → COMPLETED
                     ↘ FAILED
                     ↘ CANCELLED
 ```
+
+普通生成任务创建后直接进入 `PROCESSING`；`PENDING` 当前主要用于由专用执行 Hook 接管的角色任务和兼容恢复路径。终态任务保留在 IndexedDB，超过活跃保留上限后标记为归档并由历史列表分页读取。
 
 **使用示例**：
 ```typescript
@@ -303,23 +262,28 @@ Drawnix (主编辑器)
 
 **工作流程**：
 ```
-AIInputBar 创建工作流
+AIInputBar 创建唯一工作流
   ↓
-convertToWorkflow() - 创建 LegacyWorkflowDefinition（唯一 ID）
+convertToWorkflow() / convertSkillFlowToWorkflow()
   ↓
-submitWorkflowToSW(parsedParams, referenceImages, retryContext, existingWorkflow)
+useWorkflowSubmission.submitWorkflow(parsedParams, referenceImages, retryContext, existingWorkflow)
+  ├── WorkflowContext.startWorkflow(existingWorkflow)
+  └── ChatDrawer.sendWorkflowMessage(...)
   ↓
-useWorkflowSubmission.submitWorkflow() - 复用已有工作流，避免重复创建
+返回 usedSW: false
   ↓
-workflowSubmissionService.submit() - 提交到 SW
+AIInputBar 通过 mcpRegistry.executeTool() 在主线程顺序执行初始与动态步骤
+  ├── generate_image/video/audio/text → TaskQueueService → media executor / 模型适配器
+  └── ai_analyze / insert_to_canvas / 其他 MCP 或画布工具
   ↓
-SW WorkflowExecutor 执行
+任务 RxJS 与后处理事件 → WorkflowContext / ChatDrawer / WorkZone / 图片锚点
 ```
 
 **关键设计**：
 - `submitWorkflow` 接受可选的 `existingWorkflow` 参数
 - 如果传入 `existingWorkflow`，直接使用而不重新创建
 - 避免因重复调用 `convertToWorkflow` 导致不同 ID 的工作流
+- `workflowSubmissionService` 当前用于恢复订阅、取消和 WorkZone 恢复；其 `submit()` 方法没有生产调用者，不属于 AIInputBar 新提交路径
 
 **API 签名**：
 ```typescript
@@ -330,6 +294,8 @@ submitWorkflow: (
   existingWorkflow?: LegacyWorkflowDefinition
 ) => Promise<{ workflowId: string; usedSW: boolean }>
 ```
+
+当前实现返回 `usedSW: false`。新的 AIInputBar 工作流不会写入 `workflows` store；其可恢复状态分别保存在任务、Chat 消息和 board/WorkZone 记录中。`workflows` store 只覆盖确实由 `MainThreadWorkflowEngine` 持久化的兼容恢复路径。页面关闭后没有 SW 工作流执行器继续执行步骤。
 
 ### WorkZone 画布元素
 
@@ -653,25 +619,31 @@ interface ReferenceImageUploadProps {
 
 ### 备份恢复功能 (Backup & Restore)
 
-支持将用户数据（提示词、项目、素材）导出为 ZIP 文件，并从 ZIP 文件恢复数据。
+支持将用户数据导出为 v4 ZIP 备份，并以合并或覆盖模式恢复。备份既可以只选择部分数据域，也可以包含完整环境；任务记录始终随备份导出，用于恢复提示词历史、素材库和任务队列等视图所依赖的终态记录。
 
 **核心文件**：
 - `services/backup-restore/` - 备份恢复服务（支持自动分片）
 - `components/backup-restore/backup-restore-dialog.tsx` - UI 对话框
 
 **功能特点**：
-- 导出提示词历史（图片/视频提示词）
-- 导出项目数据（文件夹和画板）
-- 导出素材库（本地上传 + AI 生成的缓存媒体）
-- 增量导入（自动去重，不覆盖已有数据）
-- 支持进度显示
+- `incremental` / `complete` 两种备份模式；清空全部时间筛选并选择提示词、项目、素材、知识库和环境时，UI 生成 complete 备份
+- 提示词、文件夹/画板、素材、任务、知识库，以及聊天、歌单、角色、工作流和偏好等环境数据
+- `merge` 合并恢复与 `replace` 覆盖恢复；项目导入后刷新 WorkspaceService 内存索引
+- 敏感配置默认不导出；显式选择后只写入使用密码加密的 `environment/secrets.enc.json`
+- 自动分片、下载与进度显示；`exportToZip` 返回下载文件清单、分片数、统计和警告，不返回单个 Blob
 
 **ZIP 文件结构**：
 ```
 aitu_backup_xxx.zip
 ├── manifest.json              # 备份元信息
 ├── prompts.json               # 提示词数据
+├── tasks.json                 # 可恢复的任务记录
+├── knowledge-base.json        # 知识库目录、笔记与标签
+├── environment/
+│   ├── data.json              # 非敏感环境数据
+│   └── secrets.enc.json       # 可选的加密敏感配置
 ├── projects/                  # 项目文件
+│   ├── _folders.json          # 文件夹元数据
 │   ├── 文件夹名/
 │   │   └── 画板名.drawnix     # 画板数据
 │   └── 画板名.drawnix         # 根目录画板
@@ -689,81 +661,82 @@ aitu_backup_xxx.zip
 导入素材：
 ├── 本地素材 → localforage + unified-cache
 └── AI 生成素材 (source: 'AI_GENERATED') → 仅 unified-cache
+
+导入项目：
+├── workspace-storage-service → IndexedDB folders/boards
+└── workspaceService.reload() → 重建内存元数据索引
+
+导入环境：
+├── localStorage / kvStorage 的允许列表
+├── App DB config/workflows 与任务存储
+└── chat、audio playlist、character 等 localForage stores
 ```
 
 **关键 API**：
 ```typescript
 // 导出
-const blob = await backupRestoreService.exportToZip({
+const result = await backupRestoreService.exportToZip({
+  mode: 'complete',
   includePrompts: true,
   includeProjects: true,
   includeAssets: true,
+  includeKnowledgeBase: true,
+  includeEnvironment: true,
+  includeSecrets: false,
 }, onProgress);
-backupRestoreService.downloadZip(blob);
+// result: { files, totalParts, stats, domainStats, warnings }
+// ZIP 分片已由 exportToZip 自动下载。
 
 // 导入
-const result = await backupRestoreService.importFromZip(file, onProgress);
-// result: { success, prompts, projects, assets, errors }
+const importResult = await backupRestoreService.importFromZip(
+  file,
+  onProgress,
+  { mode: 'merge', encryptionPassword: '' },
+);
+// importResult 包含 prompts/projects/assets/tasks/knowledgeBase/environment、
+// warnings、errors 和可选 workspaceState。
 ```
 
 **缓存刷新机制**：
 导入数据后需要刷新内存缓存才能生效：
 - `resetPromptStorageCache()` - 刷新提示词缓存
 - `workspaceService.reload()` - 刷新工作区缓存
+- 导入任务后调用 `taskQueueService.restoreTasks()`；覆盖恢复或环境/任务发生变化时，对话框关闭会刷新页面以重建运行时状态
 
 **技术要点**：
 - 使用 JSZip 处理 ZIP 文件
+- 主应用与 `sw-debug` 复用 `shared/backup-core.js` 和 `shared/backup-part-manager-core.js` 的格式校验、去重与分片规则
 - 媒体文件通过 `unifiedCacheService.getCachedBlob()` 获取
 - 虚拟 URL（`/asset-library/`）从 Cache API 获取
 - 导入时区分本地素材和 AI 生成素材，存储位置不同
 
 ### 分页加载与虚拟滚动
 
-支持任务队列和素材库的分页加载与虚拟滚动，优化大数据量场景下的性能。
+任务队列和素材库都使用虚拟列表减少 DOM 节点，但当前数据加载策略不同，不能统一描述为 SW 无限分页。
 
 **核心文件**：
-- `hooks/useInfinitePagination.ts` - 无限滚动分页 Hook
 - `hooks/useVirtualList.ts` - 虚拟列表 Hook（封装 @tanstack/react-virtual）
 - `hooks/useImageLazyLoad.ts` - 图片懒加载 Hook
 - `components/lazy-image/LazyImage.tsx` - 懒加载图片组件
 - `components/task-queue/VirtualTaskList.tsx` - 虚拟任务列表组件
+- `components/task-queue/ArchivedTaskList.tsx` - 已归档任务的 IndexedDB 分页
 - `components/media-library/VirtualAssetGrid.tsx` - 虚拟素材网格组件
-- `apps/web/src/sw/task-queue/storage.ts` - IndexedDB 游标分页查询
+- `services/task-storage-reader.ts` - 当前任务读取与归档游标分页
 
 **功能特点**：
-- IndexedDB 游标分页：支持大数据量的高效分页查询
-- 无限滚动：滚动到底部自动加载更多数据
+- 活跃任务：`useTaskQueue` 从内存/IndexedDB 加载当前保留集合；`loadMore` 当前为空操作，`hasMore` 为 `false`
+- 已归档任务：`ArchivedTaskList` 通过 `getArchivedTasks(offset, 50)` 按创建时间倒序分页
 - 虚拟滚动：只渲染可见区域的元素，大幅减少 DOM 节点
 - 图片懒加载：基于 IntersectionObserver，进入视口才加载图片
-- 实时更新：支持 `prependItems`、`updateItem`、`removeItem` 操作
+- 实时更新：主线程 TaskEvent 增量更新 Jotai 任务状态
 
 **使用示例**：
 ```typescript
-// 无限滚动分页
-const {
-  items,
-  isLoading,
-  isLoadingMore,
-  hasMore,
-  loadMore,
-  reset,
-} = useInfinitePagination({
-  fetcher: async ({ offset, limit }) => {
-    const result = await swTaskQueueClient.requestPaginatedTasks({
-      offset,
-      limit,
-      status: filterStatus,
-    });
-    return {
-      items: result.tasks,
-      total: result.total,
-      hasMore: result.hasMore,
-    };
-  },
-  pageSize: 50,
-  getItemKey: (task) => task.id,
-  deps: [filterStatus],
-});
+// 已归档任务分页
+const { tasks, hasMore } = await taskStorageReader.getArchivedTasks(
+  offset,
+  50
+);
 
 // 虚拟列表
 const { parentRef, virtualItems, totalSize, getItem } = useVirtualList({
@@ -773,40 +746,10 @@ const { parentRef, virtualItems, totalSize, getItem } = useVirtualList({
 });
 ```
 
-**IndexedDB 分页查询**：
-```typescript
-// Service Worker 中的游标分页实现
-async getPaginatedTasks(params: PaginationParams): Promise<PaginatedResult> {
-  const { offset = 0, limit = 50, status } = params;
-  const db = await this.getDB();
-  const tx = db.transaction('tasks', 'readonly');
-  const store = tx.objectStore('tasks');
-  const index = store.index('by-createdAt');
-
-  let cursor = await index.openCursor(null, 'prev');
-  let skipped = 0;
-  const items: Task[] = [];
-
-  while (cursor && items.length < limit) {
-    if (status && cursor.value.status !== status) {
-      cursor = await cursor.continue();
-      continue;
-    }
-    if (skipped < offset) {
-      skipped++;
-      cursor = await cursor.continue();
-      continue;
-    }
-    items.push(cursor.value);
-    cursor = await cursor.continue();
-  }
-
-  return { items, total, hasMore: offset + items.length < total };
-}
-```
+归档分页由 `task-storage-reader.ts` 对 `aitu-app/tasks` 的 `createdAt` 索引使用倒序 cursor 完成；活跃列表不调用旧的 `swTaskQueueClient.requestPaginatedTasks()`。
 
 **性能优化**：
-- 默认每页 50 条数据
+- 归档任务默认每页 50 条数据
 - 虚拟列表 overscan 设置为 3-5 个元素
 - 图片懒加载 rootMargin 设置为 200px（提前加载）
 - 使用 `getItemKey` 进行去重，避免重复数据
@@ -829,6 +772,12 @@ async getPaginatedTasks(params: PaginationParams): Promise<PaginatedResult> {
   → 用户点击"立即更新" → COMMIT_UPGRADE → skipWaiting → activate → claim → reload
 ```
 
+当前源码的 VersionUpdatePrompt 在非关键 UI 延迟阶段才挂载，而通知是一次性 DOM
+事件；若 ready 通知先于监听器挂载，提示不会重放。受控前/后挂载诊断和待审批修复见
+`docs/evidence/f01-startup-recovery-ui/diagnostics.md` 与
+`openspec/changes/fix-version-update-notification-delivery`。在该 change 获批实施前，
+上述“dispatch → 显示”是目标流程，不是所有时序下都已满足的现状。
+
 #### 自然激活（所有旧 tab 关闭）
 
 当所有旧 tab 关闭后，waiting SW 自动变为 active。activate 处理器必须无条件将 `committedVersion` 更新为 `APP_VERSION`，否则新 tab 会用旧版本号打开旧缓存、从网络获取新 `index.html`，导致新 hash 资源用旧版本号请求 CDN → 404。
@@ -847,7 +796,7 @@ async getPaginatedTasks(params: PaginationParams): Promise<PaginatedResult> {
 
 | 文件 | 职责 |
 |------|------|
-| `apps/web/src/main.tsx` | SW 注册、版本状态监听、升级确认 |
+| `apps/web/src/app/bootstrap.tsx` | SW 注册、版本状态监听、升级确认 |
 | `apps/web/src/sw/index.ts` | install/activate 处理、版本状态管理、静态资源拦截 |
 | `apps/web/src/sw/cdn-fallback.ts` | CDN 回退、版本号提取、健康检查 |
 | `packages/drawnix/src/components/version-update/version-update-prompt.tsx` | 升级提示 UI |

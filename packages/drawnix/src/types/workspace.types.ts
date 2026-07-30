@@ -106,7 +106,8 @@ export interface WorkspaceState {
  * Create folder options
  */
 export interface CreateFolderOptions {
-  name: string;
+  /** Omit to use the localized default folder name. */
+  name?: string;
   parentId?: string | null;
 }
 
@@ -114,7 +115,8 @@ export interface CreateFolderOptions {
  * Create board options
  */
 export interface CreateBoardOptions {
-  name: string;
+  /** Omit to use the localized default board name. */
+  name?: string;
   folderId?: string | null;
   /** Initial elements */
   elements?: PlaitElement[];

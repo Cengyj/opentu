@@ -2,6 +2,7 @@ import React, { memo, useMemo, useSyncExternalStore } from 'react';
 import {
   subscribeAssetMap,
   getAssetMapSnapshot,
+  getAssetMapStatusSnapshot,
 } from '../../stores/asset-map-store';
 import { AssetType } from '../../types/asset.types';
 import { extractAssetIdFromUrl } from '../../utils/markdown-asset-embeds';
@@ -1095,10 +1096,14 @@ function MarkdownReadonlyAssetImage({
   style: React.CSSProperties;
 }) {
   const assetMap = useSyncExternalStore(subscribeAssetMap, getAssetMapSnapshot);
+  const assetMapStatus = useSyncExternalStore(
+    subscribeAssetMap,
+    getAssetMapStatusSnapshot
+  );
   const asset = assetMap.get(assetId);
 
   if (!asset) {
-    if (assetMap.size === 0) {
+    if (assetMapStatus !== 'ready') {
       return (
         <span className="markdown-readonly__media-loading" style={style} />
       );

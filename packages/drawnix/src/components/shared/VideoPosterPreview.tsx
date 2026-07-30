@@ -144,7 +144,6 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
   const [resolvedPoster, setResolvedPoster] = useState<string | null>(() => getCachedResolvedPoster(posterCandidate));
   const [retryCount, setRetryCount] = useState(0);
   const [showVideo, setShowVideo] = useState(false);
-  const shouldRequireExplicitActivation = activateVideoOnClick;
 
   useEffect(() => {
     setPreferGeneratedPoster(shouldIgnoreExplicitPoster);
@@ -167,9 +166,7 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
     }
 
     if (!posterCandidate) {
-      if (!shouldRequireExplicitActivation) {
-        setShowVideo(true);
-      }
+      setShowVideo(true);
       return;
     }
 
@@ -181,9 +178,7 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
 
     const scheduleRetry = () => {
       if (!canRetryGeneratedPoster || retryCount >= MAX_THUMBNAIL_RETRIES) {
-        if (!shouldRequireExplicitActivation) {
-          setShowVideo(true);
-        }
+        setShowVideo(true);
         return;
       }
 
@@ -246,7 +241,6 @@ export const VideoPosterPreview: React.FC<VideoPosterPreviewProps> = ({
     showVideo,
     normalizedPoster,
     resolvedPoster,
-    shouldRequireExplicitActivation,
   ]);
 
   useEffect(() => {

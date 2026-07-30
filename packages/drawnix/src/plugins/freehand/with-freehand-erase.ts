@@ -46,10 +46,10 @@ export const withFreehandErase = (board: PlaitBoard) => {
         });
     };
 
-    const deleteMarkedElements = () => {
-        if (elementsToDelete.size > 0) {
+    const deleteMarkedElements = (elementIds: ReadonlySet<string>) => {
+        if (elementIds.size > 0) {
             const elementsToRemove = board.children.filter((element) =>
-                elementsToDelete.has(element.id)
+                elementIds.has(element.id)
             );
             
             if (elementsToRemove.length > 0) {
@@ -60,19 +60,26 @@ export const withFreehandErase = (board: PlaitBoard) => {
 
     const complete = async () => {
         if (isErasing) {
-            // Freehand 笔画统一用整体删除（两种模式一致）
-            deleteMarkedElements();
+            // 先释放当前手势状态；后续异步擦除只能读取本笔快照，不能清空下一笔。
+            const completedPath = eraserPath;
+            const completedElementIds = new Set(elementsToDelete);
+            isErasing = false;
+            elementsToDelete.clear();
+            eraserPath = [];
 
-            if (eraserPath.length >= 2) {
+            // Freehand 笔画统一用整体删除（两种模式一致）
+            deleteMarkedElements(completedElementIds);
+
+            if (completedPath.length >= 2) {
                 const settings = getFreehandSettings(board);
                 // 对非 Freehand 的支持元素使用布尔运算
-                const targetElements = findElementsInEraserPath(board, eraserPath, settings.eraserWidth)
+                const targetElements = findElementsInEraserPath(board, completedPath, settings.eraserWidth)
                     .filter(el => !Freehand.isFreehand(el));
                 if (targetElements.length > 0) {
                     try {
                         await executePreciseErase(
                             board,
-                            eraserPath,
+                            completedPath,
                             settings.eraserWidth,
                             settings.eraserShape,
                             targetElements
@@ -82,17 +89,13 @@ export const withFreehandErase = (board: PlaitBoard) => {
                     }
                 }
                 // 直接删除不支持布尔运算的非 Freehand 元素，跳过 Frame/图片/视频
-                const unsupportedElements = findUnsupportedElementsInEraserPath(board, eraserPath, settings.eraserWidth)
+                const unsupportedElements = findUnsupportedElementsInEraserPath(board, completedPath, settings.eraserWidth)
                     .filter(el => !Freehand.isFreehand(el) && !isFrameElement(el) && !isPlaitVideo(el)
                         && !(PlaitDrawElement.isDrawElement(el) && PlaitDrawElement.isImage(el)));
                 if (unsupportedElements.length > 0) {
                     CoreTransforms.removeElements(board, unsupportedElements);
                 }
             }
-
-            isErasing = false;
-            elementsToDelete.clear();
-            eraserPath = [];
         }
     };
 

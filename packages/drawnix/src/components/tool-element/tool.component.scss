@@ -4,8 +4,6 @@
  * 工具元素样式
  */
 
-@import './tool-error-overlay.scss';
-
 .plait-tool-element {
   // 工具元素基础样式
   // 注意：移除了 cursor: move，因为只有标题栏才可拖动
@@ -174,4 +172,3 @@
     }
   }
 }
-

@@ -7,7 +7,6 @@
 
 import { PlaitBoard, RectangleClient } from '@plait/core';
 import { PlaitTool, ToolDefinition } from '../../types/toolbox.types';
-import { ToolLoadState, ToolErrorType, ToolErrorEventDetail } from '../../types/tool-error.types';
 import { createRoot, Root } from 'react-dom/client';
 import React, { Suspense } from 'react';
 import { ToolProviderWrapper } from '../startup/ToolProviderWrapper';
@@ -23,13 +22,8 @@ export class ToolGenerator {
   private board: PlaitBoard;
   private iframeCache = new Map<string, HTMLIFrameElement>();
   private reactRoots = new Map<string, Root>();
-  private loadStates = new Map<string, ToolLoadState>();
-  private loadTimeouts = new Map<string, NodeJS.Timeout>();
   private canvasClickHandler: ((e: MouseEvent) => void) | null = null;
   private settingsChangeHandler: (() => void) | null = null;
-
-  // 加载超时时间（毫秒）
-  private static readonly LOAD_TIMEOUT = 10000; // 10 秒
 
   private scheduleRootUnmount(root: Root): void {
     setTimeout(() => {
@@ -546,32 +540,6 @@ export class ToolGenerator {
   private createIframe(element: PlaitTool): HTMLIFrameElement {
     const iframe = document.createElement('iframe');
 
-    // 初始化加载状态
-    const loadState: ToolLoadState = {
-      status: 'loading',
-      loadStartTime: Date.now(),
-      retryCount: 0,
-    };
-    this.loadStates.set(element.id, loadState);
-
-    // 成功加载
-    iframe.onload = () => {
-      // 检测 CORS 错误
-      if (this.detectCorsError(iframe)) {
-        this.handleLoadError(element.id, ToolErrorType.CORS_BLOCKED);
-      } else {
-        this.handleLoadSuccess(element.id);
-      }
-    };
-
-    // 加载失败
-    iframe.onerror = () => {
-      this.handleLoadError(element.id, ToolErrorType.LOAD_FAILED);
-    };
-
-    // 设置超时检测
-    this.setupLoadTimeout(element.id);
-
     // 处理模板变量（如 ${apiKey}），在渲染时动态替换
     const { url: processedUrl, missingVariables } = processToolUrl(element.url!);
     
@@ -688,142 +656,6 @@ export class ToolGenerator {
   }
 
   /**
-   * 设置加载超时检测
-   */
-  private setupLoadTimeout(elementId: string): void {
-    const timeoutId = setTimeout(() => {
-      const state = this.loadStates.get(elementId);
-      if (state && state.status === 'loading') {
-        this.handleLoadError(elementId, ToolErrorType.TIMEOUT);
-      }
-    }, ToolGenerator.LOAD_TIMEOUT);
-
-    this.loadTimeouts.set(elementId, timeoutId);
-  }
-
-  /**
-   * 检测 CORS 错误
-   * 尝试访问 iframe.contentWindow.location，如果抛出异常则可能是 CORS
-   */
-  private detectCorsError(iframe: HTMLIFrameElement): boolean {
-    try {
-      // 如果可以访问 location，说明没有 CORS 限制
-      void iframe.contentWindow?.location.href;
-      return false;
-    } catch (e) {
-      // 访问被拒绝，可能是 X-Frame-Options 或 CSP
-      return true;
-    }
-  }
-
-  /**
-   * 处理加载成功
-   */
-  private handleLoadSuccess(elementId: string): void {
-    const state = this.loadStates.get(elementId);
-    if (state) {
-      state.status = 'loaded';
-      this.loadStates.set(elementId, state);
-
-      // 清除超时定时器
-      const timeoutId = this.loadTimeouts.get(elementId);
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        this.loadTimeouts.delete(elementId);
-      }
-    }
-  }
-
-  /**
-   * 处理加载错误
-   */
-  private handleLoadError(elementId: string, errorType: ToolErrorType): void {
-    const state = this.loadStates.get(elementId);
-    if (state) {
-      state.status = 'error';
-      state.errorType = errorType;
-      state.errorMessage = this.getErrorMessage(errorType);
-      this.loadStates.set(elementId, state);
-
-      // 清除超时定时器
-      const timeoutId = this.loadTimeouts.get(elementId);
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-        this.loadTimeouts.delete(elementId);
-      }
-
-      // 触发错误事件
-      this.emitErrorEvent(elementId, errorType, state.errorMessage);
-    }
-  }
-
-  /**
-   * 获取错误提示文案
-   */
-  private getErrorMessage(errorType: ToolErrorType): string {
-    const messages: Record<ToolErrorType, string> = {
-      [ToolErrorType.LOAD_FAILED]: '工具加载失败，请检查网络连接',
-      [ToolErrorType.CORS_BLOCKED]: '该网站禁止嵌入，无法显示',
-      [ToolErrorType.PERMISSION_DENIED]: '权限不足，无法加载工具',
-      [ToolErrorType.TIMEOUT]: '加载超时，请重试',
-    };
-    return messages[errorType] || '未知错误';
-  }
-
-  /**
-   * 触发错误事件
-   */
-  private emitErrorEvent(
-    elementId: string,
-    errorType: ToolErrorType,
-    errorMessage?: string
-  ): void {
-    const detail: ToolErrorEventDetail = {
-      elementId,
-      errorType,
-      errorMessage,
-    };
-
-    const event = new CustomEvent('tool-load-error', { detail });
-    window.dispatchEvent(event);
-  }
-
-  /**
-   * 获取工具加载状态
-   */
-  getLoadState(elementId: string): ToolLoadState | undefined {
-    return this.loadStates.get(elementId);
-  }
-
-  /**
-   * 重试加载工具
-   */
-  retryLoad(elementId: string): void {
-    const state = this.loadStates.get(elementId);
-    if (state) {
-      state.status = 'loading';
-      state.retryCount += 1;
-      state.loadStartTime = Date.now();
-      delete state.errorType;
-      delete state.errorMessage;
-      this.loadStates.set(elementId, state);
-
-      // 重新加载 iframe
-      const iframe = this.iframeCache.get(elementId);
-      if (iframe) {
-        // 重新设置超时
-        this.setupLoadTimeout(elementId);
-        // 重新加载（触发 src 赋值）
-        const currentSrc = iframe.src;
-        iframe.src = 'about:blank';
-        setTimeout(() => {
-          iframe.src = currentSrc;
-        }, 100);
-      }
-    }
-  }
-
-  /**
    * 打开为弹窗
    * 从画布移除工具元素，以 WinBox 弹窗形式打开
    */
@@ -884,12 +716,6 @@ export class ToolGenerator {
       this.settingsChangeHandler = null;
     }
 
-    // 清理所有超时定时器
-    this.loadTimeouts.forEach((timeoutId) => {
-      clearTimeout(timeoutId);
-    });
-    this.loadTimeouts.clear();
-
     // 清理所有 iframe 引用
     this.iframeCache.forEach((iframe) => {
       // 清除 src 以停止加载
@@ -902,9 +728,6 @@ export class ToolGenerator {
       this.scheduleRootUnmount(root);
     });
     this.reactRoots.clear();
-
-    // 清理加载状态
-    this.loadStates.clear();
 
     // 移除所有蒙层
     const overlays = document.querySelectorAll('.iframe-protection-overlay');

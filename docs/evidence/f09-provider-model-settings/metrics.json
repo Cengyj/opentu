@@ -1,0 +1,172 @@
+{
+  "feature": "F-09 provider/model settings content interface",
+  "date": "2026-07-30",
+  "classification": "read-only fact model and approval-gated OpenSpec proposal",
+  "environment": {
+    "asset": "current dist/apps/web",
+    "url": "http://127.0.0.1:7395/?sw=0",
+    "browser": "Chromium controlled through Codex Browser",
+    "viewportCssPx": { "width": 1280, "height": 720 },
+    "devicePixelRatio": 1,
+    "networkThrottle": "none configured",
+    "cpuThrottle": "none configured",
+    "sampleCount": 1,
+    "browserStorageRead": false,
+    "credentialValueRead": false,
+    "providerRequestsTriggered": 0,
+    "pricingRequestsTriggered": 0,
+    "healthRequestsTriggered": 0,
+    "settingsSaved": false
+  },
+  "productionObservation": {
+    "settingsContentRoot": {
+      "role": null,
+      "ariaLabel": null,
+      "ariaLabelledBy": null,
+      "x": 77,
+      "y": 91,
+      "width": 1126,
+      "height": 586,
+      "initialActiveElement": "BODY",
+      "classification": "adjacent shared WinBox/settings shell; excluded from F-09 owner"
+    },
+    "sharedViewNavigation": {
+      "buttonCount": 4,
+      "labels": ["供应商", "模型预设", "画布显示", "语音播放"],
+      "ariaPressedPresent": 0,
+      "ariaSelectedPresent": 0,
+      "ariaCurrentPresent": 0,
+      "activeClassCount": 1,
+      "classification": "confirmed adjacent fact; shared F-26 ownership unresolved"
+    },
+    "providerSelection": {
+      "buttonCount": 2,
+      "selectedState": "aria-pressed",
+      "defaultBefore": true,
+      "codexAfterSafeSelection": true,
+      "defaultRestored": true,
+      "classification": "non-problem"
+    },
+    "providerSwitches": {
+      "count": 3,
+      "roleSwitchCount": 3,
+      "typeButtonCount": 3,
+      "ariaLabelPresent": 0,
+      "ariaLabelledByPresent": 0,
+      "ariaCheckedPresent": 0,
+      "checkedClassCount": 2,
+      "geometryCssPx": [
+        { "width": 26, "height": 16 },
+        { "width": 26, "height": 16 },
+        { "width": 26, "height": 16 }
+      ]
+    },
+    "providerForm": {
+      "inputCount": 6,
+      "inputTypes": ["text", "url", "text", "password", "text", "number"],
+      "nativeSelectCount": 2,
+      "visibleLabelCount": 9,
+      "labelsWithFor": 0,
+      "controlsWithId": 0,
+      "controlsWithAriaLabel": 0,
+      "controlsWithAriaLabelledBy": 0,
+      "placeholderOnlyOrUnnamedPurposes": [
+        "provider name",
+        "provider type",
+        "image API compatibility",
+        "icon URL",
+        "API base URL",
+        "API key",
+        "pricing URL",
+        "CNY per USD"
+      ],
+      "namedRevealButton": true
+    },
+    "modelManagementStatic": {
+      "summaryGroupDisclosureElement": "div with onClick",
+      "summaryGroupKeyboardHandler": false,
+      "summaryGroupAriaExpanded": false,
+      "summaryIconActionsWithDirectName": 0,
+      "discoveryTypeFiltersWithProgrammaticSelectedState": 0,
+      "discoveryVendorButtonsWithAriaExpanded": 0,
+      "discoveryTestIconWithDirectName": false,
+      "modelCheckboxWrappedByLabel": true,
+      "populatedProductionState": "blocked by absent model catalog/API key; no provider call manufactured"
+    },
+    "localization": {
+      "i18nProviderMounted": true,
+      "supportedLanguages": ["zh", "en"],
+      "f09ModulesConsumingUseI18n": 0,
+      "runtimeEnglishScreenshot": false,
+      "evidence": "static language-owner/control-flow proof"
+    }
+  },
+  "screenshot": {
+    "path": "docs/evidence/f09-provider-model-settings/provider-settings-desktop-1280x720-before.jpg",
+    "format": "JPEG",
+    "width": 1280,
+    "height": 720,
+    "bytes": 64850,
+    "sha256": "5a6f4f6395ce7a39e37cddf1498ffad2f48bdaf7e7ecd88334c1d2cc3b3d54f7",
+    "afterScreenshotAvailable": false
+  },
+  "openspec": {
+    "change": "improve-provider-model-settings-accessibility",
+    "capability": "provider-model-settings-accessibility",
+    "strictValidationExitCode": 127,
+    "strictValidationPassed": false,
+    "manualValidation": {
+      "requiredFilesPresent": true,
+      "deltaOperations": 1,
+      "requirements": 3,
+      "scenarios": 11,
+      "whenLines": 11,
+      "thenLines": 11,
+      "uniqueRequirementNames": true,
+      "singleActiveCapabilityOwner": true
+    },
+    "tasks": { "completed": 7, "total": 28 },
+    "approvalRequired": true
+  },
+  "focusedRegression": {
+    "command": "fixed Node PATH + direct Vitest run of three settings-dialog pure files and runtime-model-discovery.test.ts",
+    "exitCode": 0,
+    "files": { "passed": 4, "failed": 0, "total": 4 },
+    "tests": { "passed": 25, "failed": 0, "total": 25 },
+    "durationSeconds": 2.05
+  },
+  "wideRegression": {
+    "command": "pnpm --filter @aitu/drawnix test -- <four paths>; package wrapper passed an extra separator and Vitest ran the full package suite",
+    "exitCode": 1,
+    "files": { "passed": 184, "failed": 4, "skipped": 1, "total": 189 },
+    "tests": { "passed": 1161, "failed": 3, "skipped": 1, "total": 1165 },
+    "durationSeconds": 90.86,
+    "failureClusters": [
+      "cached local image to data URL environment",
+      "GPT image Blob mock environment",
+      "Sora web duration assertion drift",
+      "PPT settings-manager mock export drift"
+    ],
+    "classification": "same four baseline clusters recorded before this documentation-only pass; no F-09 focused failure"
+  },
+  "responsive": {
+    "desktop1280x720": "measured",
+    "tablet768x1024": "blocked",
+    "mobile390x844": "blocked",
+    "highDpi": "blocked",
+    "themeMatrix": "blocked",
+    "blocker": "Codex Browser binding has no viewport emulation; formal Playwright lacks chromium_headless_shell revision 1200."
+  },
+  "cleanup": {
+    "tabClosed": true,
+    "serverStopped": true,
+    "temporaryFilesPresent": false
+  },
+  "claims": {
+    "productRuntimeChanged": false,
+    "performanceImprovement": false,
+    "visualImprovement": false,
+    "afterScreenshotAvailable": false,
+    "allF09ExitCriteriaMet": false
+  }
+}

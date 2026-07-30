@@ -1154,7 +1154,9 @@ function rewriteManifestAssetsToCDNPlugin(): Plugin {
 // 检测是否在 watch 模式下运行（命令行包含 --watch）
 const isWatchMode = process.argv.includes('--watch');
 const isServeMode = process.argv.includes('serve');
-const reactNodeEnv = isWatchMode || isServeMode ? 'development' : 'production';
+const isTestMode = process.env.VITEST === 'true';
+const reactNodeEnv =
+  isWatchMode || isServeMode || isTestMode ? 'development' : 'production';
 
 export default defineConfig({
   root: __dirname,

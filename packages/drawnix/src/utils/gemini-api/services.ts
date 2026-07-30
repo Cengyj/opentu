@@ -635,7 +635,7 @@ export async function sendChatWithGemini(
         validatedConfig,
         messages,
         (chunk) => {
-          resultText += chunk;
+          resultText = chunk;
           onChunk(chunk);
         },
         signal

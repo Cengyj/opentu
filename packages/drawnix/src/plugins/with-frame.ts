@@ -572,6 +572,31 @@ export const FrameTransforms = {
   },
 
   /**
+   * 按给定 ID 顺序重排根级 Frame。
+   *
+   * 页序元数据同步由该边界统一负责，避免 PPT 编辑列表、播放与导出
+   * 分别读取 board 顺序和 pptMeta.pageIndex 后产生状态分叉。
+   */
+  reorderPPTFrames(board: PlaitBoard, orderedFrameIds: string[]): void {
+    reorderRootFramesByIds(board, orderedFrameIds);
+
+    const reorderedFrames = board.children.filter(isFrameElement) as Array<
+      PlaitFrame & { pptMeta?: PPTFrameMeta }
+    >;
+    const isPPTDeck =
+      reorderedFrames.length > 0 &&
+      reorderedFrames.every((frame) => frame.pptMeta !== undefined);
+    if (!isPPTDeck) {
+      return;
+    }
+
+    renumberPPTFrames(
+      board,
+      reorderedFrames.map((frame) => frame.id)
+    );
+  },
+
+  /**
    * 绑定元素到 Frame
    */
   bindToFrame(board: PlaitBoard, element: PlaitElement, frame: PlaitFrame): void {

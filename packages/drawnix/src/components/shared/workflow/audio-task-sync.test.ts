@@ -57,6 +57,32 @@ describe('audio-task-sync', () => {
     ]);
   });
 
+  it('does not promote provider row ids to continuation clip ids', () => {
+    const task = createTask({
+      id: 'task_row_id_only',
+      result: {
+        url: '',
+        format: 'mp3',
+        size: 1,
+        clips: [
+          {
+            id: 'provider_row_id',
+            audioUrl: 'https://example.com/row-id-only.mp3',
+          },
+        ],
+      },
+    });
+
+    expect(extractGeneratedClipsFromAudioTask(task)).toEqual([
+      {
+        clipId: '',
+        audioUrl: 'https://example.com/row-id-only.mp3',
+        duration: null,
+        taskId: 'task_row_id_only',
+      },
+    ]);
+  });
+
   it('falls back to single-url audio result payloads', () => {
     const task = createTask({
       id: 'task_url',

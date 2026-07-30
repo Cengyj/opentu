@@ -92,6 +92,31 @@ describe('audio-api-service', () => {
     expect(extracted.clipIds).toEqual(['clip-1']);
   });
 
+  it('does not substitute provider row ids for missing clip_id values', async () => {
+    const { extractAudioGenerationResult } = await import('../audio-api-service');
+
+    const extracted = extractAudioGenerationResult({
+      taskId: 'task-row-id-only',
+      status: 'completed',
+      clips: [
+        {
+          id: 'provider-row-id',
+          status: 'complete',
+          audio_url: 'https://cdn1.suno.ai/row-id-only.mp3',
+        },
+      ],
+      raw: {},
+    });
+
+    expect(extracted.clips?.[0]).toMatchObject({
+      id: 'provider-row-id',
+      audioUrl: 'https://cdn1.suno.ai/row-id-only.mp3',
+    });
+    expect(extracted.clips?.[0]?.clipId).toBeUndefined();
+    expect(extracted.primaryClipId).toBeUndefined();
+    expect(extracted.clipIds).toBeUndefined();
+  });
+
   it('fails early when task id is empty instead of querying an invalid fetch path', async () => {
     const sendMock = vi.fn().mockResolvedValueOnce(
       new Response(JSON.stringify({ code: 'success', data: '' }), {

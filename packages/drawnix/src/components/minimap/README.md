@@ -10,7 +10,7 @@ Minimap（小地图）是一个画布导航组件，用于解决无限画布中�
 ✅ **视口指示器**：高亮显示当前可视区域
 ✅ **点击跳转**：点击小地图任意位置，快速跳转到对应区域
 ✅ **拖拽移动**：拖拽视口框，平滑移动画布视图
-✅ **智能显示**：基于用户交互和内容复杂度自动显示/隐藏
+✅ **智能显示**：检测视口缩放或平移后自动显示/隐藏
 ✅ **自动缩放**：根据内容自动计算最佳缩放比例
 ✅ **实时同步**：自动跟踪元素变化和视口移动
 
@@ -28,8 +28,10 @@ packages/drawnix/src/
 │       ├── minimap.scss            # 样式文件
 │       └── index.ts                # 导出模块
 ├── constants/
-│   └── z-index.ts                  # z-index 常量（新增 MINIMAP: 4030）
-└── drawnix.tsx                     # 主应用（已集成 Minimap）
+│   └── z-index.ts                  # VIEW_NAVIGATION/MINIMAP: 4005
+├── components/
+│   └── view-navigation/            # 当前产品集成层（缩放 + Minimap）
+└── drawnix.tsx                     # 挂载 ViewNavigation
 ```
 
 ### 技术栈
@@ -48,8 +50,10 @@ Minimap 已经集成到 Drawnix 主组件中，无需额外配置：
 
 ```tsx
 // packages/drawnix/src/drawnix.tsx
-{board && <Minimap board={board} />}
+<ViewNavigation />
 ```
+
+`ViewNavigation` 负责顶部缩放按钮、展开状态、视口变化检测和 3 秒自动隐藏，展开时以 `displayMode="always"` 挂载 `Minimap`。下面的直接用法只适用于需要单独复用组件的代码。
 
 ### 2. 智能显示模式
 
@@ -70,11 +74,6 @@ import { Minimap } from './components/minimap';
   board={board}
   displayMode="auto"
   autoTriggerConfig={{
-    enableInteractionTrigger: true,    // 启用交互触发
-    interactionShowDuration: 5000,     // 交互后显示 5 秒
-    enableContentComplexityTrigger: true, // 启用内容复杂度触发
-    minElementCount: 10,               // 至少 10 个元素
-    contentSpreadThreshold: 2.5,       // 内容分散度阈值
     autoHideDelay: 3000,               // 3 秒后自动隐藏
   }}
 />
@@ -93,12 +92,9 @@ import { Minimap } from './components/minimap';
 **交互触发**：
 - 用户拖拽画布（空格 + 拖拽）
 - 用户缩放画布（滚轮、缩放按钮）
-- 显示持续 5 秒后自动隐藏
+- 默认在交互停止 3 秒后自动隐藏
 
-**内容复杂度触发**：
-- 画布元素数量 ≥ 10 个
-- 内容分散度 ≥ 2.5 倍视口大小
-- 用户可手动关闭后禁用自动显示
+当前实现没有“元素数量”或“内容分散度”触发器。`autoTriggerConfig` 只接受 `autoHideDelay`。
 
 ### 5. 自定义配置
 
@@ -117,7 +113,7 @@ import { Minimap } from './components/minimap';
     defaultExpanded: false,  // 默认折叠，由智能显示控制
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     viewportColor: 'rgba(90, 79, 207, 0.3)',
-    elementColor: 'rgba(0, 0, 0, 0.2)',
+    elementColor: 'rgba(0, 0, 0, 0.5)',
   }}
 />
 ```
@@ -136,7 +132,8 @@ import { Minimap } from './components/minimap';
 | `backgroundColor` | string | 'rgba(255, 255, 255, 0.95)' | 背景颜色 |
 | `borderColor` | string | 'rgba(0, 0, 0, 0.1)' | 边框颜色 |
 | `viewportColor` | string | 'rgba(90, 79, 207, 0.3)' | 视口框颜色 |
-| `elementColor` | string | 'rgba(0, 0, 0, 0.2)' | 元素颜色 |
+| `elementColor` | string | 'rgba(0, 0, 0, 0.5)' | 元素颜色 |
+| `autoTriggerConfig.autoHideDelay` | number | 3000 | `auto` 模式交互停止后的隐藏延迟（毫秒） |
 
 ## 交互说明
 
@@ -144,7 +141,7 @@ import { Minimap } from './components/minimap';
 
 - **点击**：点击小地图任意位置，画布视口跳转到对应区域（居中）
 - **拖拽**：按住鼠标/手指拖动视口框，实时移动画布
-- **折叠/展开**：点击右上角按钮切换展开状态
+- **折叠/展开**：产品集成由 `ViewNavigation` 顶部按钮控制；直接使用且 `collapsible=true` 时由组件内部按钮控制
 
 ### 光标变化
 
@@ -220,19 +217,19 @@ useEffect(() => {
 }, [board, state.expanded, render]);
 ```
 
-## 性能优化
+## 渲染实现与性能状态
 
 ### 1. Canvas 渲染
-- 使用 Canvas 2D 而非 SVG，渲染性能更优
-- 元素简化为矩形块，减少绘制复杂度
+- 使用 Canvas 2D 绘制元素的矩形概览和当前视口框
+- 当前没有 Canvas 与其他渲染方案的同条件性能对照，不能据此声称性能提升
 
-### 2. 防抖与节流
-- 拖拽时使用 `requestAnimationFrame` 平滑更新
-- 100ms 轮询间隔，平衡实时性与性能
+### 2. 更新时序
+- pointer 移动会更新 viewport，并通过 `requestAnimationFrame` 请求一次重绘
+- 展开状态下另有 100ms 定时重绘；其空闲和大元素集成本仍是 F-04 的待测假设
 
 ### 3. 条件渲染
-- 折叠时停止渲染循环，节省资源
-- 空画布时显示提示，避免无效计算
+- `state.expanded=false` 时停止定时重绘
+- 空画布仍绘制视口范围，不显示额外空态文案
 
 ## 样式定制
 
@@ -248,43 +245,19 @@ useEffect(() => {
 }
 ```
 
-### 暗色主题支持
-
-```scss
-@media (prefers-color-scheme: dark) {
-  .minimap {
-    &__content {
-      background: rgba(30, 30, 30, 0.95);
-      border-color: rgba(255, 255, 255, 0.1);
-    }
-  }
-}
-```
-
 ## 事件追踪
 
-内置 Umami 追踪点：
+当前运行时记录：
 
-- `minimap_container` - Minimap 容器
-- `minimap_click_toggle` - 折叠/展开按钮点击
+- `minimap_navigate` analytics 事件，payload 仅含 `action: click | drag` 和 `displayMode`
+- `minimap_container` - Minimap 容器 `data-track`
+- `minimap_click_toggle` - 独立组件折叠按钮 `data-track`
+- `view_nav_minimap_toggle` - 当前产品集成层展开按钮 `data-track`
 
-## 未来扩展
+## 当前审计状态
 
-### 可能的增强功能
-
-1. **缩略图缓存**：缓存渲染结果，减少重绘
-2. **按需渲染**：仅在元素/视口变化时更新
-3. **元素过滤**：支持隐藏特定类型的元素
-4. **缩放手势**：移动端双指缩放支持
-5. **书签功能**：记住常用位置，快速跳转
-6. **热区高亮**：显示元素密度热力图
-
-### 待优化项
-
-- [ ] 移动端触摸优化
-- [ ] 大量元素时的性能优化（虚拟化）
-- [ ] 自定义元素颜色映射
-- [ ] 键盘快捷键支持
+- 键盘语义、可访问名称、compact 触控目标和减少动画行为记录在待审批 change：`improve-canvas-navigation-accessibility`，审批前不属于当前运行时能力。
+- 100ms 轮询在空画布和大元素集下的成本尚无至少 5 次同条件数据；在测量完成前保留为假设，不声称瓶颈或性能改善。
 
 ## 故障排查
 

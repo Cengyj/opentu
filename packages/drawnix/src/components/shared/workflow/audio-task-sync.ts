@@ -33,7 +33,7 @@ export function extractGeneratedClipsFromAudioTask(task: Task): WorkflowGenerate
     for (const clip of result.clips) {
       if (clip.audioUrl) {
         clips.push(sanitizeGeneratedClip({
-          clipId: clip.clipId || clip.id || '',
+          clipId: clip.clipId || '',
           audioUrl: clip.audioUrl,
           imageUrl: clip.imageUrl || clip.imageLargeUrl,
           title: clip.title,

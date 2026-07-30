@@ -3,16 +3,89 @@
  * 工作区重命名验证测试
  */
 
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { workspaceService } from '../workspace-service';
+import { workspaceStorageService } from '../workspace-storage-service';
 import {
   ValidationError,
   WORKSPACE_DEFAULTS,
 } from '../../types/workspace.types';
 
+const localForageHarness = vi.hoisted(() => {
+  const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+  const stores = new Map<string, Map<string, unknown>>();
+
+  const getStore = (storeName: string) => {
+    let store = stores.get(storeName);
+    if (!store) {
+      store = new Map();
+      stores.set(storeName, store);
+    }
+    return store;
+  };
+
+  return {
+    localforage: {
+      INDEXEDDB: 'INDEXEDDB',
+      createInstance: vi.fn(({ storeName }: { storeName: string }) => {
+        const store = getStore(storeName);
+        return {
+          ready: vi.fn(async () => undefined),
+          setItem: vi.fn(async (key: string, value: unknown) => {
+            store.set(key, clone(value));
+            return clone(value);
+          }),
+          getItem: vi.fn(async <T>(key: string): Promise<T | null> => {
+            const value = store.get(key);
+            return value === undefined ? null : clone(value as T);
+          }),
+          removeItem: vi.fn(async (key: string) => {
+            store.delete(key);
+          }),
+          iterate: vi.fn(
+            async <T, U>(callback: (value: T, key: string) => U) => {
+              for (const [key, value] of store) {
+                callback(clone(value as T), key);
+              }
+            }
+          ),
+          clear: vi.fn(async () => {
+            store.clear();
+          }),
+          length: vi.fn(async () => store.size),
+        };
+      }),
+    },
+  };
+});
+
+vi.mock('localforage', () => ({
+  default: localForageHarness.localforage,
+}));
+
+vi.mock('../github-sync/sync-engine', () => ({
+  syncEngine: {
+    markDirty: vi.fn(),
+    recordLocalDeletion: vi.fn(async () => undefined),
+    syncBoardDeletion: vi.fn(async () => ({ success: true })),
+  },
+}));
+
+vi.mock('../github-sync/token-service', () => ({
+  tokenService: {
+    hasToken: vi.fn(() => false),
+  },
+}));
+
 describe('Workspace Rename Validation', () => {
-  beforeEach(async () => {
-    // 初始化工作区
+  beforeAll(async () => {
     await workspaceService.initialize();
+  });
+
+  beforeEach(async () => {
+    sessionStorage.clear();
+    await workspaceStorageService.clearAll();
+    await workspaceService.reload();
   });
 
   describe('Board Rename Validation', () => {

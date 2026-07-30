@@ -1,0 +1,161 @@
+{
+  "featureId": "F-24",
+  "feature": "Music player, canvas/global audio playback, playlists, and reading queue",
+  "capturedAt": "2026-07-29T23:28:00+08:00",
+  "sourceState": {
+    "gitMetadata": false,
+    "limitation": "Cannot verify worktree cleanliness or history because this directory is not a Git repository."
+  },
+  "browser": {
+    "surface": "Codex in-app Browser",
+    "engine": "Chromium",
+    "appUrl": "http://127.0.0.1:7200/?board=8be2a894-1253-463c-b67f-b799c3af21bc",
+    "viewportCssPx": { "width": 1280, "height": 720 },
+    "devicePixelRatio": 1,
+    "network": "normal host network; not throttled",
+    "cpu": "not throttled",
+    "theme": "light",
+    "locale": "zh-CN",
+    "providerCalls": 0,
+    "realCredentialRead": false,
+    "realCredentialSent": false,
+    "playlistMutations": 0,
+    "knowledgeNoteMutations": 0,
+    "localSpeechSynthesisRuns": 1,
+    "temporaryPreferenceChange": {
+      "speed": "1x -> 1.25x -> 1x",
+      "mode": "sequential -> list-loop -> sequential",
+      "restored": true
+    }
+  },
+  "reachableState": {
+    "audioAssetCount": 0,
+    "knowledgeReadingCount": 10,
+    "favoritesCount": 0,
+    "emptyAudioPlayDisabled": true,
+    "readingSelection": "selecting the all-reading tab exposed 10 named note rows and selected the first row without auto-playing",
+    "readingPlayback": "local SpeechSynthesis changed the shared state to reading/playing and rendered 20 subtitle segments",
+    "minimizeContinuity": "after minimizing, the global overlay retained title, queue 1/10, progress, volume, speed, and mode; restoring the tool retained the same shared state",
+    "preferenceSync": "overlay changes to 1.25x/list-loop were visible in the restored music-player tool; both values were restored to 1x/sequential"
+  },
+  "geometry": {
+    "musicPlayerWinbox": { "x": 380, "y": 40, "width": 520, "height": 640 },
+    "musicPlayerRoot": { "x": 380, "y": 88, "width": 520, "height": 592 },
+    "globalOverlay": { "x": 260, "y": 10, "width": 760, "height": 50 },
+    "overlayControlsCssPx": {
+      "previous": { "width": 28, "height": 28 },
+      "primary": { "width": 32, "height": 32 },
+      "next": { "width": 28, "height": 28 },
+      "volume": { "width": 28, "height": 28 },
+      "speed": { "width": 28, "height": 28 },
+      "mode": { "width": 28, "height": 28 },
+      "openTool": { "width": 28, "height": 28 },
+      "layout": { "width": 28, "height": 28 },
+      "close": { "width": 28, "height": 28 }
+    },
+    "classification": "raw desktop geometry only; no touch-target defect conclusion without compact/touch viewport evidence"
+  },
+  "accessibility": {
+    "namedControls": [
+      "queue trigger",
+      "volume",
+      "speed",
+      "mode",
+      "open player tool",
+      "music-player tool previous/play-next/speed/mode/minimize"
+    ],
+    "unnamedGlobalOverlayButtons": [
+      "previous",
+      "play/pause",
+      "next",
+      "layout",
+      "close"
+    ],
+    "outerWinbox": "visible title controls were SPAN elements without role, tab stop, title, or aria-label; ownership remains improve-tool-window-accessibility"
+  },
+  "warmRestoreObservation": {
+    "definition": "page Date.now elapsed from clicking the global overlay open-tool button until the existing WinBox no longer had its minimized class",
+    "cache": "warm application and already mounted tool session",
+    "trials": 5,
+    "samplesMs": [408, 552, 582, 539, 514],
+    "medianMs": 539,
+    "minMs": 408,
+    "maxMs": 582,
+    "coldStartMeasured": false,
+    "beforeAfterComparison": false,
+    "performanceConclusion": false,
+    "limitations": "Includes Browser control and polling/render overhead; one unrelated Browser telemetry timeout was printed and is not an app product result."
+  },
+  "isolatedDiagnostics": {
+    "runtime": "Node.js 24.14.0, Vitest 3.2.4",
+    "testFiles": 3,
+    "tests": 10,
+    "passed": 10,
+    "exitCode": 0,
+    "allStorageCacheMediaAndSpeechBoundariesMocked": true,
+    "temporaryTestsRemoved": true,
+    "facts": [
+      "an older cache resolution replaced a later active playback intent",
+      "an older play rejection changed the newer active track to failed and paused",
+      "a pending request reactivated after stopAndClear",
+      "two concurrent additions retained only one of two distinct items",
+      "two concurrent creates persisted duplicate custom playlist names",
+      "injected second-store failures left partial create, delete, add, and remove results",
+      "an older Context reload completion replaced a newer visible snapshot"
+    ]
+  },
+  "commands": [
+    {
+      "name": "initial pnpm exec vitest diagnostic attempt",
+      "exitCode": 127,
+      "result": "pnpm wrapper child could not find node; environment failure, no test result"
+    },
+    {
+      "name": "isolated F-24 playback and playlist diagnostics",
+      "exitCode": 0,
+      "result": "2 files passed, 9 tests passed, 2.01 s"
+    },
+    {
+      "name": "isolated F-24 AudioPlaylistContext diagnostic with jsdom",
+      "exitCode": 0,
+      "result": "1 file passed, 1 test passed, 5.03 s"
+    },
+    {
+      "name": "permanent canvas playback, playlist, and CanvasAudioPlayer tests in default node environment",
+      "exitCode": 1,
+      "result": "3 files: 1 failed, 1 passed, 1 skipped; 21 passed, 2 failed, 1 skipped; both failures require missing localStorage"
+    },
+    {
+      "name": "canvas playback and CanvasAudioPlayer tests with jsdom",
+      "exitCode": 0,
+      "result": "1 file passed, 1 skipped; 20 tests passed, 1 skipped, 2.67 s; missing indexedDB produced configuration-writer stderr noise"
+    },
+    {
+      "name": "Drawnix tsc -p tsconfig.lib.json --noEmit using bundled Node",
+      "exitCode": 0,
+      "result": "completed with no diagnostics in approximately 36 s"
+    },
+    {
+      "name": "targeted ESLint for 13 F-24 chain files",
+      "exitCode": 1,
+      "result": "22 existing problems: 1 module-boundary error and 21 warnings; no runtime file changed"
+    },
+    {
+      "name": "three new F-24 openspec strict validations",
+      "exitCode": 127,
+      "result": "each command unavailable; manual structure/scenario/name/conflict audit completed"
+    }
+  ],
+  "screenshots": [
+    "empty-desktop-1280x720.png",
+    "paused-reading-overlay-desktop-1280x720.png"
+  ],
+  "responsive": {
+    "desktop1280x720": "measured",
+    "tablet768x1024": "blocked",
+    "mobile390x844": "blocked",
+    "darkTheme": "blocked",
+    "englishLocale": "blocked",
+    "blocker": "In-app Browser does not expose viewport emulation; formal Playwright lacks chromium_headless_shell revision 1200."
+  }
+}

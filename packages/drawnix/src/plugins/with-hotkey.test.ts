@@ -307,6 +307,23 @@ describe('buildDrawnixHotkeyPlugin', () => {
     expect(globalKeyDownMock).toHaveBeenCalledWith(event);
   });
 
+  it('characterizes the current suppression of native Tab navigation from the canvas', () => {
+    const board = buildDrawnixHotkeyPlugin(updateAppStateMock)(
+      createBoard()
+    ) as TestBoard;
+    const event = new KeyboardEvent('keydown', {
+      key: 'Tab',
+      cancelable: true,
+    });
+
+    board.globalKeyDown(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(globalKeyDownMock).not.toHaveBeenCalled();
+    expect(updatePointerTypeMock).not.toHaveBeenCalled();
+    expect(updateAppStateMock).not.toHaveBeenCalled();
+  });
+
   it('decreases freehand brush size with -', () => {
     const board = buildDrawnixHotkeyPlugin(updateAppStateMock)({
       ...createBoard(),

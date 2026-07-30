@@ -114,6 +114,10 @@ const WORKSPACE_DB_CONFIG = {
 
 const STATE_KEY = 'workspace_state';
 
+export type BoardMetadataUpdate = Partial<
+  Pick<BoardMetadata, 'name' | 'folderId' | 'order' | 'updatedAt'>
+>;
+
 /**
  * Helper to wait for browser idle time
  */
@@ -171,8 +175,9 @@ class WorkspaceStorageService {
   private foldersStore: LocalForage | null = null;
   private boardsStore: LocalForage | null = null;
   private stateStore: LocalForage | null = null;
-  private initialized: boolean = false;
+  private initialized = false;
   private initPromise: Promise<void> | null = null;
+  private boardWriteQueues = new Map<string, Promise<void>>();
 
   constructor() {
     // Defer store creation until initialization to detect version first
@@ -313,6 +318,31 @@ class WorkspaceStorageService {
     return this.stateStore;
   }
 
+  /**
+   * Serialize writes for one board so a metadata read-modify-write cannot
+   * overwrite a canvas save that started immediately before it.
+   */
+  private async enqueueBoardWrite<T>(
+    boardId: string,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const previous = this.boardWriteQueues.get(boardId) ?? Promise.resolve();
+    const queued = previous.catch(() => undefined).then(operation);
+    const completion = queued.then(
+      () => undefined,
+      () => undefined
+    );
+    this.boardWriteQueues.set(boardId, completion);
+
+    try {
+      return await queued;
+    } finally {
+      if (this.boardWriteQueues.get(boardId) === completion) {
+        this.boardWriteQueues.delete(boardId);
+      }
+    }
+  }
+
   // ========== Folder Operations ==========
 
   async saveFolder(folder: Folder): Promise<void> {
@@ -345,7 +375,37 @@ class WorkspaceStorageService {
 
   async saveBoard(board: Board): Promise<void> {
     await this.ensureInitialized();
-    await this.getBoardsStore().setItem(board.id, board);
+    await this.enqueueBoardWrite(board.id, async () => {
+      await this.getBoardsStore().setItem(board.id, board);
+    });
+  }
+
+  /**
+   * Update sidebar metadata without replacing the persisted board elements.
+   * Workspace startup intentionally loads metadata-only projections, so those
+   * projections must never be written back as complete boards.
+   */
+  async updateBoardMetadata(
+    id: string,
+    updates: BoardMetadataUpdate
+  ): Promise<Board> {
+    await this.ensureInitialized();
+    return this.enqueueBoardWrite(id, async () => {
+      const store = this.getBoardsStore();
+      const current = await store.getItem<Board>(id);
+      if (!current) {
+        throw new Error(`Board ${id} not found in storage`);
+      }
+
+      const updated: Board = {
+        ...current,
+        ...updates,
+        id: current.id,
+        elements: current.elements,
+      };
+      await store.setItem(id, updated);
+      return updated;
+    });
   }
 
   async loadBoard(id: string): Promise<Board | null> {

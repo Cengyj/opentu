@@ -14,6 +14,7 @@
   - `tags`
   - `providerTaskId`
 - [ ] 2.4 让 `music` 与 `lyrics` 共用轮询框架，但分别走各自的 submit body 与 result extractor
+- [ ] 2.5 建立统一 lyrics-capability predicate，排除强制 music/advanced alias，并让 selector 与提交校验复用
 
 ## 3. Task Queue And Persistence
 
@@ -44,3 +45,4 @@
 - [ ] 5.3 验证刷新页面后歌词任务仍可恢复与展示
 - [ ] 5.4 验证歌词任务在队列中可复制、可插入，且不会被误渲染为音频卡片
 - [ ] 5.5 验证音乐生成既有链路不回归
+- [ ] 5.6 验证旧歌词模型偏好指向 music-only alias 时安全回退且不删除偏好

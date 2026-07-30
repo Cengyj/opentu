@@ -53,11 +53,8 @@ interface AnalyzePageProps {
   existingRecord?: MVRecord | null;
   onComplete: (record: MVRecord) => void;
   onRecordsChange: (records: MVRecord[]) => void;
-  onCreateNew?: () => void;
   onNext?: () => void;
 }
-
-// PLACEHOLDER_ANALYZE_PAGE_BODY
 
 export const AnalyzePage: React.FC<AnalyzePageProps> = ({
   existingRecord,
@@ -179,8 +176,6 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
     });
     return () => sub.unsubscribe();
   }, [existingRecord?.pendingStoryboardTaskId]);
-
-// PLACEHOLDER_ANALYZE_PAGE_HANDLERS
 
   // 获取已有音频
   const [existingAudioClips, setExistingAudioClips] = useState<(GeneratedClip & { prompt?: string })[]>([]);
@@ -376,8 +371,6 @@ export const AnalyzePage: React.FC<AnalyzePageProps> = ({
       generatingRef.current = false;
     }
   }, [existingRecord, clipDuration, videoModel, videoModelRef, segmentDuration, videoStyle, creativeBrief, storyboardModel, storyboardModelRef, knowledgeContextRefs, selectedAudioUrl, onComplete, onRecordsChange]);
-
-// PLACEHOLDER_ANALYZE_PAGE_RENDER
 
   return (
     <div className="va-page">

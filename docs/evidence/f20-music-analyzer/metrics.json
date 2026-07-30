@@ -1,0 +1,177 @@
+{
+  "feature": "F-20 Music Analyzer / 爆款音乐生成",
+  "capturedAt": "2026-07-29",
+  "sourceLimitations": {
+    "gitMetadataAvailable": false,
+    "providerCredentialsUsed": false,
+    "paidProviderRequests": 0,
+    "configuredPlaywrightBrowserAvailable": false
+  },
+  "environment": {
+    "browser": "Codex in-app Chromium",
+    "sourceServer": "current Vite workspace source on http://127.0.0.1:7200/",
+    "language": "zh-CN",
+    "renderedTheme": "light",
+    "devicePixelRatio": 1,
+    "networkThrottling": "none",
+    "cpuThrottling": "none"
+  },
+  "desktop1280x720": {
+    "viewport": { "width": 1280, "height": 720 },
+    "winbox": {
+      "x": 124,
+      "y": 162,
+      "width": 520,
+      "height": 700,
+      "right": 644,
+      "bottom": 862
+    },
+    "closeControl": {
+      "x": 600.046875,
+      "y": 169.515625,
+      "width": 31.953125,
+      "height": 31.953125,
+      "right": 632,
+      "bottom": 201.46875
+    },
+    "contentPage": {
+      "x": 124,
+      "y": 295.5,
+      "width": 520,
+      "height": 566.5,
+      "clientWidth": 512,
+      "scrollWidth": 512,
+      "clientHeight": 567,
+      "scrollHeight": 725
+    },
+    "observation": "The 700 CSS px window extends 142 CSS px below the 720 CSS px viewport. The close control remains visible, while lower content requires the internal scroller."
+  },
+  "tablet768x1024": {
+    "viewport": { "width": 768, "height": 1024 },
+    "winbox": {
+      "x": 124,
+      "y": 162,
+      "width": 520,
+      "height": 700,
+      "right": 644,
+      "bottom": 862
+    },
+    "closeControl": {
+      "x": 600.15625,
+      "y": 167.578125,
+      "width": 31.84375,
+      "height": 31.84375,
+      "right": 632,
+      "bottom": 199.421875
+    },
+    "body": {
+      "clientWidth": 509,
+      "scrollWidth": 509,
+      "clientHeight": 652,
+      "scrollHeight": 887
+    },
+    "observation": "The complete window and title controls fit inside the tablet viewport; no horizontal window clipping was measured."
+  },
+  "mobile390x844AfterDesktopTransition": {
+    "viewport": { "width": 390, "height": 844 },
+    "winbox": {
+      "x": 124,
+      "y": 162,
+      "width": 406.90625,
+      "height": 700,
+      "right": 530.90625,
+      "bottom": 862
+    },
+    "closeControl": {
+      "x": 488.90625,
+      "y": 168.5,
+      "width": 30,
+      "height": 30,
+      "right": 518.90625,
+      "bottom": 198.5
+    },
+    "visibleHorizontalWidth": 266,
+    "rightOverflow": 140.90625,
+    "bottomOverflow": 18,
+    "body": {
+      "clientWidth": 396,
+      "scrollWidth": 396,
+      "clientHeight": 652,
+      "scrollHeight": 933,
+      "overflowX": "hidden",
+      "overflowY": "auto"
+    }
+  },
+  "mobile390x844AfterCloseReopen": {
+    "viewport": { "width": 390, "height": 844 },
+    "winbox": {
+      "x": 124,
+      "y": 162,
+      "width": 400,
+      "height": 700,
+      "right": 524,
+      "bottom": 862
+    },
+    "closeControl": {
+      "x": 482,
+      "y": 168.5,
+      "width": 30,
+      "height": 30,
+      "right": 512,
+      "bottom": 198.5
+    },
+    "visibleHorizontalWidth": 266,
+    "rightOverflow": 134,
+    "bottomOverflow": 18,
+    "observation": "Closing and reopening in the same live mobile viewport retained an out-of-bounds x position; the close control remained entirely outside the viewport."
+  },
+  "accessibility": {
+    "workflowHistoryButton": {
+      "accessibleName": "history",
+      "rect": { "width": 40, "height": 32 }
+    },
+    "workflowStarredButton": {
+      "accessibleName": "starred",
+      "rect": { "width": 40, "height": 32 }
+    },
+    "historyBackButtonAccessibleName": "←",
+    "stateButtonsWithAriaPressedSelectedOrTabRole": 0,
+    "liveRegions": 0,
+    "referenceUpload": {
+      "visualZoneTag": "div",
+      "visualZoneRole": null,
+      "visualZoneTabIndex": null,
+      "fileInputHidden": true,
+      "fileInputAccessibleName": null,
+      "fileInputAssociatedLabelCount": 0,
+      "fileInputRect": { "width": 0, "height": 0 }
+    },
+    "titleControls": {
+      "visibleControls": ["insert", "split", "minimize", "maximize", "full", "close"],
+      "tag": "span",
+      "controlsWithRole": 0,
+      "controlsWithAccessibleName": 0,
+      "controlsWithTabStop": 0
+    },
+    "observation": "DOM roles/names/state establish the accessibility findings. No claim is made from the Browser automation runtime's Tab-key behavior."
+  },
+  "browserConsole": {
+    "errors": 0,
+    "warnings": [
+      "TaskQueueService restore summary",
+      "useTaskStorage deferred initialization/recovery summaries",
+      "FallbackMediaExecutor resume summary"
+    ],
+    "observation": "The warnings are lifecycle diagnostics; no F-20 browser error was captured during the no-provider flow."
+  },
+  "samples": {
+    "geometryAndDomSamplesPerRecordedState": 1,
+    "performanceSamples": 0,
+    "claim": "Deterministic geometry and DOM evidence only; no performance improvement claim"
+  },
+  "screenshots": [
+    "desktop-1280x720.png",
+    "tablet-768x1024.png",
+    "mobile-390x844.png"
+  ]
+}

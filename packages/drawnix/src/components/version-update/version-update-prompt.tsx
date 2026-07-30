@@ -13,7 +13,7 @@ export const VersionUpdatePrompt: React.FC = () => {
   // const { t } = useI18n(); // Assuming i18n is available, if not fallback to strings
 
   useEffect(() => {
-    // Listen for custom event from main.tsx
+    // Listen for the custom event dispatched by the Web bootstrap.
     const handleUpdateAvailable = async (event: Event) => {
       const customEvent = event as CustomEvent;
       
@@ -76,7 +76,7 @@ export const VersionUpdatePrompt: React.FC = () => {
     // Keep the prompt visible until the new SW actually takes over.
     // Otherwise a failed COMMIT_UPGRADE looks like a successful update.
     setShowChangelog(false);
-    // Dispatch event to notify main.tsx to proceed with upgrade
+    // Dispatch an event so the Web bootstrap can proceed with the upgrade.
     window.dispatchEvent(new CustomEvent('user-confirmed-upgrade'));
   };
 

@@ -1,5 +1,7 @@
 # Phase 3 P0 完成总结 - 错误处理与样式优化
 
+> 历史完成报告（当前状态审计：2026-07-29）：本文声称完成的 `ToolErrorOverlay`、`tool-load-error` 消费和 `retryLoad()` 没有接入当前产品调用链。当前运行时只保留 iframe loader 的 `onload` 移除与 `onerror` 文本反馈；恢复可见错误覆盖层/重试属于候选产品提案，需单独审批。
+
 > Feature: feat/08-multifunctional-toolbox
 > Date: 2025-12-09
 > Status: ✅ Phase 3 P0 完成

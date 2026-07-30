@@ -1,0 +1,136 @@
+{
+  "date": "2026-07-30",
+  "feature": "F-30 Mermaid/Markdown conversion",
+  "componentDiagnostics": {
+    "environment": {
+      "node": "v24.14.0",
+      "vitest": "3.2.4",
+      "dom": "jsdom",
+      "config": "packages/drawnix/vite.config.ts"
+    },
+    "firstRun": {
+      "exitCode": 1,
+      "filesFailed": 3,
+      "testsFailed": 4,
+      "classification": "diagnostic fixture failure before product path; mock omitted IS_IOS and IS_APPLE"
+    },
+    "correctedRun": {
+      "exitCode": 0,
+      "filesPassed": 3,
+      "testsPassed": 4,
+      "testDurationsMs": [440, 491, 656, 140],
+      "totalReportSeconds": 2.19,
+      "observations": {
+        "mermaidCompletionOrder": ["newer-result", "older-result"],
+        "mermaidParseStartOrder": ["older request", "newer request"],
+        "pendingInsertElementId": "preview-from-previous-input",
+        "pendingInsertCalls": 1,
+        "pendingCloseCalls": 1,
+        "markdownDraftBeforeLocaleChange": "# User-authored draft",
+        "markdownDraftAfterLocaleChangePrefix": "# Getting Started with Milkdown",
+        "markdownLoadErrorKey": "dialog.error.loadMermaid",
+        "markdownConsolePrefix": "Failed to load mermaid library:"
+      }
+    },
+    "temporaryFilesRemaining": 0
+  },
+  "browser": {
+    "build": "existing dist/apps/web",
+    "transport": "loopback HTTP",
+    "surface": "in-app Chromium",
+    "locale": "zh-CN",
+    "devicePixelRatio": 1,
+    "desktop": {
+      "viewport": { "width": 1280, "height": 720 },
+      "mermaid": {
+        "dialogAriaLabel": null,
+        "dialogAriaLabelledby": null,
+        "inputAriaLabel": null,
+        "inputAriaLabelledby": null,
+        "inputPlaceholder": "在此处编写 Mermaid 图表定义...",
+        "initialFocus": "mermaid textarea",
+        "insertEnabledOnSuccess": true
+      },
+      "markdown": {
+        "dialogAriaLabel": null,
+        "dialogAriaLabelledby": null,
+        "inputAriaLabel": null,
+        "inputAriaLabelledby": null,
+        "inputPlaceholder": "在此处编写 Markdown 文本定义...",
+        "initialFocus": "markdown textarea",
+        "insertEnabledOnSuccess": true
+      },
+      "mermaidError": {
+        "input": "flowchart TD\nA -->",
+        "errorCount": 1,
+        "errorRole": null,
+        "errorAriaLive": null,
+        "insertEnabled": true,
+        "retainedPreviewStyle": "opacity: 0.15;"
+      },
+      "focusAfterEscapeFromCommandResult": "no active named control in accessibility snapshot"
+    },
+    "compact": {
+      "viewport": { "width": 390, "height": 844 },
+      "statesMeasured": ["mermaid error", "mermaid success"],
+      "dialog": {
+        "top": 97.90625,
+        "bottom": 773.09375,
+        "height": 675.1875,
+        "clientHeight": 675,
+        "scrollHeight": 779,
+        "overflowY": "visible"
+      },
+      "body": {
+        "clientHeight": 844,
+        "scrollHeight": 844,
+        "overflowY": "hidden"
+      },
+      "insert": {
+        "top": 828.90625,
+        "bottom": 868.90625,
+        "height": 40
+      },
+      "result": "complete Insert action extends 24.90625 CSS px below the viewport"
+    },
+    "screenshots": {
+      "markdown-desktop-success-before.jpg": {
+        "size": "1280x720",
+        "sha256": "4d5c59f2e24e2bf2210f5b51d6f3b13a0fbdceb72738462d86a440c3978fbe48"
+      },
+      "mermaid-compact-success-before.jpg": {
+        "size": "390x844",
+        "sha256": "e015e2fb3070c8a39c6110fe59823cb034d08169b826768833816c501b68beb1"
+      },
+      "mermaid-desktop-error-before.jpg": {
+        "size": "1280x720",
+        "sha256": "1c9e34c0d53507643cedaba95595b4e5098afcb54f91841dc524a93dc4e1c4c3"
+      },
+      "mermaid-desktop-success-before.jpg": {
+        "size": "1280x720",
+        "sha256": "2320afed2c9ae4ffa18b136a4fdb1a859c8190c592f6fb98f95a8df238126f42"
+      }
+    },
+    "productionInsertActivated": false,
+    "viewportReset": true,
+    "tabsClosed": true,
+    "localServerStopped": true
+  },
+  "performance": {
+    "claim": null,
+    "samples": 0,
+    "reason": "No runtime optimization was authorized; no five-sample parse/render measurement was collected."
+  },
+  "openSpec": {
+    "cliAvailable": false,
+    "activeChangesAfterF30": 119,
+    "changes": {
+      "stabilize-text-conversion-preview-state": { "requirements": 3, "scenarios": 11, "checkedTasks": 4, "uncheckedTasks": 14 },
+      "preserve-markdown-conversion-draft-feedback": { "requirements": 2, "scenarios": 7, "checkedTasks": 3, "uncheckedTasks": 13 },
+      "improve-text-conversion-dialog-interface": { "requirements": 4, "scenarios": 11, "checkedTasks": 4, "uncheckedTasks": 14 }
+    },
+    "uniqueRequirementNames": 9,
+    "duplicateRequirementNames": 0,
+    "activeCapabilityOwners": 1
+  }
+}

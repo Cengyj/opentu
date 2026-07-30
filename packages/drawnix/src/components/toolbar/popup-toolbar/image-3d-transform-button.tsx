@@ -169,6 +169,7 @@ export const PopupImage3DTransformButton: React.FC<
     toDraftTransform(getElementTransform(element))
   );
   const startTransformRef = useRef<Image3DTransform | undefined>(undefined);
+  const activeElementIdRef = useRef(element.id);
   const confirmedRef = useRef(false);
   const elementId = element.id;
   const container = PlaitBoard.getBoardContainer(board);
@@ -180,24 +181,29 @@ export const PopupImage3DTransformButton: React.FC<
       PlaitHistoryBoard.withoutSaving(board, () => {
         setImage3DTransform(
           board,
-          elementId,
+          activeElementIdRef.current,
           sanitizeImage3DTransform(nextDraft)
         );
       });
     },
-    [board, elementId]
+    [board]
   );
 
   const restoreStartTransform = useCallback(() => {
     PlaitHistoryBoard.withoutSaving(board, () => {
-      setImage3DTransform(board, elementId, startTransformRef.current);
+      setImage3DTransform(
+        board,
+        activeElementIdRef.current,
+        startTransformRef.current
+      );
     });
-  }, [board, elementId]);
+  }, [board]);
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (nextOpen) {
         const currentTransform = getElementTransform(element);
+        activeElementIdRef.current = elementId;
         startTransformRef.current = currentTransform;
         confirmedRef.current = false;
         setDraft(toDraftTransform(currentTransform));
@@ -210,7 +216,7 @@ export const PopupImage3DTransformButton: React.FC<
       }
       setOpen(false);
     },
-    [element, open, restoreStartTransform]
+    [element, elementId, open, restoreStartTransform]
   );
 
   const updateDraftValue = useCallback(
@@ -239,16 +245,20 @@ export const PopupImage3DTransformButton: React.FC<
     const finalTransform = sanitizeImage3DTransform(draft);
     confirmedRef.current = true;
     PlaitHistoryBoard.withoutSaving(board, () => {
-      setImage3DTransform(board, elementId, startTransformRef.current);
+      setImage3DTransform(
+        board,
+        activeElementIdRef.current,
+        startTransformRef.current
+      );
     });
     if (!areTransformsEqual(startTransformRef.current, finalTransform)) {
       PlaitHistoryBoard.withNewBatch(board, () => {
-        setImage3DTransform(board, elementId, finalTransform);
+        setImage3DTransform(board, activeElementIdRef.current, finalTransform);
       });
     }
     notifyAISelectionContentRefresh();
     setOpen(false);
-  }, [board, draft, elementId]);
+  }, [board, draft]);
 
   const cancelDraft = useCallback(() => {
     confirmedRef.current = true;

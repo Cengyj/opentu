@@ -1,0 +1,182 @@
+{
+  "featureId": "F-16",
+  "feature": "多图生成（Comic Creator）",
+  "capturedOn": "2026-07-29",
+  "sourceState": {
+    "gitMetadataAvailable": false,
+    "note": "The workspace has no .git directory, so the exact commit and worktree cleanliness cannot be established."
+  },
+  "environment": {
+    "browserSurface": "Codex in-app browser",
+    "browserEngine": "Chromium; exact build was not exposed by the browser surface",
+    "theme": "light",
+    "language": "zh-CN visible UI",
+    "devicePixelRatio": 1,
+    "networkProfile": "not throttled",
+    "cpuProfile": "not throttled"
+  },
+  "samples": [
+    {
+      "id": "desktop-plan",
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "screenshot": "desktop-plan.png",
+      "purpose": "Default desktop planning-state reference",
+      "exactGeometryCaptured": false
+    },
+    {
+      "id": "narrow-window-plan-400",
+      "viewport": {
+        "width": 1280,
+        "height": 844
+      },
+      "toolWindow": {
+        "width": 400,
+        "height": 760
+      },
+      "comicRoot": {
+        "x": 280,
+        "y": 48,
+        "width": 400,
+        "height": 712,
+        "right": 680,
+        "bottom": 760
+      },
+      "textModelInput": {
+        "x": 673,
+        "y": 646.28125,
+        "width": 160,
+        "height": 17,
+        "right": 833,
+        "bottom": 663.28125
+      },
+      "overflowBeyondComicRootRightPx": 153,
+      "documentHorizontalOverflowPx": 0,
+      "comicRootReportedHorizontalOverflowPx": 0,
+      "screenshot": "narrow-window-plan-400.png",
+      "interpretation": "The portaled/composite text-model input extends 153 CSS px beyond the comic content boundary even though the document and root do not expose a horizontal scrollbar."
+    },
+    {
+      "id": "mobile-plan-390x844",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "screenshot": "mobile-plan-390x844.png",
+      "purpose": "Outer WinBox viewport-transition evidence; ownership remains with fix-tool-window-viewport-transition",
+      "exactGeometryCaptured": false
+    },
+    {
+      "id": "narrow-window-history-empty-400",
+      "viewport": {
+        "width": 1280,
+        "height": 844
+      },
+      "toolWindow": {
+        "width": 400,
+        "height": 760
+      },
+      "comicRoot": {
+        "x": 280,
+        "y": 48,
+        "width": 400,
+        "height": 712,
+        "right": 680,
+        "bottom": 760
+      },
+      "historyFilterRow": {
+        "x": 296,
+        "y": 108,
+        "width": 368,
+        "height": 41.5,
+        "right": 664,
+        "bottom": 149.5
+      },
+      "historyEmptyState": {
+        "x": 296,
+        "y": 161.5,
+        "width": 368,
+        "height": 180,
+        "right": 664,
+        "bottom": 341.5,
+        "text": "暂无记录"
+      },
+      "documentHorizontalOverflowPx": 0,
+      "screenshot": "narrow-window-history-empty-400.png"
+    }
+  ],
+  "accessibility": {
+    "activeElementAfterToolInspection": "BODY",
+    "planningControls": {
+      "storyTextarea": {
+        "id": null,
+        "name": null,
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "associatedLabels": []
+      },
+      "textModelInput": {
+        "id": null,
+        "name": null,
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "associatedLabels": [
+          ""
+        ],
+        "placeholder": "选择文本模型"
+      },
+      "scenarioSelect": {
+        "associatedLabelCount": 1,
+        "accessibleSnapshotName": "创作场景"
+      },
+      "pageCountInput": {
+        "associatedLabels": [
+          "页数"
+        ]
+      }
+    },
+    "historyControls": {
+      "queryInput": {
+        "id": null,
+        "name": null,
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "associatedLabels": [],
+        "placeholder": "搜索标题或提示词"
+      },
+      "statusSelect": {
+        "id": null,
+        "name": null,
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "associatedLabels": []
+      },
+      "backButton": {
+        "visibleAndAccessibleText": "←",
+        "ariaLabel": null
+      }
+    },
+    "sharedNavigation": {
+      "historyButtonAriaLabel": "history",
+      "starredButtonAriaLabel": "starred"
+    }
+  },
+  "sampleCount": 1,
+  "claimLimits": [
+    "These are deterministic layout and DOM observations, not performance measurements.",
+    "No post-change sample exists because the responsive/accessibility proposal is awaiting approval.",
+    "Dark theme, 640 px and 720 px exact geometry, complete keyboard traversal, screen-reader announcement, and reduced-motion behavior remain unverified."
+  ],
+  "artifactFormatCorrection": {
+    "originalObservation": "The four .png paths contained JPEG image data.",
+    "action": "Converted the existing pixels to actual PNG files without resizing.",
+    "verifiedDimensions": {
+      "desktop-plan.png": "1280x720",
+      "narrow-window-plan-400.png": "1280x844",
+      "mobile-plan-390x844.png": "390x844",
+      "narrow-window-history-empty-400.png": "1280x844"
+    }
+  }
+}

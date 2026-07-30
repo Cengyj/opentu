@@ -850,7 +850,7 @@ const AIImageGeneration = ({
           : convertAspectRatioToSize(aspectRatio);
         const maskEditParams = buildMaskEditTaskParams(convertedImages);
 
-        // 创建任务参数（单个任务也需要 batchId 以跳过 SW 重复检测）
+        // 创建任务参数（单个任务也保留 batchId，便于关联外部工作流和批次元数据）
         const taskParams = {
           prompt: finalPrompt,
           knowledgeContextRefs,
@@ -865,7 +865,7 @@ const AIImageGeneration = ({
           autoInsertToCanvas:
             initialAutoInsertToCanvas ??
             getAutoInsertValue(LS_KEYS.AI_IMAGE_AUTO_INSERT),
-          // 始终包含 batchId 以跳过重复检测
+          // 始终包含 batchId，保持任务关联元数据一致
           batchId: externalBatchId || `image_single_${Date.now()}`,
           batchIndex: 1,
           batchTotal: 1,

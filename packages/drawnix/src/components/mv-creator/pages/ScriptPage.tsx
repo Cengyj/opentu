@@ -32,6 +32,14 @@ import { TaskType, type KnowledgeContextRef } from '../../../types/task.types';
 import { syncMVRewriteTask } from '../task-sync';
 import { KnowledgeNoteContextSelector } from '../../shared';
 import { analytics } from '../../../utils/posthog-analytics';
+import { MediaLibraryModal } from '../../media-library';
+import {
+  AssetCategory,
+  AssetType,
+  SelectionMode,
+  type Asset,
+} from '../../../types/asset.types';
+import { applySubjectAssetToCharacter } from '../../shared/workflow/subject-asset';
 
 function autoResize(el: HTMLTextAreaElement) {
   el.style.height = 'auto';
@@ -100,6 +108,9 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     record.pendingRewriteTaskId || null
   );
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
+  const [subjectAssetCharacterId, setSubjectAssetCharacterId] = useState<
+    string | null
+  >(null);
   const versionMenuRef = useRef<HTMLDivElement>(null);
   const rewritingRef = useRef(false);
 
@@ -153,6 +164,17 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
     const updated = base.map(c => c.id === charId ? { ...c, description: desc } : c);
     void saveRecordField({ characters: updated });
   }, [record, saveRecordField]);
+
+  const handleSelectSubjectAsset = useCallback(async (asset: Asset) => {
+    const characterId = subjectAssetCharacterId;
+    if (!characterId) return;
+    const characters = (record.characters || []).map((character) =>
+      character.id === characterId
+        ? applySubjectAssetToCharacter(character, asset)
+        : character
+    );
+    await saveRecordField({ characters });
+  }, [record.characters, saveRecordField, subjectAssetCharacterId]);
 
   const textModels = useSelectableModels('text');
   const [scriptModel, setScriptModelState] = useState(
@@ -489,6 +511,7 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
       <CharacterDescriptionList
         characters={record.characters || []}
         onChange={handleCharacterDescChange}
+        onSelectSubjectAsset={setSubjectAssetCharacterId}
       />
 
       {/* 分镜列表（可编辑） */}
@@ -518,6 +541,16 @@ export const ScriptPage: React.FC<ScriptPageProps> = ({
           下一步：批量生成 →
         </button>
       </div>
+
+      <MediaLibraryModal
+        isOpen={subjectAssetCharacterId !== null}
+        onClose={() => setSubjectAssetCharacterId(null)}
+        mode={SelectionMode.SELECT}
+        filterType={AssetType.IMAGE}
+        filterCategory={AssetCategory.CHARACTER}
+        onSelect={handleSelectSubjectAsset}
+        selectButtonText="使用此主体"
+      />
     </div>
   );
 };

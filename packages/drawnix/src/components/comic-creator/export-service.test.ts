@@ -391,6 +391,60 @@ describe('comic export service pure helpers', () => {
     expect(mockState.downloads[0].filename).toBe('连环画-输出.pptx');
   });
 
+  it('exports partially generated projects to PPTX and PDF in page order', async () => {
+    const fetchCalls = mockFetchImages();
+    const partialRecord: ComicRecord = {
+      ...record,
+      pages: [
+        record.pages[0],
+        {
+          ...record.pages[1],
+          imageUrl: undefined,
+          imageMimeType: undefined,
+        },
+      ],
+    };
+    const imageSources = [
+      {
+        pageId: 'page-01',
+        url: '/one.png',
+        mimeType: 'image/png',
+        aspectRatio: '4:3',
+      },
+    ];
+
+    await exportComicAsPptx(partialRecord, { imageSources });
+    await exportComicAsPdf(partialRecord, { imageSources });
+
+    expect(fetchCalls).toEqual(['/one.png', '/one.png']);
+    expect(mockState.pptxInstances[0].slides).toHaveLength(1);
+    expect(mockState.pdfInstances[0].addImage).toHaveBeenCalledTimes(1);
+    expect(mockState.pdfInstances[0].addPage).not.toHaveBeenCalled();
+    expect(mockState.downloads.map((download) => download.filename)).toEqual([
+      '水滴-旅行-第一话.pptx',
+      '水滴-旅行-第一话.pdf',
+    ]);
+  });
+
+  it('rejects PPTX and PDF export when no page has a usable image', async () => {
+    const emptyRecord: ComicRecord = {
+      ...record,
+      pages: record.pages.map((page) => ({
+        ...page,
+        imageUrl: undefined,
+        imageMimeType: undefined,
+      })),
+    };
+
+    await expect(exportComicAsPptx(emptyRecord)).rejects.toThrow(
+      '没有可导出的页面图片'
+    );
+    await expect(exportComicAsPdf(emptyRecord)).rejects.toThrow(
+      '没有可导出的页面图片'
+    );
+    expect(mockState.downloads).toHaveLength(0);
+  });
+
   it('exports PDF as image-only pages without prefetching all images', async () => {
     const activeFetchCounts: number[] = [];
     let activeFetches = 0;

@@ -7,7 +7,7 @@
  * 2. 工作流引擎基本功能
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type {
   Workflow,
   WorkflowStep,
@@ -15,6 +15,29 @@ import type {
   WorkflowStatus,
   WorkflowStepStatus,
 } from '../workflow-engine/types';
+import { WorkflowEngine } from '../workflow-engine/engine';
+
+vi.mock('../media-executor', () => ({
+  executorFactory: {
+    getFallbackExecutor: vi.fn(),
+  },
+  taskStorageWriter: {},
+}));
+
+vi.mock('../media-generation', () => ({
+  generateImage: vi.fn(),
+  generateVideo: vi.fn(),
+  TaskStatus: {
+    FAILED: 'failed',
+  },
+}));
+
+vi.mock('../workflow-engine/workflow-storage-writer', () => ({
+  workflowStorageWriter: {
+    saveWorkflow: vi.fn().mockResolvedValue(undefined),
+    getWorkflow: vi.fn().mockResolvedValue(null),
+  },
+}));
 
 describe('WorkflowEngine Module', () => {
   describe('Workflow Types', () => {
@@ -194,82 +217,12 @@ describe('WorkflowEngine Module', () => {
   });
 
   describe('WorkflowEngine Class', () => {
-    beforeEach(() => {
-      vi.resetModules();
-    });
-
-    it('should export WorkflowEngine class', async () => {
-      vi.doMock('../media-executor/factory', () => ({
-        executorFactory: {
-          getExecutor: async () => ({
-            name: 'Mock',
-            isAvailable: async () => true,
-            generateImage: async () => {},
-            generateVideo: async () => {},
-            aiAnalyze: async () => {},
-            generateText: async () => ({ content: 'test' }),
-          }),
-        },
-      }));
-
-      vi.doMock('../workflow-engine/workflow-storage-writer', () => ({
-        workflowStorageWriter: {
-          isAvailable: async () => true,
-          createWorkflow: async () => {},
-          updateWorkflowStatus: async () => {},
-          updateStepStatus: async () => {},
-          completeWorkflow: async () => {},
-          failWorkflow: async () => {},
-        },
-      }));
-
-      vi.doMock('../media-executor/task-polling', () => ({
-        waitForTaskCompletion: async () => ({
-          success: true,
-          task: { id: 'test', status: 'completed' },
-        }),
-      }));
-
-      const { WorkflowEngine } = await import('../workflow-engine/engine');
-
+    it('should export WorkflowEngine class', () => {
       expect(WorkflowEngine).toBeDefined();
       expect(typeof WorkflowEngine).toBe('function');
     });
 
-    it('should create engine with event handler', async () => {
-      vi.doMock('../media-executor/factory', () => ({
-        executorFactory: {
-          getExecutor: async () => ({
-            name: 'Mock',
-            isAvailable: async () => true,
-            generateImage: async () => {},
-            generateVideo: async () => {},
-            aiAnalyze: async () => {},
-            generateText: async () => ({ content: 'test' }),
-          }),
-        },
-      }));
-
-      vi.doMock('../workflow-engine/workflow-storage-writer', () => ({
-        workflowStorageWriter: {
-          isAvailable: async () => true,
-          createWorkflow: async () => {},
-          updateWorkflowStatus: async () => {},
-          updateStepStatus: async () => {},
-          completeWorkflow: async () => {},
-          failWorkflow: async () => {},
-        },
-      }));
-
-      vi.doMock('../media-executor/task-polling', () => ({
-        waitForTaskCompletion: async () => ({
-          success: true,
-          task: { id: 'test', status: 'completed' },
-        }),
-      }));
-
-      const { WorkflowEngine } = await import('../workflow-engine/engine');
-
+    it('should create engine with event handler', () => {
       const events: WorkflowEvent[] = [];
       const engine = new WorkflowEngine({
         onEvent: (event) => events.push(event),
@@ -278,116 +231,20 @@ describe('WorkflowEngine Module', () => {
       expect(engine).toBeDefined();
     });
 
-    it('should have submitWorkflow method', async () => {
-      vi.doMock('../media-executor/factory', () => ({
-        executorFactory: {
-          getExecutor: async () => ({
-            name: 'Mock',
-            isAvailable: async () => true,
-            generateImage: async () => {},
-            generateVideo: async () => {},
-            aiAnalyze: async () => {},
-            generateText: async () => ({ content: 'test' }),
-          }),
-        },
-      }));
-
-      vi.doMock('../workflow-engine/workflow-storage-writer', () => ({
-        workflowStorageWriter: {
-          isAvailable: async () => true,
-          createWorkflow: async () => {},
-          updateWorkflowStatus: async () => {},
-          updateStepStatus: async () => {},
-          completeWorkflow: async () => {},
-          failWorkflow: async () => {},
-        },
-      }));
-
-      vi.doMock('../media-executor/task-polling', () => ({
-        waitForTaskCompletion: async () => ({
-          success: true,
-          task: { id: 'test', status: 'completed' },
-        }),
-      }));
-
-      const { WorkflowEngine } = await import('../workflow-engine/engine');
-      const engine = new WorkflowEngine({ onEvent: () => {} });
+    it('should have submitWorkflow method', () => {
+      const engine = new WorkflowEngine({ onEvent: vi.fn() });
 
       expect(typeof engine.submitWorkflow).toBe('function');
     });
 
-    it('should have getWorkflow method', async () => {
-      vi.doMock('../media-executor/factory', () => ({
-        executorFactory: {
-          getExecutor: async () => ({
-            name: 'Mock',
-            isAvailable: async () => true,
-            generateImage: async () => {},
-            generateVideo: async () => {},
-            aiAnalyze: async () => {},
-            generateText: async () => ({ content: 'test' }),
-          }),
-        },
-      }));
-
-      vi.doMock('../workflow-engine/workflow-storage-writer', () => ({
-        workflowStorageWriter: {
-          isAvailable: async () => true,
-          createWorkflow: async () => {},
-          updateWorkflowStatus: async () => {},
-          updateStepStatus: async () => {},
-          completeWorkflow: async () => {},
-          failWorkflow: async () => {},
-        },
-      }));
-
-      vi.doMock('../media-executor/task-polling', () => ({
-        waitForTaskCompletion: async () => ({
-          success: true,
-          task: { id: 'test', status: 'completed' },
-        }),
-      }));
-
-      const { WorkflowEngine } = await import('../workflow-engine/engine');
-      const engine = new WorkflowEngine({ onEvent: () => {} });
+    it('should have getWorkflow method', () => {
+      const engine = new WorkflowEngine({ onEvent: vi.fn() });
 
       expect(typeof engine.getWorkflow).toBe('function');
     });
 
-    it('should return undefined for non-existent workflow', async () => {
-      vi.doMock('../media-executor/factory', () => ({
-        executorFactory: {
-          getExecutor: async () => ({
-            name: 'Mock',
-            isAvailable: async () => true,
-            generateImage: async () => {},
-            generateVideo: async () => {},
-            aiAnalyze: async () => {},
-            generateText: async () => ({ content: 'test' }),
-          }),
-        },
-      }));
-
-      vi.doMock('../workflow-engine/workflow-storage-writer', () => ({
-        workflowStorageWriter: {
-          isAvailable: async () => true,
-          createWorkflow: async () => {},
-          updateWorkflowStatus: async () => {},
-          updateStepStatus: async () => {},
-          completeWorkflow: async () => {},
-          failWorkflow: async () => {},
-        },
-      }));
-
-      vi.doMock('../media-executor/task-polling', () => ({
-        waitForTaskCompletion: async () => ({
-          success: true,
-          task: { id: 'test', status: 'completed' },
-        }),
-      }));
-
-      const { WorkflowEngine } = await import('../workflow-engine/engine');
-      const engine = new WorkflowEngine({ onEvent: () => {} });
+    it('should return undefined for non-existent workflow', () => {
+      const engine = new WorkflowEngine({ onEvent: vi.fn() });
 
       const result = engine.getWorkflow('non-existent-id');
       expect(result).toBeUndefined();

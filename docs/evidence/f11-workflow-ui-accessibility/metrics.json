@@ -1,0 +1,225 @@
+{
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "sourceState": {
+    "gitMetadataPresent": false,
+    "worktreeCleanlinessVerifiable": false
+  },
+  "scope": {
+    "surfaces": [
+      "WorkflowMessageBubble",
+      "WorkZoneContent"
+    ],
+    "syntheticDataOnly": true,
+    "userStorageRead": false,
+    "providerCalls": 0,
+    "performanceClaim": false
+  },
+  "componentDiagnostic": {
+    "environment": {
+      "node": "24.14.0",
+      "vitest": "3.2.4",
+      "dom": "jsdom"
+    },
+    "normalizedCommand": "node node_modules/vitest/vitest.mjs run src/components/workzone-element/f11-workflow-ui.diagnostic.test.tsx --config vitest.config.ts --reporter=verbose",
+    "successfulRun": {
+      "exitCode": 0,
+      "filesPassed": 1,
+      "filesTotal": 1,
+      "testsPassed": 2,
+      "testsTotal": 2
+    },
+    "environmentFailureBeforeSuccessfulRun": {
+      "commandSurface": "pnpm exec",
+      "exitCode": 127,
+      "classification": "shell/runtime availability; not a product defect"
+    },
+    "chat": {
+      "focusableDisclosures": 0,
+      "stepDisclosure": {
+        "tag": "DIV",
+        "role": null,
+        "tabIndex": -1,
+        "enterExpanded": false,
+        "pointerExpanded": true
+      },
+      "agentDisclosureCount": 2,
+      "agentDisclosureTag": "DIV",
+      "agentDisclosureRole": null,
+      "agentDisclosureTabIndex": -1,
+      "progressbarCount": 0,
+      "liveRegionCount": 0,
+      "englishProviderChineseLiteralCounts": {
+        "执行中": 2,
+        "待执行": 1
+      }
+    },
+    "workZone": {
+      "nativeButtonNames": [
+        "不再显示",
+        "删除",
+        "从失败步骤重试"
+      ],
+      "progressbarCount": 0,
+      "liveRegionCount": 0,
+      "englishProviderStillShowsChineseFailureRetryCopy": true
+    },
+    "temporaryDiagnosticRetained": false
+  },
+  "browser": {
+    "engine": "Codex in-app Chromium",
+    "exactRevisionAvailable": false,
+    "vite": "6.4.1",
+    "host": "127.0.0.1:7200",
+    "devicePixelRatio": 1,
+    "cssZoomPercent": 100,
+    "networkThrottling": "none",
+    "cpuThrottling": "none",
+    "applicationColorScheme": "forced-light",
+    "viewportSamples": [
+      {
+        "viewportCssPx": {
+          "width": 390,
+          "height": 844
+        },
+        "chatBubble": {
+          "width": 348,
+          "selfHorizontalOverflowPx": 0
+        },
+        "workZone": {
+          "width": 360,
+          "height": 280,
+          "hideTarget": {
+            "width": 24,
+            "height": 24
+          },
+          "deleteTarget": {
+            "width": 24,
+            "height": 24
+          },
+          "retryTarget": {
+            "width": 115,
+            "height": 26.5
+          }
+        },
+        "progressbarCount": 0,
+        "liveRegionCount": 0
+      },
+      {
+        "viewportCssPx": {
+          "width": 320,
+          "height": 568
+        },
+        "chatBubble": {
+          "width": 270,
+          "selfHorizontalOverflowPx": 0,
+          "longTitle": {
+            "width": 130,
+            "height": 84,
+            "approximateLines": 4
+          },
+          "runningStatus": {
+            "text": "执行中",
+            "width": 28,
+            "height": 58,
+            "charactersRenderedOnSeparateLines": 3
+          },
+          "statusInfo": {
+            "width": 66,
+            "height": 58
+          }
+        }
+      }
+    ]
+  },
+  "contrast": {
+    "method": "computed foreground/background colors and WCAG relative luminance",
+    "smallNormalTextThreshold": 4.5,
+    "samples": [
+      {
+        "name": "chat workflow title",
+        "ratio": 12.63,
+        "passes": true
+      },
+      {
+        "name": "chat workflow step title",
+        "ratio": 5.74,
+        "passes": true
+      },
+      {
+        "name": "chat workflow step status",
+        "ratio": 1.9,
+        "passes": false
+      },
+      {
+        "name": "agent log title",
+        "ratio": 5.74,
+        "passes": true
+      },
+      {
+        "name": "workzone title",
+        "ratio": 14.68,
+        "passes": true
+      },
+      {
+        "name": "workzone failed step",
+        "fontSizeCssPx": 11,
+        "fontWeight": "normal",
+        "ratio": 4.41,
+        "passes": false
+      }
+    ]
+  },
+  "screenshots": [
+    {
+      "path": "docs/evidence/f11-workflow-ui-accessibility/desktop-forced-light-en-before.png",
+      "browserViewportCssPx": {
+        "width": 1280,
+        "height": 720
+      },
+      "encodedFormat": "JPEG",
+      "encodedPixelDimensions": {
+        "width": 1272,
+        "height": 938
+      },
+      "sha256": "78fa765663bafa91bdd43ecb8ce4e728be286f0c2ca13292f515298969753919"
+    },
+    {
+      "path": "docs/evidence/f11-workflow-ui-accessibility/compact-390x844-forced-light-en-before.png",
+      "browserViewportCssPx": {
+        "width": 390,
+        "height": 844
+      },
+      "encodedFormat": "JPEG",
+      "encodedPixelDimensions": {
+        "width": 382,
+        "height": 962
+      },
+      "sha256": "c7ab7d0388e1c6201e89a640afd82b9068feb641ad1cae1f6383c5a61a67d367"
+    }
+  ],
+  "nonFindings": {
+    "workZoneActionNamingMissing": false,
+    "componentReducedMotionMissing": false,
+    "darkModeExistingFeatureDefect": false,
+    "unreachableWorkZoneElementAffectedProduction": false
+  },
+  "cleanup": {
+    "viewportOverrideReset": true,
+    "browserTabFinalized": true,
+    "viteStopped": true,
+    "port7200ListeningAfterCleanup": false,
+    "temporaryHarnessFilesPresent": 0,
+    "temporaryDiagnosticTestPresent": false
+  },
+  "openSpec": {
+    "change": "improve-workflow-status-interface-accessibility",
+    "requirements": 5,
+    "scenarios": 11,
+    "tasksTotal": 28,
+    "tasksDoneBeforeApproval": 7,
+    "activeCapabilityOwners": 1,
+    "cliValidationExitCode": 127,
+    "cliValidationClassification": "tool unavailable; manual validation only"
+  }
+}

@@ -1,11 +1,12 @@
 /**
  * useWorkflowSubmission Hook
  *
- * Encapsulates workflow submission logic for AIInputBar.
- * All workflows execute in main thread.
+ * Coordinates workflow UI state, recovery subscriptions, and retry/cancel
+ * support for AIInputBar. New AIInputBar workflows execute their MCP steps in
+ * the main thread after this hook registers the workflow with UI consumers.
  *
  * Handles:
- * - Workflow creation and submission
+ * - Workflow creation and UI handoff
  * - Status synchronization with WorkflowContext, ChatDrawer, WorkZone
  * - Canvas operation handling
  */

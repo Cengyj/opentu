@@ -1,0 +1,131 @@
+{
+  "featureId": "F-28",
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "sourceState": {
+    "gitMetadata": false,
+    "historyAndCleanlinessCheck": "unavailable"
+  },
+  "environment": {
+    "os": "Darwin 22.6.0 x86_64",
+    "node": "24.14.0",
+    "browser": "Playwright Chromium revision 1228",
+    "workers": 1,
+    "network": "default, unthrottled",
+    "cpu": "default, unthrottled",
+    "theme": "light",
+    "locale": "zh-CN"
+  },
+  "responsiveSuite": {
+    "file": "apps/web-e2e/src/visual/responsive-visual.spec.ts",
+    "beforeLocatorRepair": {
+      "passed": 3,
+      "failed": 8,
+      "total": 11,
+      "failureClass": "Playwright strict-mode locator ambiguity"
+    },
+    "afterLocatorRepair": {
+      "passed": 10,
+      "failed": 1,
+      "total": 11,
+      "remainingFailure": "mobile toolbar/primary AI input overlap: expected <100 CSS px^2, received 304"
+    },
+    "freshVerification": {
+      "command": "pnpm exec playwright test --config apps/web-e2e/playwright.config.ts apps/web-e2e/src/visual/responsive-visual.spec.ts --project=responsive --workers=1 --reporter=line --output=/tmp/opentu-f28-responsive-verification",
+      "exitCode": 1,
+      "passed": 9,
+      "failed": 2,
+      "total": 11,
+      "stableGeometryFailure": "expected <100 CSS px^2, received 304",
+      "additionalScreenshotObservation": "640x360 differed by 25891 pixels / ratio 0.12 against 0.10 per-test limit",
+      "immediateScreenshotRepeat": {
+        "command": "same file/project/workers with --grep='移动端横屏布局' --repeat-each=2",
+        "exitCode": 0,
+        "passed": 2,
+        "failed": 0,
+        "classification": "non-deterministic visual-test observation; root cause unverified"
+      }
+    },
+    "typescriptExitCode": 0,
+    "eslint": {
+      "exitCode": 0,
+      "errors": 0,
+      "warnings": 8,
+      "classification": "existing warnings"
+    }
+  },
+  "geometrySamples": {
+    "samplesPerViewport": 1,
+    "unit": "CSS px",
+    "performanceMeasurement": false,
+    "values": [
+      { "viewport": "1920x1080", "intersectionWidth": 0, "intersectionHeight": 0, "area": 0, "topSurface": null },
+      { "viewport": "1280x720", "intersectionWidth": 0, "intersectionHeight": 0, "area": 0, "topSurface": null },
+      { "viewport": "1024x768", "intersectionWidth": 0, "intersectionHeight": 0, "area": 0, "topSurface": null },
+      { "viewport": "768x1024", "intersectionWidth": 0, "intersectionHeight": 0, "area": 0, "topSurface": null },
+      { "viewport": "640x360", "intersectionWidth": 38, "intersectionHeight": 12, "area": 456, "topSurface": "unified-toolbar" },
+      { "viewport": "375x667", "intersectionWidth": 38, "intersectionHeight": 8, "area": 304, "topSurface": "unified-toolbar" },
+      { "viewport": "360x640", "intersectionWidth": 38, "intersectionHeight": 8, "area": 304, "topSurface": "unified-toolbar" }
+    ],
+    "detail375x667": {
+      "toolbar": { "x": 8, "y": 457, "width": 38, "height": 130, "bottom": 587, "computedBottom": "80px", "zIndex": 4031 },
+      "input": { "x": 8, "y": 579, "width": 359, "height": 82, "bottom": 661, "computedBottom": "6px", "zIndex": 100 },
+      "intersection": { "width": 38, "height": 8, "area": 304 },
+      "assertionMaximumExclusive": 100
+    }
+  },
+  "supplementalAttachmentPreview": {
+    "source": "docs/evidence/f07-ai-input/metrics.json",
+    "browser": "Codex in-app Chromium; exact build not exposed",
+    "viewport": { "width": 390, "height": 844 },
+    "samples": 1,
+    "performanceMeasurement": false,
+    "input": { "x": 8, "y": 416.4375, "width": 374, "height": 421.5625, "right": 382, "bottom": 838 },
+    "firstPreview": { "x": 26, "y": 652, "width": 36, "height": 36, "right": 62, "bottom": 688 },
+    "toolbarRectangleCaptured": false,
+    "observation": "screenshot visibly shows the collapsed toolbar covering the first attachment preview; no new exact intersection area is claimed",
+    "screenshot": "docs/evidence/f07-ai-input/paste-mobile-390x844-before.png",
+    "sha256": "5dba03288b89e08863c4672e7a277e1cfc55c8074a103005d268f653b275d6c9"
+  },
+  "visualEvidence": {
+    "beforeScreenshot": "docs/evidence/f28-responsive-accessibility/mobile-toolbar-ai-input-overlap-before.png",
+    "sha256": "01cee62c4e4e792215baa460eeb2e29d722aaa987910e82d4bb8883ed4ec2f2a",
+    "afterScreenshot": null,
+    "reasonAfterMissing": "runtime layout implementation is blocked pending OpenSpec approval"
+  },
+  "repositoryGates": {
+    "focusedE2eTypecheck": { "exitCode": 0 },
+    "focusedEslint": { "exitCode": 0, "errors": 0, "warnings": 8 },
+    "fullTypecheck": { "exitCode": 0, "projectsPassed": 5, "projectsTotal": 5 },
+    "fullTestsWithoutNxCache": {
+      "exitCode": 1,
+      "reactBoard": { "filesPassed": 1, "filesTotal": 1, "testsPassed": 8, "testsTotal": 8 },
+      "drawnix": { "filesPassed": 184, "filesFailed": 4, "filesSkipped": 1, "filesTotal": 189, "testsPassed": 1161, "testsFailed": 3, "testsSkipped": 1, "testsTotal": 1165 },
+      "comparison": "same four failure clusters as preceding F-25/F-26 baseline; no F-28 test failure"
+    },
+    "fullLint": {
+      "exitCode": 1,
+      "classification": "known invalid scanner includes package node_modules; focused edited-file lint is authoritative for this test-only change"
+    },
+    "runtimeCycles": { "exitCode": 0, "cycles": 0 },
+    "buildWeb": { "exitCode": 0, "modules": 7931, "appBuild": "1m31s", "serviceWorkerBuild": "1.48s" },
+    "size": {
+      "exitCode": 1,
+      "aiChatGzipKb": 844.43,
+      "aiChatLimitGzipKb": 140,
+      "comparison": "same sole budget failure as preceding baseline"
+    },
+    "startup": { "exitCode": 0, "chunkCycles": 0 },
+    "buildSideEffectsRestored": {
+      "versionJsonSha256": "be431dce15bee9b9951a10d8a32f1effec7637013228e64480bedf54d778bc34",
+      "indexHtmlSha256": "19b4f0d7e750fa7f1e485abf3ee4737535a9ca550224b3f5e65f77fcacbe52e8",
+      "serviceWorkerSha256": "78a242d3211f75739d8824d3c222797096029291be9849e39ca84c32fd642977"
+    }
+  },
+  "openspec": {
+    "change": "fix-mobile-toolbar-input-overlap",
+    "cliAvailable": false,
+    "strictValidationExitCode": 127,
+    "status": "manual structure/scenario/unique-requirement/active-owner review passed; CLI validation blocked"
+  }
+}

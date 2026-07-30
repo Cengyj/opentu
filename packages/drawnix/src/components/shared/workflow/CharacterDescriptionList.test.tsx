@@ -31,4 +31,21 @@ describe('CharacterDescriptionList component', () => {
 
     expect(onChange).toHaveBeenCalledWith('char_1', 'new prompt');
   });
+
+  it('opens subject asset selection for the requested character', () => {
+    const onSelectSubjectAsset = vi.fn();
+    render(
+      <CharacterDescriptionList
+        characters={characters}
+        onChange={vi.fn()}
+        onSelectSubjectAsset={onSelectSubjectAsset}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '选择主体素材' })
+    );
+
+    expect(onSelectSubjectAsset).toHaveBeenCalledWith('char_1');
+  });
 });

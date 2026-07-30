@@ -15,6 +15,12 @@ The system SHALL store benchmark sessions/results separately from the standard t
 - **WHEN** the user reopens the benchmark workbench
 - **THEN** previous sessions SHALL be listed with metadata and be filterable/sortable by speed, cost, rating, or favorite status.
 
+#### Scenario: Cost metadata is unavailable
+- **GIVEN** a benchmark completes but the selected provider/model has no compatible price metadata for the executed request
+- **WHEN** the result is ranked, rendered, or exported
+- **THEN** estimated cost SHALL remain explicitly unknown rather than being treated as zero or a measured value
+- **AND** cost-dependent ordering SHALL remain deterministic without fabricating an estimate
+
 ### Requirement: Settings Shortcut Entry
 The system SHALL add shortcut controls to each provider/model in the settings dialog that open the benchmark workbench with the corresponding provider, model, and modality pre-selected.
 

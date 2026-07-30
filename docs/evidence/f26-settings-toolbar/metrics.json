@@ -1,0 +1,324 @@
+{
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "environment": {
+    "source": "current production build",
+    "url": "http://127.0.0.1:7333/?sw=0",
+    "browser": "in-app Chromium; exact version unavailable",
+    "viewportCssPx": { "width": 1280, "height": 720 },
+    "devicePixelRatio": 1,
+    "language": "zh",
+    "networkThrottle": "none configured",
+    "cpuThrottle": "none configured"
+  },
+  "applicationMenuKeyboard": {
+    "arrowRightEnglishMenuItemCount": 0,
+    "enterRemainingMenuCount": 0,
+    "moreEnterPanelMenuItemCount": 0
+  },
+  "applicationMenuResponsive": {
+    "environment": {
+      "source": "same current production dist artifact",
+      "browser": "in-app Chromium; exact version unavailable",
+      "devicePixelRatio": 1,
+      "language": "zh",
+      "networkThrottle": "none configured",
+      "cpuThrottle": "none configured",
+      "samplesPerRecordedState": 1
+    },
+    "viewport390x844": {
+      "itemCount": 13,
+      "itemHeightCssPx": 32,
+      "repositoryCompactMinimumCssPx": 44,
+      "exportArrowRight": {
+        "ariaExpanded": false,
+        "menuCount": 1,
+        "pngItemCount": 0,
+        "jpgItemCount": 0
+      }
+    },
+    "viewport320x568": {
+      "clientHeightCssPx": 416,
+      "scrollHeightCssPx": 510,
+      "endItemFullyVisibleAfterEnd": true
+    },
+    "viewport640x360": {
+      "clientHeightCssPx": 208,
+      "scrollHeightCssPx": 510,
+      "internallyScrollable": true
+    },
+    "beforeScreenshot": {
+      "file": "../f29-canvas-file-maintenance/app-menu-compact-390x844-before.jpg",
+      "width": 390,
+      "height": 844,
+      "bytes": 37913,
+      "sha256": "5f71ee68c4d410910f57c8c60e4abd68e6407e91eb4b1f96e81834a291dec0e1"
+    },
+    "openSpec": {
+      "change": "improve-settings-toolbar-accessibility",
+      "requirements": 3,
+      "scenarios": 8,
+      "tasks": 17,
+      "tasksComplete": 5,
+      "capabilityOwners": 1,
+      "uniqueRequirementNames": "3/3",
+      "strictValidation": "unavailable; CLI exit 127"
+    },
+    "classification": "confirmed compact activation geometry below the repository 44px convention; existing internal scrolling is a positive control; runtime implementation approval-gated"
+  },
+  "canvasSettingsAccessibility": {
+    "taskProgressSwitchAccessibleName": ""
+  },
+  "settingsShellAccessibility": {
+    "supplementalEnvironment": {
+      "url": "http://127.0.0.1:7396/?sw=0",
+      "viewportCssPx": { "width": 1280, "height": 720 },
+      "devicePixelRatio": 1,
+      "language": "zh"
+    },
+    "root": {
+      "role": null,
+      "ariaLabel": null,
+      "ariaLabelledby": null,
+      "ariaModal": null,
+      "tabindex": null
+    },
+    "title": { "text": "设置", "id": null, "role": null },
+    "controls": {
+      "present": ["split", "minimize", "maximize", "full", "close"],
+      "visible": ["split", "maximize", "close"],
+      "visibleTagNames": ["SPAN", "SPAN", "SPAN"],
+      "visibleRoles": [null, null, null],
+      "visibleAccessibleNames": [null, null, null],
+      "visibleTabindexes": [null, null, null]
+    },
+    "focus": {
+      "afterApplicationMenuOpen": "BODY",
+      "escapeFromFocusedProviderNavWindowCount": 1,
+      "afterPointerCloseWindowCount": 0,
+      "afterPointerClose": "BODY"
+    },
+    "navigation": {
+      "containerTag": "ASIDE",
+      "containerAccessibleName": null,
+      "viewCount": 4,
+      "ariaCurrentValues": [null, null, null, null],
+      "ariaPressedValues": [null, null, null, null],
+      "ariaSelectedValues": [null, null, null, null],
+      "ariaControlsValues": [null, null, null, null],
+      "contentPanel": {
+        "tag": "DIV",
+        "role": null,
+        "id": null,
+        "ariaLabel": null,
+        "ariaLabelledby": null
+      }
+    },
+    "winBoxMinimumSizeConsistency": {
+      "environment": {
+        "url": "http://127.0.0.1:7397/?sw=0",
+        "viewportCssPx": { "width": 1280, "height": 720 },
+        "devicePixelRatio": 1,
+        "language": "zh"
+      },
+      "settings": {
+        "declaredHeight": "88%",
+        "rawResolvedHeight": 634,
+        "declaredMinHeight": 680,
+        "cycles": [
+          { "initial": { "x": 77, "y": 43, "width": 1126, "height": 634 }, "restored": { "x": 77, "y": 43, "width": 1126, "height": 634 } },
+          { "initial": { "x": 77, "y": 43, "width": 1126, "height": 680 }, "restored": { "x": 77, "y": 43, "width": 1126, "height": 634 } },
+          { "initial": { "x": 77, "y": 43, "width": 1126, "height": 680 }, "restored": { "x": 77, "y": 43, "width": 1126, "height": 634 } }
+        ]
+      },
+      "imageGeneration": {
+        "declaredHeight": "60%",
+        "rawResolvedHeight": 432,
+        "declaredMinHeight": 500,
+        "initial": { "x": 128, "y": 144, "width": 1024, "height": 500 },
+        "restored": { "x": 128, "y": 144, "width": 1024, "height": 432 }
+      },
+      "videoGeneration": {
+        "declaredHeight": "60%",
+        "rawResolvedHeight": 432,
+        "declaredMinHeight": 600,
+        "initial": { "x": 192, "y": 144, "width": 896, "height": 600 },
+        "initialBottom": 744,
+        "viewportBottomOverflow": 24,
+        "restored": { "x": 192, "y": 144, "width": 896, "height": 432 }
+      },
+      "mediaLibraryNegativeControl": {
+        "declaredHeight": "85%",
+        "rawResolvedHeight": 612,
+        "declaredMinHeight": 500,
+        "initial": { "x": 96, "y": 54, "width": 1088, "height": 612 },
+        "restored": { "x": 96, "y": 54, "width": 1088, "height": 612 }
+      },
+      "classification": "confirmed shared stored-versus-rendered normal-geometry inconsistency; approval-only owner fix-winbox-minimum-size-consistency"
+    },
+    "beforeScreenshot": {
+      "file": "settings-shell-desktop-1280x720-before.jpg",
+      "bytes": 50745,
+      "sha256": "e9c62b1662ba891b1caf8c91b363b49efa7bbc4224f6ccfade23f22bb82bf18f"
+    }
+  },
+  "toolbarPersistencePositiveControl": {
+    "penCountBeforeRemove": 1,
+    "penCountAfterRemove": 0,
+    "penCountAfterRefresh": 0,
+    "penCountAfterReset": 1,
+    "penCountAfterSecondRefresh": 1
+  },
+  "toolbarOverlappingWriteDiagnostic": {
+    "environment": {
+      "runtime": "fixed workspace Node 24.14.0",
+      "runner": "Vitest 3.2.4",
+      "environment": "jsdom with controlled deferred kvStorageService boundary",
+      "browserStorageAccessed": false
+    },
+    "acceptedOperations": ["hide freehand", "show freehand"],
+    "forcedCompletionOrder": ["show freehand", "hide freehand"],
+    "visibleAfterAcceptedOperations": true,
+    "durableAfterReverseCompletion": false,
+    "visibleAfterFreshInitializeAsync": false,
+    "testFiles": { "passed": 1, "total": 1 },
+    "tests": { "passed": 1, "total": 1 },
+    "testDurationMs": 6,
+    "vitestDurationSeconds": 1.2,
+    "processWallSeconds": 1.69,
+    "exitCode": 0,
+    "temporaryDiagnosticRemoved": true,
+    "classification": "confirmed service-level ordering race under reverse asynchronous settlement; actual Chromium IndexedDB incidence and frequency remain unknown"
+  },
+  "applicationMenuWindowStacking": {
+    "environment": {
+      "source": "current production build",
+      "url": "http://127.0.0.1:7399/?sw=0",
+      "browser": "in-app Chromium; exact version unavailable",
+      "viewportCssPx": { "width": 1280, "height": 720 },
+      "devicePixelRatio": 1,
+      "language": "zh",
+      "networkThrottle": "none configured",
+      "cpuThrottle": "none configured"
+    },
+    "applicationMenu": {
+      "rect": { "x": 61, "y": 39, "width": 241.1875, "height": 512, "right": 302.1875, "bottom": 551 },
+      "computedZIndex": 5000,
+      "callerRequestedZIndex": 4500
+    },
+    "settingsWindow": {
+      "rect": { "x": 77, "y": 43, "width": 1126, "height": 634, "right": 1203, "bottom": 677 },
+      "computedZIndex": 5000
+    },
+    "overlap": {
+      "rect": { "x": 77, "y": 43, "width": 225.1875, "height": 508, "right": 302.1875, "bottom": 551 },
+      "areaCssPxSquared": 114395.25,
+      "topmostSamples": [
+        { "position": "top-left", "hit": ".wb-nw", "belongsToApplicationMenu": false },
+        { "position": "center", "hit": ".settings-dialog__nav-shell", "belongsToApplicationMenu": false },
+        { "position": "bottom-right", "hit": ".settings-dialog__sidebar-list", "belongsToApplicationMenu": false }
+      ],
+      "applicationMenuHits": 0,
+      "sampleCount": 3
+    },
+    "controls": {
+      "afterSettingsClosed": {
+        "winBoxCount": 0,
+        "menuCenterBelongsToApplicationMenu": true
+      },
+      "settingsProviderContextMenu": {
+        "computedZIndex": 20000,
+        "centerBelongsToContextMenu": true
+      }
+    },
+    "multiWindowLayerInventory": {
+      "staticWinBoxJsxSites": 6,
+      "staticConsumerFiles": 5,
+      "builtInToolsExplicitlySupportingMultipleWindows": 4,
+      "builtInUrlToolsDefaultingToMultipleWindows": 3,
+      "defaultMultipleLaunchMode": "new",
+      "newWindowUiWriters": ["toolbox open action", "minimized-tools context menu"],
+      "openNewToolInstanceCountGuard": false,
+      "toolWindowManagerRendersEveryActiveInstance": true,
+      "winBoxLayerFormula": "5000 + zero-based registered-window index",
+      "firstWindowAtCandidateMenuLayer": 501,
+      "candidateMenuLayer": 5500,
+      "fixed5500OnlyDesignValid": false,
+      "proposedBoundary": "one Drawnix-scoped outer WinBox stacking context plus an application-menu sibling layer; implementation remains approval-gated and unverified"
+    },
+    "beforeScreenshot": {
+      "file": "app-menu-behind-settings-1280x720-before.jpg",
+      "width": 1280,
+      "height": 720,
+      "bytes": 62387,
+      "sha256": "a2ce9470f4de4f0403c5e88bf24d97669bcc727918fbcc5002cb64f69e44d640"
+    },
+    "runtimeChanged": false,
+    "classification": "confirmed application-menu/WinBox stacking defect; this evidence does not authorize repository-wide z-index normalization"
+  },
+  "ttsSettings": {
+    "supplementalEnvironment": {
+      "source": "same current production dist artifact",
+      "url": "http://127.0.0.1:7398/?sw=0",
+      "browser": "in-app Chromium; exact version unavailable",
+      "viewportCssPx": { "width": 1280, "height": 720 },
+      "devicePixelRatio": 1,
+      "language": "zh",
+      "networkThrottle": "none configured",
+      "cpuThrottle": "none configured"
+    },
+    "voiceOptions": 157,
+    "buttonCount": 193,
+    "descendantElementCount": 1799,
+    "switchToLastVoiceVisibleMs": [381, 369, 380, 380, 357],
+    "medianMs": 380,
+    "rangeMs": [357, 381],
+    "navigationDriverIsolation": {
+      "warmCanvasClickMs": [326, 321, 315, 321, 316, 319, 319],
+      "warmCanvasMedianMs": 319,
+      "warmCanvasRangeMs": [315, 326],
+      "warmSpeechClickMs": [304, 302, 293, 301, 308, 304, 292],
+      "warmSpeechMedianMs": 302,
+      "warmSpeechRangeMs": [292, 308],
+      "activeSpeechNoOpClickMs": [320, 305, 323, 306, 301, 305, 317],
+      "activeSpeechNoOpMedianMs": 306,
+      "activeSpeechNoOpRangeMs": [301, 323],
+      "interpretation": "driver/action waiting is the dominant component, so locator click duration is not application render latency"
+    },
+    "fullListCommitIsolation": {
+      "method": "toggle the existing search value between a guaranteed no-match string and one whitespace character; trim semantics restores all 157 rows without changing saved settings",
+      "remove157RowsMs": [28, 40, 25, 24, 29, 24, 24],
+      "removeMedianMs": 25,
+      "removeRangeMs": [24, 40],
+      "add157RowsMs": [41, 35, 36, 37, 36, 37, 34],
+      "addMedianMs": 36,
+      "addRangeMs": [34, 41],
+      "sameValueNoOpFillMs": [20, 25, 24, 25, 23, 21, 23],
+      "sameValueNoOpMedianMs": 23,
+      "sameValueNoOpRangeMs": [20, 25],
+      "medianIncrementAboveDriverNoOpMs": 13,
+      "rowCountAfterRestore": 157,
+      "descendantCountAfterRestore": 1799,
+      "lastRowTopCssPx": 12245.5,
+      "forcedLayoutReadMs": [0, 0, 0, 0, 0, 0, 0]
+    },
+    "comparatorIsolation": {
+      "environment": "fixed workspace Node 24.14.0 runtime; exact DOM-derived 157-voice metadata; deterministic shuffled order seed 0x5f3759df",
+      "repetitionsPerSample": 200,
+      "samples": 7,
+      "exactInstrumentedSort": {
+        "comparisons": 937,
+        "findCalls": 1874,
+        "findProbes": 144724
+      },
+      "currentPerSortMs": [3.562283884994686, 3.5425030199997125, 3.5326007799990475, 3.5168141699954867, 3.5439806650020182, 3.5555091050080954, 3.5346312250010667],
+      "currentMedianMs": 3.5425030199997125,
+      "currentRangeMs": [3.5168141699954867, 3.562283884994686],
+      "precomputedScorePerSortMs": [0.17458231499418617, 0.17086098000407218, 0.16880011999979616, 0.1731335899978876, 0.16797439500689507, 0.1730236850120127, 0.16803274499252438],
+      "precomputedScoreMedianMs": 0.17086098000407218,
+      "precomputedScoreRangeMs": [0.16797439500689507, 0.17458231499418617],
+      "interpretation": "confirmed bounded algorithmic inefficiency, not evidence of a user-visible bottleneck or Chromium improvement"
+    },
+    "classification": "non-problem at the current evidence threshold; original 380 ms candidate is dominated by browser-driver waiting, and no runtime change is authorized"
+  }
+}

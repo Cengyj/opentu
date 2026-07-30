@@ -5,6 +5,8 @@
 **规格文档**: [spec.md](./spec.md)  
 **实施计划**: [plan.md](./plan.md)
 
+> **2026-07-30 当前实现说明**：本文是历史任务清单；勾选状态不证明对应文件、测试或行为仍存在。`TaskSummary`/旧任务工具栏已经退出当前可达链，当前入口为 `Drawnix → UnifiedToolbar → BottomActionsSection → ToolButton → TaskQueuePanel`。所有验收项须以当前源码、OpenSpec、运行结果和新鲜测试为准。
+
 ---
 
 ## 任务摘要

@@ -1,9 +1,8 @@
 /**
  * Workflow Storage Reader Service
  * 
- * 主线程直接读取 IndexedDB 中的工作流数据，避免通过 postMessage 与 SW 通信的限制。
- * 
- * 注意：这个模块只负责读取操作，写操作仍然通过 SW 进行以确保数据一致性
+ * 主线程直接读取 IndexedDB 中由 MainThreadWorkflowEngine 持久化的工作流数据。
+ * 新的 AIInputBar 提交不会写入这个 store；其恢复事实来源是 task/chat/board 记录。
  */
 
 import type { 
@@ -20,7 +19,7 @@ import { APP_DB_NAME, APP_DB_STORES, getAppDB } from './app-database';
 const DB_NAME = APP_DB_NAME;
 const WORKFLOWS_STORE = APP_DB_STORES.WORKFLOWS;
 
-// SW 端的 Workflow 结构
+// workflow store 中的兼容结构（历史上也由 SW 使用）
 interface SWWorkflow {
   id: string;
   steps: Array<{
@@ -65,7 +64,7 @@ interface SWWorkflow {
 }
 
 /**
- * 将 SWWorkflow 转换为 WorkflowDefinition
+ * 将持久化工作流转换为 WorkflowDefinition
  */
 function convertSWWorkflowToDefinition(swWorkflow: SWWorkflow): WorkflowDefinition {
   return {

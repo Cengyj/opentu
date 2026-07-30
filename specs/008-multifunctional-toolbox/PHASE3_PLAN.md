@@ -1,5 +1,7 @@
 # Phase 3 实施计划 - 优化与完善
 
+> 历史计划（当前状态审计：2026-07-29）：本文规划的 `ToolErrorOverlay`、加载状态事件和重试接口没有接入当前可达产品链路。当前运行时只保留 iframe loader 的 `onload` 移除与 `onerror` 文本反馈；恢复该 UX 属于候选产品提案，需单独审批。
+
 > Feature: feat/08-multifunctional-toolbox
 > Created: 2025-12-09
 > Status: 计划阶段

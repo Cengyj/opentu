@@ -1933,16 +1933,17 @@ async function callSWApi() {
 **原因**: 项目在开发模式下（`localhost` 或 `127.0.0.1`）会自动跳过更新提示，直接激活新的 Service Worker。
 
 ```typescript
-// apps/web/src/main.tsx 中的逻辑
+// apps/web/src/app/bootstrap.tsx 中的逻辑
 const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
 if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
   if (isDevelopment) {
     // 开发模式：直接跳过 waiting，不显示提示
-    newWorker.postMessage({ type: 'SKIP_WAITING' });
+    newWorker.postMessage({ type: 'FORCE_UPGRADE' });
   } else {
-    // 生产模式：显示更新提示
-    window.dispatchEvent(new CustomEvent('sw-update-available', { ... }));
+    // 生产模式：先请求 waiting worker 的权威版本状态；
+    // handleRuntimeVersionState/notifyUpdateReady 再发送提示事件。
+    requestSWVersionState(newWorker);
   }
 }
 ```

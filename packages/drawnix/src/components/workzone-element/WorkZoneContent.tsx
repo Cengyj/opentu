@@ -29,14 +29,14 @@ const STATUS_ICONS: Record<StepStatus, string> = {
   skipped: '⊘',
 };
 
-// 全局记录已经 claim 过的工作流，避免重复请求
+// 全局记录已经尝试过兼容恢复的工作流，避免重复请求
 const claimedWorkflows = new Set<string>();
 
 interface WorkZoneContentProps {
   workflow: WorkflowMessageData;
   className?: string;
   onDelete?: () => void;
-  /** 当 SW 中找不到工作流或工作流状态变更时的回调 */
+  /** 当兼容恢复找不到工作流或工作流状态变更时的回调 */
   onWorkflowStateChange?: (
     workflowId: string,
     status: 'completed' | 'failed',
@@ -56,19 +56,17 @@ export const WorkZoneContent: React.FC<WorkZoneContentProps> = ({
   onRetry,
   onHideForever,
 }) => {
-  // 用于追踪是否已经尝试 claim
+  // 用于追踪是否已经尝试兼容恢复
   const hasClaimedRef = useRef(false);
   const [isRetrying, setIsRetrying] = useState(false);
   const [showHideConfirm, setShowHideConfirm] = useState(false);
 
-  // 页面刷新后，尝试接管工作流或同步状态
-  // 注意：只对"旧"工作流执行 claim，新创建的工作流不需要 claim
+  // 页面刷新后，尝试从兼容恢复源接管工作流或同步状态。
+  // 当前任务事实来源与此旧 claim 分支的边界正在由 OpenSpec change 审批。
   useEffect(() => {
     const workflowId = workflow.id;
 
-    // 检查是否是新创建的工作流（60秒内创建的视为新工作流）
-    // 新工作流不需要 claim，因为它们刚刚被提交到 SW
-    // 60秒足以涵盖 submit 的超时和重试过程
+    // 60 秒内的新工作流仍由当前页面的执行与任务订阅管理，不进入兼容恢复。
     const isNewWorkflow =
       workflow.createdAt && Date.now() - workflow.createdAt < 60000;
     if (isNewWorkflow) {
@@ -86,14 +84,13 @@ export const WorkZoneContent: React.FC<WorkZoneContentProps> = ({
     const isActiveByStatus =
       workflow.status === 'running' || workflow.status === 'pending';
     const isActiveBySteps = hasRunningSteps && !isTerminalStatus;
-    // 不一致状态：终态但有运行中的步骤，需要从 SW 获取真实状态
+    // 不一致状态：终态但有运行中的步骤，需要查询兼容恢复源
     const isInconsistentState = isTerminalStatus && hasRunningSteps;
     const needsClaim =
       isActiveByStatus || isActiveBySteps || isInconsistentState;
 
-    // 如果工作流已是终态但 steps 还在 running，这是不一致状态
-    // 需要从 SW 获取真实状态，而不是直接标记为失败
-    // 这种情况通常发生在页面刷新后，SW 端状态可能已经更新但 UI 还是旧状态
+    // 如果工作流已是终态但 steps 还在 running，这是不一致状态；
+    // 先查询恢复源，而不是直接沿用任一侧的状态。
 
     // 避免重复 claim
     if (
@@ -107,7 +104,7 @@ export const WorkZoneContent: React.FC<WorkZoneContentProps> = ({
     hasClaimedRef.current = true;
     claimedWorkflows.add(workflowId);
 
-    // 异步 claim 工作流
+    // 异步执行兼容恢复
     (async () => {
       try {
         const { workflowSubmissionService } = await import(
@@ -137,7 +134,9 @@ export const WorkZoneContent: React.FC<WorkZoneContentProps> = ({
           }
         }
 
-        // 尝试通过 SW claim
+        // 旧兼容分支：尝试查询 SW workflow owner。
+        // 当前 SWChannelClient 没有类型化的 claimWorkflow API；审批中的
+        // fix-main-thread-workflow-recovery-sync 将改为 task-store reconciliation。
         const { swChannelClient } = await import(
           '../../services/sw-channel/client'
         );

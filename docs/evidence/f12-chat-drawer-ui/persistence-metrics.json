@@ -1,0 +1,61 @@
+{
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "classification": {
+    "supersededHypothesis": "CHAT-TOOL-PERSIST-RACE-001",
+    "confirmedIssue": "CHAT-TOOL-PERSIST-RACE-002",
+    "status": "confirmed_approval_blocked",
+    "evidenceStrength": {
+      "productionSourceOrder": "high",
+      "controlledStorageBehavior": "high",
+      "productionFrequency": "unknown",
+      "performance": "unmeasured"
+    }
+  },
+  "environment": {
+    "node": "24.14.0",
+    "vitest": "3.2.4",
+    "dom": "jsdom",
+    "localForage": "current repository dependency",
+    "indexedDb": "fake-indexeddb 6.2.5",
+    "network": false,
+    "realStorage": false,
+    "providerCalls": 0,
+    "credentialsRead": false
+  },
+  "diagnostic": {
+    "command": "pnpm --dir packages/drawnix test src/services/chat-tool-persistence-order.diagnostic.test.ts",
+    "exitCode": 0,
+    "files": { "passed": 1, "total": 1 },
+    "tests": { "passed": 1, "total": 1 },
+    "testDurationMs": 13,
+    "vitestDurationSeconds": 1.21,
+    "wallDurationSeconds": 2.37,
+    "operations": [
+      "updateMessage(absentId, workflowPatch)",
+      "addMessage(baseMessageSameId)",
+      "await both",
+      "getMessages(sessionId)"
+    ],
+    "patchPromiseFulfilled": true,
+    "basePromiseFulfilled": true,
+    "persistedRecordCount": 1,
+    "persistedRecordEqualsBase": true,
+    "persistedWorkflow": null,
+    "temporaryFileRemoved": true
+  },
+  "change": {
+    "id": "fix-chat-message-persistence-consistency",
+    "newChangeCreated": false,
+    "requirements": 5,
+    "scenarios": 9,
+    "tasks": 18,
+    "tasksChecked": 4,
+    "approvalRequired": true
+  },
+  "performanceClaim": null,
+  "runtimeChanges": false,
+  "permanentTestChanges": false,
+  "storageSchemaChanges": false,
+  "userDataChanges": false
+}

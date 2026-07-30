@@ -4,7 +4,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { $view } from '@milkdown/kit/utils';
 import { imageBlockConfig, type ImageBlockConfig } from '@milkdown/kit/component/image-block';
 import { normalizeImageDataUrl } from '@aitu/utils';
-import { subscribeAssetMap, getAssetMapSnapshot } from '../../../stores/asset-map-store';
+import {
+  subscribeAssetMap,
+  getAssetMapSnapshot,
+  getAssetMapStatusSnapshot,
+} from '../../../stores/asset-map-store';
 import { AssetType } from '../../../types/asset.types';
 import { extractAssetIdFromUrl } from '../../../utils/markdown-asset-embeds';
 import { parseMarkdownImageAlt } from '../../../utils/markdown-image-blocks';
@@ -136,6 +140,10 @@ function RenderedImageBlock({
 }: Pick<MarkdownImageBlockProps, 'attrs' | 'selected' | 'readonly' | 'updateAttrs'>) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const assetMap = useSyncExternalStore(subscribeAssetMap, getAssetMapSnapshot);
+  const assetMapStatus = useSyncExternalStore(
+    subscribeAssetMap,
+    getAssetMapStatusSnapshot
+  );
   const [draftSize, setDraftSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
@@ -309,7 +317,7 @@ function RenderedImageBlock({
     document.addEventListener('pointerup', handlePointerUp, { once: true });
   }, [readonly, updateAttrs]);
 
-  if (assetId && !asset && assetMap.size === 0) {
+  if (assetId && !asset && assetMapStatus !== 'ready') {
     return <div className="collimind-markdown-image-block__loading" />;
   }
 

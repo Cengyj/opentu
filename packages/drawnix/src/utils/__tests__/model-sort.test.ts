@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { ModelVendor, type ModelConfig } from '../../constants/model-config';
+import {
+  IMAGE_MODELS,
+  ModelVendor,
+  type ModelConfig,
+} from '../../constants/model-config';
 import {
   compareModelsByDisplayPriority,
   sortModelsByDisplayPriority,
@@ -67,6 +71,38 @@ describe('model-sort', () => {
     ]);
   });
 
+  it('同模型族中新版优先于旧版的更高推荐分', () => {
+    const models = [
+      createImageModel('gemini-2.5-flash-image', {
+        recommendedScore: 100,
+      }),
+      createImageModel('gemini-3.1-flash-image-preview', {
+        recommendedScore: 1,
+      }),
+    ];
+
+    expect(sortModelsByDisplayPriority(models).map((model) => model.id)).toEqual([
+      'gemini-3.1-flash-image-preview',
+      'gemini-2.5-flash-image',
+    ]);
+  });
+
+  it('同模型族同版本时推荐分优先于档位启发式', () => {
+    const models = [
+      createImageModel('gemini-3-pro-image-preview', {
+        recommendedScore: 90,
+      }),
+      createImageModel('gemini-3-flash-image-preview', {
+        recommendedScore: 100,
+      }),
+    ];
+
+    expect(sortModelsByDisplayPriority(models).map((model) => model.id)).toEqual([
+      'gemini-3-flash-image-preview',
+      'gemini-3-pro-image-preview',
+    ]);
+  });
+
   it('同版本同档位时 4K 优先于 2K 和默认', () => {
     const models = [
       createImageModel('gemini-3-pro-image-preview'),
@@ -101,6 +137,24 @@ describe('model-sort', () => {
       'gpt-image-2',
       'gpt-image-1',
       'gpt-4o-image',
+    ]);
+  });
+
+  it('真实静态 Gemini 图片目录保持新版本优先', () => {
+    const targetModelIds = new Set([
+      'gemini-2.5-flash-image',
+      'gemini-3-pro-image-preview',
+      'gemini-3.1-flash-image-preview',
+    ]);
+
+    expect(
+      sortModelsByDisplayPriority(
+        IMAGE_MODELS.filter((model) => targetModelIds.has(model.id))
+      ).map((model) => model.id)
+    ).toEqual([
+      'gemini-3.1-flash-image-preview',
+      'gemini-3-pro-image-preview',
+      'gemini-2.5-flash-image',
     ]);
   });
 });

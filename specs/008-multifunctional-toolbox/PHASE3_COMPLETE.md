@@ -1,5 +1,7 @@
 # Phase 3 完成总结 - 优化与完善
 
+> 历史完成报告（当前状态审计：2026-07-29）：本文列出的工具加载状态、错误覆盖层和重试接口没有接入当前可达产品链路。当前运行时只保留 iframe loader 的 `onload` 移除与 `onerror` 文本反馈；恢复该 UX 属于候选产品提案，需单独审批。
+
 > Feature: feat/08-multifunctional-toolbox
 > Date: 2025-12-09
 > Status: ✅ Phase 3 完整完成（100%）

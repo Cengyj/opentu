@@ -1,14 +1,12 @@
 /**
  * Workflow Submission Service
  *
- * Simplified service for submitting workflows to Service Worker.
- * This replaces the complex workflow execution logic in AIInputBar.
+ * Coordinates persisted workflow recovery, cancellation, and the main-thread
+ * workflow engine used by resumed workflows.
  *
- * Architecture:
- * - Application layer: Build workflow definition → Submit to SW → Listen for updates
- * - Service Worker: Execute workflow → Call MCP tools → Broadcast status updates
- *
- * Updated: Now fully uses postmessage-duplex via SWChannelClient for all SW communication.
+ * New AIInputBar submissions currently execute MCP steps in AIInputBar itself;
+ * the service's `submit()` entry has no reachable production caller and is not
+ * part of that submission path.
  */
 
 import { Subject, Observable, Subscription } from 'rxjs';
@@ -136,9 +134,9 @@ export interface CanvasInsertEvent {
   };
 }
 
-/**
- * Main thread tool request event
- * SW requests main thread to execute a tool
+  /**
+   * Main thread tool request event
+   * Compatibility event shape for a delegated main-thread tool request.
  */
 export interface MainThreadToolRequestEvent {
   type: 'main_thread_tool_request';
@@ -826,7 +824,7 @@ class WorkflowSubmissionService {
 
   /**
    * Subscribe to all workflow events (for global state sync)
-   * Used by drawnix.tsx to sync WorkZone UI with SW workflow state
+   * Used by UI consumers to sync fallback-engine and recovered workflow state.
    */
   subscribeToAllEvents(callback: (event: WorkflowEvent) => void): Subscription {
     return this.events$.subscribe(callback);

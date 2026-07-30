@@ -174,35 +174,6 @@ export const KB_DEFAULT_DIRECTORIES: Array<{ name: string; isDefault: boolean; o
   { name: 'Skill', isDefault: true, order: 1 },
 ];
 
-// ==================== 保存状态类型 ====================
-
-/**
- * 保存状态
- */
-export type KBSaveState = 'unsaved' | 'saving' | 'saved' | 'duplicate' | 'error';
-
-/**
- * 保存状态信息
- */
-export interface KBSaveStateInfo {
-  /** 保存状态 */
-  state: KBSaveState;
-  /** 内容指纹 */
-  fingerprint: string;
-  /** 关联的笔记 ID */
-  noteId?: string;
-  /** 关联的笔记名称 */
-  noteName?: string;
-  /** 目录 ID */
-  directoryId?: string;
-  /** 保存时间 */
-  savedAt?: number;
-  /** 错误信息 */
-  errorMessage?: string;
-  /** 最后检查时间 */
-  lastCheckedAt: number;
-}
-
 // ==================== 知识提取类型 ====================
 
 /**

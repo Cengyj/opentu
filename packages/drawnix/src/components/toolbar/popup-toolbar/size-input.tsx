@@ -143,6 +143,8 @@ export const SizeInput: React.FC<SizeInputProps> = ({ board }) => {
   const [presetOpen, setPresetOpen] = useState(false);
   // 用于跟踪用户主动设置的目标尺寸，防止 useEffect 覆盖
   const targetSizeRef = useRef<{ width: number; height: number } | null>(null);
+  // Enter 已显式提交、Escape 已显式取消时，紧随其后的 blur 不应再次提交。
+  const skipNextBlurApplyRef = useRef(false);
   const container = PlaitBoard.getBoardContainer(board);
 
   // 获取选中元素的边界矩形
@@ -279,18 +281,28 @@ export const SizeInput: React.FC<SizeInputProps> = ({ board }) => {
     [board, selectedElements, selectionRect]
   );
 
+  const handleBlur = useCallback(() => {
+    if (skipNextBlurApplyRef.current) {
+      skipNextBlurApplyRef.current = false;
+      return;
+    }
+    applySize();
+  }, [applySize]);
+
   // 处理键盘事件
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') {
+        skipNextBlurApplyRef.current = true;
         applySize();
-        (e.target as HTMLInputElement).blur();
+        e.currentTarget.blur();
       } else if (e.key === 'Escape') {
+        skipNextBlurApplyRef.current = true;
         if (selectionRect) {
           setWidth(Math.round(selectionRect.width).toString());
           setHeight(Math.round(selectionRect.height).toString());
         }
-        (e.target as HTMLInputElement).blur();
+        e.currentTarget.blur();
       }
     },
     [applySize, selectionRect]
@@ -309,7 +321,7 @@ export const SizeInput: React.FC<SizeInputProps> = ({ board }) => {
           className="size-input"
           value={width}
           onChange={handleWidthChange}
-          onBlur={applySize}
+          onBlur={handleBlur}
           onKeyDown={handleKeyDown}
         />
       </div>
@@ -333,7 +345,7 @@ export const SizeInput: React.FC<SizeInputProps> = ({ board }) => {
           className="size-input"
           value={height}
           onChange={handleHeightChange}
-          onBlur={applySize}
+          onBlur={handleBlur}
           onKeyDown={handleKeyDown}
         />
       </div>

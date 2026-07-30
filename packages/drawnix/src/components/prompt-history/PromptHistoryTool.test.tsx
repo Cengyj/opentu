@@ -33,7 +33,7 @@ vi.mock('../../services/prompt-history-service', async () => {
   };
 });
 
-vi.mock('tdesign-react', () => ({
+vi.mock('../../utils/message-plugin', () => ({
   MessagePlugin: mockMessage,
 }));
 
@@ -216,9 +216,15 @@ describe('PromptHistoryTool', () => {
     await waitFor(() => {
       expect(mockDeletePrompts).toHaveBeenCalledWith(['发送提示词']);
     });
+    await waitFor(() => {
+      expect(mockGetPromptHistoryPage).toHaveBeenCalledTimes(2);
+    });
 
     fireEvent.click(await screen.findByRole('button', { name: '置顶' }));
     expect(mockSetPinned).toHaveBeenCalledWith('发送提示词', true, 'agent');
+    await waitFor(() => {
+      expect(mockGetPromptHistoryPage).toHaveBeenCalledTimes(3);
+    });
   });
 
   it('点击提示词复制，点击非复选框列不切换选中', async () => {
@@ -266,6 +272,9 @@ describe('PromptHistoryTool', () => {
       category: 'agent',
     });
     expect(mockMessage.success).toHaveBeenCalledWith('提示词已更新');
+    await waitFor(() => {
+      expect(mockGetPromptHistoryPage).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('无结果记录支持编辑发送提示词', async () => {
@@ -316,6 +325,9 @@ describe('PromptHistoryTool', () => {
       tags: ['text'],
       category: 'text',
       allowSentPromptEdit: true,
+    });
+    await waitFor(() => {
+      expect(mockGetPromptHistoryPage).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -399,5 +411,8 @@ describe('PromptHistoryTool', () => {
       pinned: true,
     });
     expect(mockMessage.success).toHaveBeenCalledWith('提示词已创建');
+    await waitFor(() => {
+      expect(mockGetPromptHistoryPage).toHaveBeenCalledTimes(2);
+    });
   });
 });

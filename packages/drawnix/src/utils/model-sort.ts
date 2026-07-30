@@ -10,11 +10,16 @@ type ModelSortOptions = {
 
 type VersionVector = number[];
 
-const MODEL_NAME_IGNORED_TOKENS = new Set([
+const MODEL_FAMILY_IGNORED_TOKENS = new Set([
   'vip',
   'async',
   'hd',
   'uhd',
+  'preview',
+  'flash',
+  'pro',
+  'ultra',
+  'max',
 ]);
 
 function getModelSortKey(model: ModelConfig): string {
@@ -34,6 +39,19 @@ function getRecommendedScore(model: ModelConfig): number | null {
   return Number.isFinite(model.recommendedScore)
     ? Number(model.recommendedScore)
     : null;
+}
+
+function compareRecommendedScores(
+  left: ModelConfig,
+  right: ModelConfig
+): number {
+  const leftScore = getRecommendedScore(left);
+  const rightScore = getRecommendedScore(right);
+
+  if (leftScore === null && rightScore === null) return 0;
+  if (leftScore === null) return 1;
+  if (rightScore === null) return -1;
+  return rightScore - leftScore;
 }
 
 function extractVersionCandidates(text: string): VersionVector[] {
@@ -115,15 +133,11 @@ function getBestVersionVector(model: ModelConfig): VersionVector {
   );
 }
 
-function getModelNameOrderKey(model: ModelConfig): string {
-  const source = [model.shortLabel, model.label, model.id]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
+function getNormalizedModelFamilyKey(model: ModelConfig): string {
+  const source = model.id.toLowerCase();
   const tokens = source.match(/[a-z0-9]+(?:\.[a-z0-9]+)?/g) || [];
   const filteredTokens = tokens.filter((token) => {
-    if (MODEL_NAME_IGNORED_TOKENS.has(token)) {
+    if (MODEL_FAMILY_IGNORED_TOKENS.has(token)) {
       return false;
     }
     if (/^\d+s$/.test(token)) {
@@ -199,17 +213,26 @@ export function compareModelsByDisplayPriority(
     }
   }
 
-  const leftRecommendedScore = getRecommendedScore(left);
-  const rightRecommendedScore = getRecommendedScore(right);
-  if (
-    leftRecommendedScore !== null ||
-    rightRecommendedScore !== null
-  ) {
-    if (leftRecommendedScore === null) return 1;
-    if (rightRecommendedScore === null) return -1;
-    if (leftRecommendedScore !== rightRecommendedScore) {
-      return rightRecommendedScore - leftRecommendedScore;
+  const leftFamilyKey = getNormalizedModelFamilyKey(left);
+  const rightFamilyKey = getNormalizedModelFamilyKey(right);
+  const familyKeyDiff = leftFamilyKey.localeCompare(
+    rightFamilyKey,
+    'zh-Hans-CN'
+  );
+
+  if (familyKeyDiff === 0) {
+    const versionDiff = compareVersionVectorsDesc(
+      getBestVersionVector(left),
+      getBestVersionVector(right)
+    );
+    if (versionDiff !== 0) {
+      return versionDiff;
     }
+  }
+
+  const recommendedScoreDiff = compareRecommendedScores(left, right);
+  if (recommendedScoreDiff !== 0) {
+    return recommendedScoreDiff;
   }
 
   const leftIsNew = hasNewTag(left);
@@ -218,19 +241,8 @@ export function compareModelsByDisplayPriority(
     return leftIsNew ? -1 : 1;
   }
 
-  const leftNameKey = getModelNameOrderKey(left);
-  const rightNameKey = getModelNameOrderKey(right);
-  const nameKeyDiff = leftNameKey.localeCompare(rightNameKey, 'zh-Hans-CN');
-  if (nameKeyDiff !== 0) {
-    return nameKeyDiff;
-  }
-
-  const versionDiff = compareVersionVectorsDesc(
-    getBestVersionVector(left),
-    getBestVersionVector(right)
-  );
-  if (versionDiff !== 0) {
-    return versionDiff;
+  if (familyKeyDiff !== 0) {
+    return familyKeyDiff;
   }
 
   const tierDiff = getTierWeight(right) - getTierWeight(left);

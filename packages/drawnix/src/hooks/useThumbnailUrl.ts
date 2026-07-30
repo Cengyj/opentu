@@ -61,17 +61,12 @@ function getThumbnailStorageKey(originalUrl: string, size: 'small' | 'large'): s
   }
 }
 
-function shouldBypassThumbnailForUrl(
-  originalUrl: string,
-  type?: 'image' | 'video'
-): boolean {
+function shouldBypassThumbnailForUrl(originalUrl: string): boolean {
   return (
     originalUrl.startsWith('data:') ||
     originalUrl.startsWith('blob:') ||
-    (
-      type !== 'video' &&
-      (originalUrl.startsWith('http://') || originalUrl.startsWith('https://'))
-    )
+    originalUrl.startsWith('http://') ||
+    originalUrl.startsWith('https://')
   );
 }
 
@@ -85,12 +80,11 @@ function shouldBypassThumbnailForUrl(
  */
 function getThumbnailUrl(
   originalUrl: string,
-  size: 'small' | 'large' = 'small',
-  type?: 'image' | 'video'
+  size: 'small' | 'large' = 'small'
 ): string {
   const normalizedUrl = normalizeImageDataUrl(originalUrl);
   // 外部 URL / data URL / blob URL 不追加参数，避免破坏资源
-  if (shouldBypassThumbnailForUrl(normalizedUrl, type)) {
+  if (shouldBypassThumbnailForUrl(normalizedUrl)) {
     return normalizedUrl;
   }
   try {
@@ -169,7 +163,7 @@ async function ensureThumbnailImpl(
 ): Promise<void> {
   const normalizedUrl = normalizeImageDataUrl(originalUrl);
 
-  if (shouldBypassThumbnailForUrl(normalizedUrl, type)) {
+  if (shouldBypassThumbnailForUrl(normalizedUrl)) {
     return;
   }
 
@@ -230,7 +224,7 @@ function ensureThumbnail(
 ): void {
   const normalizedUrl = normalizeImageDataUrl(originalUrl);
 
-  if (shouldBypassThumbnailForUrl(normalizedUrl, type)) {
+  if (shouldBypassThumbnailForUrl(normalizedUrl)) {
     return;
   }
 
@@ -290,7 +284,7 @@ export function useThumbnailUrl(
   size: 'small' | 'large' = 'small'
 ): string | undefined {
   const [thumbnailUrl, setThumbnailUrl] = useState<string | undefined>(
-    originalUrl ? getThumbnailUrl(originalUrl, size, type) : undefined
+    originalUrl ? getThumbnailUrl(originalUrl, size) : undefined
   );
 
   useEffect(() => {
@@ -300,11 +294,11 @@ export function useThumbnailUrl(
     }
 
     const normalizedUrl = normalizeImageDataUrl(originalUrl);
-    const url = getThumbnailUrl(normalizedUrl, size, type);
+    const url = getThumbnailUrl(normalizedUrl, size);
     setThumbnailUrl(url);
 
     // 如果提供了类型，排队检查/生成预览图（非阻塞）
-    if (type && !shouldBypassThumbnailForUrl(originalUrl, type)) {
+    if (type && !shouldBypassThumbnailForUrl(originalUrl)) {
       ensureThumbnail(originalUrl, type, size, type === 'video');
     }
   }, [originalUrl, type, size]);

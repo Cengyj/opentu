@@ -1,0 +1,78 @@
+{
+  "date": "2026-07-30",
+  "timezone": "Asia/Shanghai",
+  "environment": {
+    "source": "current workspace without Git metadata",
+    "node": "24.14.0",
+    "vitest": "3.2.4",
+    "dom": "jsdom",
+    "os": "Darwin 22.6.0 x86_64",
+    "externalRequests": 0,
+    "realCredentialsRead": false
+  },
+  "preCollectionEnvironmentFailures": {
+    "commands": 2,
+    "exitCode": 127,
+    "reason": "node absent from shell PATH before selecting workspace runtime"
+  },
+  "successfulDiagnostics": [
+    {
+      "scope": "page-report, web-vitals wrapper input, unified memory log",
+      "filesPassed": 1,
+      "testsPassed": 3,
+      "exitCode": 0,
+      "testDurationMs": 82,
+      "processDurationSeconds": 2.09
+    },
+    {
+      "scope": "crash snapshot, in-memory diagnostics, application error-log Blob",
+      "filesPassed": 1,
+      "testsPassed": 3,
+      "exitCode": 0,
+      "testDurationMs": 37,
+      "processDurationSeconds": 1.92
+    },
+    {
+      "scope": "final PostHog capture through real analytics sanitizer",
+      "filesPassed": 1,
+      "testsPassed": 2,
+      "exitCode": 0,
+      "testDurationMs": 354,
+      "processDurationSeconds": 1.73
+    },
+    {
+      "scope": "PerformancePanel accessibility tree and localStorage rejection",
+      "filesPassed": 1,
+      "testsPassed": 2,
+      "exitCode": 0,
+      "testDurationMs": 170,
+      "processDurationSeconds": 12.57,
+      "stderrClassification": "unrelated IndexedDB/test-tool noise"
+    }
+  ],
+  "totals": {
+    "successfulIsolatedProcesses": 4,
+    "filesPassed": 4,
+    "testsPassed": 10,
+    "testsFailed": 0,
+    "temporaryTestsRetained": 0
+  },
+  "sentinelObservations": {
+    "pageQueryAtFinalPostHogCapture": true,
+    "referrerQueryAtFinalPostHogCapture": true,
+    "webVitalsReferrerAtFinalPostHogCapture": true,
+    "crashUrlAtSwSink": true,
+    "crashCustomApiKeyAtSwSink": true,
+    "crashErrorAtSwSink": true,
+    "consoleAndRejectedFetchErrorInDiagnostics": true,
+    "networkQueryRemovedByExistingSanitizer": true,
+    "unifiedApiKeyAuthorizationNestedUrlAndErrorRetained": true,
+    "applicationDownloadContainsComposedSentinels": true,
+    "performancePanelNamedButtons": 0,
+    "performancePanelIconButtons": 4,
+    "dragHandleTabIndex": -1,
+    "pinUiAfterRejectedWrite": false,
+    "pinDurableValueAfterRejectedWrite": true
+  },
+  "performanceClaim": "none; diagnostic execution time is not product runtime performance"
+}

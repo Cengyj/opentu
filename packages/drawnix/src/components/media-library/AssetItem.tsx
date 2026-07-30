@@ -401,6 +401,9 @@ export const AssetItem = memo<AssetItemProps>(
     return (
       prevProps.asset.id === nextProps.asset.id &&
       prevProps.asset.name === nextProps.asset.name && // 检查名称变化（重命名后更新）
+      prevProps.asset.category === nextProps.asset.category &&
+      prevProps.asset.characterMeta?.name ===
+        nextProps.asset.characterMeta?.name &&
       prevProps.asset.cacheWarning === nextProps.asset.cacheWarning &&
       prevProps.viewMode === nextProps.viewMode &&
       prevProps.isSelected === nextProps.isSelected &&

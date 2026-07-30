@@ -3,6 +3,8 @@
 **Date**: 2025-12-05
 **改进**: 使用标准 HTML data 属性简化声明式埋点实现
 
+> **2026-07-30 当前实现说明**：本文记录 2025 年的历史迁移。任务入口现在由 `packages/drawnix/src/components/toolbar/bottom-actions-section.tsx` 中的 `ToolButton` 提供，仍使用 `data-track="toolbar_click_tasks"`；旧 `TaskToolbarButton.tsx` 已不在当前实现中。
+
 ## 问题
 
 原始实现使用自定义的 `track` 属性，导致：
@@ -136,7 +138,7 @@ type ToolButtonBaseProps = {
 8. **feedback-button.tsx** - 反馈按钮
    - Feedback: `data-track="toolbar_click_feedback"`
 
-9. **TaskToolbarButton.tsx** - 任务按钮
+9. **bottom-actions-section.tsx** - 当前任务入口按钮
    - Tasks: `data-track="toolbar_click_tasks"`
 
 ### 文档

@@ -62,3 +62,28 @@ The system SHALL expose only the parameters relevant to the currently selected S
 - **GIVEN** the user has selected the music action in the audio flow
 - **WHEN** the request form is rendered
 - **THEN** the UI SHALL continue to expose the existing Suno music parameters supported by the binding
+
+### Requirement: Lyrics Model Selection Shall Match Executable Action Capability
+
+The system SHALL offer a model in a lyrics selector only when it is a text model used for lyrics drafting or its resolved Suno alias/provider binding can execute the `lyrics` action.
+
+#### Scenario: A music-only Suno alias is discovered
+
+- **GIVEN** runtime model discovery exposes a Suno continuation, upload, or advanced alias whose forced or declared action is not `lyrics`
+- **WHEN** the Music Analyzer builds its lyrics model options
+- **THEN** that alias SHALL NOT be presented as a lyrics-capable model
+- **AND** an explicit caller `sunoAction: lyrics` SHALL NOT be silently overridden into a music submission from that selector
+
+#### Scenario: A lyrics-capable Suno binding is discovered
+
+- **GIVEN** the resolved alias or provider binding supports the `lyrics` action
+- **WHEN** the Music Analyzer builds its lyrics model options
+- **THEN** the model MAY be selected for the existing lyrics task flow
+- **AND** submission SHALL resolve to the lyrics action and lyrics result kind
+
+#### Scenario: A stored lyrics preference is no longer executable
+
+- **GIVEN** the saved lyrics-model preference resolves to a music-only or unsupported capability
+- **WHEN** the lyrics form initializes
+- **THEN** the current selector SHALL fall back to an executable lyrics model
+- **AND** the system SHALL NOT delete unrelated provider profiles or model preferences

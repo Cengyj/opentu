@@ -1,9 +1,8 @@
 /**
  * DialogTaskList Component
  *
- * Displays tasks that were created from the current dialog session.
- * Used within AI generation dialogs to show only tasks created in that dialog.
- * Supports pagination with scroll-to-load-more and type filtering via RPC.
+ * Displays the shared restored task set inside AI generation dialogs.
+ * Tasks are filtered by media type and, when provided, an explicit task ID set.
  */
 
 import React, { useMemo, useState, useCallback } from 'react';
@@ -36,22 +35,21 @@ import { HoverTip } from '../shared';
 export interface DialogTaskListProps {
   /** Task IDs to display. If not provided, shows all tasks (subject to taskType filter) */
   taskIds?: string[];
-  /** Type of tasks to show (optional filter) - used for RPC filtering */
+  /** Type of tasks to show from the shared in-memory task set */
   taskType?: TaskType;
   /** Callback when edit button is clicked - if provided, will update parent form instead of opening dialog */
   onEditTask?: (task: any) => void;
 }
 
 /**
- * DialogTaskList component - displays filtered tasks for a specific dialog
- * Now uses useFilteredTaskQueue for pagination and type filtering via RPC.
+ * DialogTaskList component - displays restored tasks filtered for a dialog.
  */
 export const DialogTaskList: React.FC<DialogTaskListProps> = ({
   taskIds,
   taskType,
   onEditTask,
 }) => {
-  // 使用按类型过滤的分页 hook
+  // 使用共享任务状态，并在 hook 内按类型过滤
   const {
     tasks,
     isLoading,
@@ -144,7 +142,7 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
     return tokens.every((t) => haystack.includes(t));
   };
 
-  // Filter tasks by IDs and search text (type filtering is now done via RPC)
+  // Filter tasks by IDs and search text (type filtering is done by the shared hook)
   const filteredTasks = useMemo(() => {
     let filtered = tasks;
 
@@ -228,11 +226,13 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
         for (const url of urls) {
           await insertImageFromUrl(board, url);
         }
+        taskQueueService.markAsInserted(taskId, 'manual');
         MessagePlugin.success(
           urls.length > 1 ? '多图已插入到白板' : '图片已插入到白板'
         );
       } else if (task.type === TaskType.VIDEO) {
         await insertVideoFromUrl(board, task.result.url);
+        taskQueueService.markAsInserted(taskId, 'manual');
         MessagePlugin.success('视频已插入到白板');
       }
     } catch (error) {
@@ -488,7 +488,7 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
   const hasSearchNoMatch =
     searchText.trim() && filteredTasks.length === 0 && tasks.length > 0;
 
-  // 显示的总数（优先使用 RPC 返回的总数）
+  // 显示共享 hook 返回的总数；空集合时与当前任务数组保持一致
   const displayTotalCount = totalCount > 0 ? totalCount : tasks.length;
 
   return (

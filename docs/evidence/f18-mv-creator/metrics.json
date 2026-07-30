@@ -1,0 +1,102 @@
+{
+  "feature": "F-18 MV creator",
+  "sourceLimitations": {
+    "gitMetadataAvailable": false,
+    "providerCredentialsUsed": false,
+    "scriptPageRuntimeFixtureAvailable": false
+  },
+  "environment": {
+    "browser": "Codex in-app Chromium",
+    "theme": "light",
+    "devicePixelRatio": 1,
+    "networkThrottling": "none",
+    "cpuThrottling": "none",
+    "sourceServer": "Vite current workspace source on 127.0.0.1:7200"
+  },
+  "desktopAnalyze": {
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "winbox": {
+      "x": 300,
+      "y": 10,
+      "width": 680,
+      "height": 700,
+      "right": 980,
+      "bottom": 710
+    },
+    "mvRoot": {
+      "x": 300,
+      "y": 58,
+      "width": 680,
+      "height": 652,
+      "right": 980,
+      "bottom": 710,
+      "clientWidth": 680,
+      "scrollWidth": 680
+    },
+    "programmaticNames": {
+      "creativeBriefInputsInspected": 4,
+      "creativeBriefInputsWithIdNameAriaOrAssociatedLabel": 0,
+      "storyboardModelInput": {
+        "id": null,
+        "name": null,
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "associatedLabels": [],
+        "placeholder": "选择或输入模型"
+      },
+      "workflowHistoryButton": "history",
+      "workflowStarredButton": "starred",
+      "historyBackButton": "←"
+    }
+  },
+  "mobileAnalyze": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "body": {
+      "clientWidth": 390,
+      "scrollWidth": 390
+    },
+    "winbox": {
+      "x": 300,
+      "y": 10,
+      "width": 400,
+      "height": 700,
+      "right": 700,
+      "bottom": 710
+    },
+    "mvRoot": {
+      "x": 300,
+      "y": 58,
+      "width": 389,
+      "height": 688.28125,
+      "right": 689,
+      "bottom": 746.28125,
+      "clientWidth": 389,
+      "scrollWidth": 389
+    },
+    "visibleHorizontalWidth": 90,
+    "rightOverflow": 299,
+    "horizontalDocumentRecovery": false
+  },
+  "samples": {
+    "geometryAndDomSamplesPerState": 1,
+    "performanceSamples": 0,
+    "claim": "Deterministic geometry and DOM evidence only; no performance conclusion"
+  },
+  "screenshots": [
+    "desktop-analyze.png",
+    "mobile-analyze-390x844.png",
+    "desktop-history-empty.png"
+  ],
+  "screenshotEncoding": {
+    "capturedBytes": "JPEG",
+    "deliveredFiles": "PNG",
+    "dimensionsChanged": false,
+    "visualContentChanged": false
+  }
+}
