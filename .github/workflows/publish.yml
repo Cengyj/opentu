@@ -3,7 +3,11 @@ name: publish
 on:
   push:
     tags:
-      - "*"
+      - '*'
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   publish:
@@ -18,11 +22,28 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Registry
+      - name: Set TAG
+        run: echo TAG=${GITHUB_REF#refs/tags/} >> $GITHUB_ENV
+
+      - name: Detect Docker Hub credentials
+        id: dockerhub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [[ -n "$DOCKERHUB_USERNAME" && -n "$DOCKERHUB_TOKEN" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Login to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -30,17 +51,14 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set TAG
-        run: echo TAG=${GITHUB_REF#refs/tags/} >> $GITHUB_ENV
-
-      - name: Publish ${{ matrix.svc }}
+      - name: Publish container image
         uses: docker/build-push-action@v3
         with:
           file: Dockerfile
-          outputs: "type=registry,push=true"
+          outputs: 'type=registry,push=true'
           platforms: linux/amd64, linux/arm64
           tags: |
             ghcr.io/${{ github.repository_owner }}/drawnix:latest
             ghcr.io/${{ github.repository_owner }}/drawnix:${{ env.TAG }}
-            pubuzhixing/drawnix:${{ env.TAG }}
-            pubuzhixing/drawnix:latest
+            ${{ steps.dockerhub.outputs.enabled == 'true' && format('pubuzhixing/drawnix:{0}', env.TAG) || '' }}
+            ${{ steps.dockerhub.outputs.enabled == 'true' && 'pubuzhixing/drawnix:latest' || '' }}
