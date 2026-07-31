@@ -39,7 +39,7 @@ function createVersionFile(version) {
     changelog: existingChangelog
   };
   
-  fs.writeFileSync(versionPath, JSON.stringify(versionInfo, null, 2));
+  fs.writeFileSync(versionPath, `${JSON.stringify(versionInfo, null, 2)}\n`);
   console.log(`✅ Version file created: ${version}${existingChangelog.length > 0 ? ` (保留 ${existingChangelog.length} 条更新日志)` : ''}`);
 }
 
@@ -50,8 +50,8 @@ function updateHtmlWithVersion(version) {
   
   // 在 manifest.json 后添加版本号查询参数
   htmlContent = htmlContent.replace(
-    'href="/manifest.json"',
-    `href="/manifest.json?v=${version}"`
+    /href="(\.?\/manifest\.json)(?:\?v=[^"]*)?"/,
+    `href="$1?v=${version}"`
   );
   
   // 更新或添加版本信息到 meta 标签

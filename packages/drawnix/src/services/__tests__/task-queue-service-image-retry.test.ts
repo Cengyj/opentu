@@ -10,19 +10,99 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+const TINY_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+const CACHED_BASE64_RESULT_URL =
+  '/__aitu_cache__/image/content-regression-base64.png';
+
 async function flushAsyncWork(turns = 6): Promise<void> {
   for (let index = 0; index < turns; index += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 }
 
-async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
+async function setupTaskQueueServiceHarness(
+  statusSequence: TaskStatus[],
+  options: {
+    delayInitialImagePersistenceMs?: number;
+    rejectInitialImagePersistence?: boolean;
+    blockTerminalReopenPersistence?: boolean;
+    completeImageFromBase64?: boolean;
+    passThroughTaskCompletion?: boolean;
+  } = {}
+) {
   const storedTasks = new Map<string, any>();
+  let delayedInitialImagePersistence = false;
+  let rejectedInitialImagePersistence = false;
+  let blockedTerminalReopenPersistence = false;
+  let releaseTerminalReopenPersistence!: () => void;
+  let notifyTerminalReopenPersistence!: () => void;
+  const terminalReopenPersistenceReleased = new Promise<void>((resolve) => {
+    releaseTerminalReopenPersistence = resolve;
+  });
+  const terminalReopenPersistenceReached = new Promise<void>((resolve) => {
+    notifyTerminalReopenPersistence = resolve;
+  });
+  const saveTask = vi.fn(async (task: any, saveOptions?: any) => {
+    if (
+      options.rejectInitialImagePersistence &&
+      !rejectedInitialImagePersistence &&
+      task.type === TaskType.IMAGE &&
+      task.status === TaskStatus.PROCESSING
+    ) {
+      rejectedInitialImagePersistence = true;
+      throw new Error('Simulated initial IndexedDB write failure');
+    }
+    if (
+      options.delayInitialImagePersistenceMs &&
+      !delayedInitialImagePersistence &&
+      task.type === TaskType.IMAGE &&
+      task.status === TaskStatus.PROCESSING
+    ) {
+      delayedInitialImagePersistence = true;
+      await new Promise((resolve) =>
+        setTimeout(resolve, options.delayInitialImagePersistenceMs)
+      );
+    }
+    if (
+      options.blockTerminalReopenPersistence &&
+      !blockedTerminalReopenPersistence &&
+      saveOptions?.allowTerminalReopen &&
+      task.type === TaskType.IMAGE &&
+      task.status === TaskStatus.PROCESSING
+    ) {
+      blockedTerminalReopenPersistence = true;
+      notifyTerminalReopenPersistence();
+      await terminalReopenPersistenceReleased;
+    }
+    storedTasks.set(task.id, clone(task));
+    return true;
+  });
+  const saveTaskPreservingParams = vi.fn(
+    async (
+      task: any,
+      preservedParamKeys: readonly string[],
+      saveOptions?: any
+    ) => {
+      const persistedTask = clone(task);
+      const storedTask = storedTasks.get(task.id);
+
+      for (const key of preservedParamKeys) {
+        if (
+          persistedTask.params[key] === undefined &&
+          storedTask?.params?.[key] !== undefined
+        ) {
+          persistedTask.params[key] = clone(storedTask.params[key]);
+        }
+      }
+
+      return saveTask(persistedTask, saveOptions);
+    }
+  );
 
   const mocks = {
-    saveTask: vi.fn(async (task: any) => {
-      storedTasks.set(task.id, clone(task));
-    }),
+    saveTask,
+    saveTaskPreservingParams,
     getStoredTask: vi.fn(async (taskId: string) => {
       const task = storedTasks.get(taskId);
       return task ? clone(task) : null;
@@ -30,15 +110,62 @@ async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
     deleteTask: vi.fn(async (taskId: string) => {
       storedTasks.delete(taskId);
     }),
-    archiveTasks: vi.fn(async () => {}),
+    archiveTasks: vi.fn(async () => undefined),
     invalidateCache: vi.fn(),
     generateImage: vi.fn(async (_params?: any, _options?: any) => undefined),
+    updateStatus: vi.fn(async (taskId: string, status: TaskStatus) => {
+      const task = storedTasks.get(taskId);
+      if (!task) return;
+      storedTasks.set(taskId, {
+        ...task,
+        status,
+        startedAt: task.startedAt || Date.now(),
+        updatedAt: Date.now(),
+      });
+    }),
+    completeTask: vi.fn(async (taskId: string, result: any) => {
+      const task = storedTasks.get(taskId);
+      if (!task) return;
+      storedTasks.set(taskId, {
+        ...task,
+        status: TaskStatus.COMPLETED,
+        result: clone(result),
+        progress: 100,
+        completedAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+    }),
+    cacheBase64ToLocalUrl: vi.fn(async (base64: string) => {
+      if (base64 !== TINY_PNG_BASE64) {
+        throw new Error('Unexpected base64 fixture');
+      }
+      return CACHED_BASE64_RESULT_URL;
+    }),
   };
+
+  if (options.completeImageFromBase64) {
+    mocks.generateImage.mockImplementation(async (params: any) => {
+      await mocks.updateStatus(params.taskId, TaskStatus.PROCESSING);
+      const cachedUrl = await mocks.cacheBase64ToLocalUrl(TINY_PNG_BASE64);
+      await mocks.completeTask(params.taskId, {
+        url: cachedUrl,
+        format: 'png',
+        size: 0,
+      });
+    });
+  }
 
   const waitForTaskCompletion = vi.fn(async (taskId: string, options?: any) => {
     const currentTask = storedTasks.get(taskId);
     if (!currentTask) {
       return { success: false, error: 'missing-task' };
+    }
+
+    if (options?.passThroughTaskCompletion) {
+      options?.onProgress?.(clone(currentTask));
+      return currentTask.status === TaskStatus.COMPLETED
+        ? { success: true, task: clone(currentTask) }
+        : { success: false, task: clone(currentTask), error: 'not-completed' };
     }
 
     const callIndex = waitForTaskCompletion.mock.calls.length - 1;
@@ -85,7 +212,10 @@ async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
   vi.doMock('../media-executor/task-storage-writer', () => ({
     taskStorageWriter: {
       saveTask: mocks.saveTask,
+      saveTaskPreservingParams: mocks.saveTaskPreservingParams,
       getTask: mocks.getStoredTask,
+      updateStatus: mocks.updateStatus,
+      completeTask: mocks.completeTask,
       deleteTask: mocks.deleteTask,
       archiveTasks: mocks.archiveTasks,
     },
@@ -108,7 +238,11 @@ async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
         generateImage: mocks.generateImage,
       })),
     },
-    waitForTaskCompletion,
+    waitForTaskCompletion: (taskId: string, taskOptions?: any) =>
+      waitForTaskCompletion(taskId, {
+        ...taskOptions,
+        passThroughTaskCompletion: options.passThroughTaskCompletion,
+      }),
   }));
 
   vi.doMock('../../utils/settings-manager', () => ({
@@ -207,7 +341,7 @@ async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
     unifiedCacheService: {
       getImageForAI: vi.fn(),
       isCached: vi.fn(async () => false),
-      cacheMediaFromBlob: vi.fn(async () => {}),
+      cacheMediaFromBlob: vi.fn(async () => undefined),
     },
   }));
 
@@ -261,7 +395,7 @@ async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
 
     return {
       ...actual,
-    generateTaskId: () => 'task-image-edit-1',
+      generateTaskId: () => 'task-image-edit-1',
     };
   });
 
@@ -274,6 +408,8 @@ async function setupTaskQueueServiceHarness(statusSequence: TaskStatus[]) {
       ...mocks,
       waitForTaskCompletion,
     },
+    terminalReopenPersistenceReached,
+    releaseTerminalReopenPersistence,
   };
 }
 
@@ -330,6 +466,83 @@ describe('task-queue-service lifecycle integration', () => {
     expect(storedTasks.get(task.id)?.params.referenceImages).toEqual([
       'data:image/png;base64,source',
     ]);
+  });
+
+  it('keeps a base64 image completion when the initial task persistence is delayed', async () => {
+    const { taskQueueService, storedTasks, mocks } =
+      await setupTaskQueueServiceHarness([TaskStatus.COMPLETED], {
+        // This models a slow first IndexedDB write while the image adapter
+        // immediately returns b64_json and finishes its cache conversion.
+        delayInitialImagePersistenceMs: 30,
+        completeImageFromBase64: true,
+        passThroughTaskCompletion: true,
+      });
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Fast base64 response after a slow initial persistence',
+        model: 'gpt-image-2',
+        size: '1x1',
+      },
+      TaskType.IMAGE
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await flushAsyncWork();
+
+    expect(mocks.generateImage).toHaveBeenCalledTimes(1);
+    expect(mocks.cacheBase64ToLocalUrl).toHaveBeenCalledWith(TINY_PNG_BASE64);
+    expect(mocks.completeTask).toHaveBeenCalledWith(task.id, {
+      url: CACHED_BASE64_RESULT_URL,
+      format: 'png',
+      size: 0,
+    });
+    expect(storedTasks.get(task.id)).toMatchObject({
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      result: {
+        url: CACHED_BASE64_RESULT_URL,
+        format: 'png',
+        size: 0,
+      },
+    });
+  });
+
+  it('does not execute when initial task persistence fails and records a retryable failure', async () => {
+    const { taskQueueService, storedTasks, mocks } =
+      await setupTaskQueueServiceHarness([TaskStatus.COMPLETED], {
+        rejectInitialImagePersistence: true,
+      });
+    const persistenceFailure = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Initial persistence must succeed before an image request',
+        model: 'gpt-image-2',
+        size: '1x1',
+      },
+      TaskType.IMAGE
+    );
+
+    await flushAsyncWork();
+
+    expect(mocks.generateImage).not.toHaveBeenCalled();
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      status: TaskStatus.FAILED,
+      error: { code: 'TASK_PERSISTENCE_FAILED' },
+    });
+    expect(storedTasks.get(task.id)).toMatchObject({
+      status: TaskStatus.FAILED,
+      error: { code: 'TASK_PERSISTENCE_FAILED' },
+    });
+    expect(persistenceFailure).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `Failed to persist task ${task.id} before execution:`
+      ),
+      expect.any(Error)
+    );
   });
 
   it('preserves the selected provider model reference when retrying a task', async () => {
@@ -409,6 +622,43 @@ describe('task-queue-service lifecycle integration', () => {
       model: 'gpt-image-2',
       size: '1x1',
     });
+  });
+
+  it('waits for terminal-reopen persistence before executing an image retry', async () => {
+    const {
+      taskQueueService,
+      mocks,
+      terminalReopenPersistenceReached,
+      releaseTerminalReopenPersistence,
+    } = await setupTaskQueueServiceHarness(
+      [TaskStatus.COMPLETED, TaskStatus.COMPLETED],
+      { blockTerminalReopenPersistence: true }
+    );
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Do not submit a retry before its processing state commits',
+        model: 'gpt-image-2',
+        size: '1x1',
+      },
+      TaskType.IMAGE
+    );
+
+    await flushAsyncWork();
+    expect(mocks.generateImage).toHaveBeenCalledTimes(1);
+    expect(taskQueueService.getTask(task.id)?.status).toBe(
+      TaskStatus.COMPLETED
+    );
+
+    taskQueueService.retryTask(task.id, { allowCompleted: true });
+    await terminalReopenPersistenceReached;
+
+    expect(mocks.generateImage).toHaveBeenCalledTimes(1);
+
+    releaseTerminalReopenPersistence();
+    await flushAsyncWork();
+
+    expect(mocks.generateImage).toHaveBeenCalledTimes(2);
   });
 
   it('rehydrates stripped edit params after restoreTasks before retry execution', async () => {
@@ -739,5 +989,4 @@ describe('task-queue-service lifecycle integration', () => {
 
     subscription.unsubscribe();
   });
-
 });

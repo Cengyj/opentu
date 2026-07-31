@@ -24,6 +24,7 @@ import {
 } from '../utils/validation-utils';
 import {
   taskStorageWriter,
+  type TaskSaveOptions,
   type SWTask,
 } from './media-executor/task-storage-writer';
 import { taskStorageReader } from './task-storage-reader';
@@ -469,18 +470,56 @@ class TaskQueueService {
   /**
    * Persist task to IndexedDB (async, fire-and-forget)
    */
-  private persistTask(task: Task): void {
-    this.persistTaskInternal(task).catch((error) => {
+  private persistTask(task: Task, options: TaskSaveOptions = {}): void {
+    this.persistTaskInternal(task, options).catch((error) => {
       console.error('[TaskQueueService] Failed to persist task:', error);
     });
   }
 
-  private async persistTaskInternal(task: Task): Promise<void> {
-    const persistableTask = await this.restoreStrippedTaskParams(task);
-    const swTask = this.convertToSWTask(persistableTask);
-    await taskStorageWriter.saveTask(swTask);
-    // Invalidate reader cache after write
-    taskStorageReader.invalidateCache();
+  private persistTaskInternal(
+    task: Task,
+    options: TaskSaveOptions = {}
+  ): Promise<boolean> {
+    // Capture the lifecycle snapshot before any asynchronous work so a stale
+    // processing state cannot be created after a terminal write. For tasks
+    // whose large params were stripped from memory, the writer merges those
+    // fields back inside the same per-task write lane.
+    const swTask = this.convertToSWTask(task);
+    const persistence = this.tasksWithStrippedParams.has(task.id)
+      ? taskStorageWriter.saveTaskPreservingParams(
+          swTask,
+          STRIPPED_TASK_PARAM_KEYS,
+          options
+        )
+      : taskStorageWriter.saveTask(swTask, options);
+
+    return persistence.then((written) => {
+      // Invalidate reader cache only after the transaction has committed.
+      taskStorageReader.invalidateCache();
+      return written;
+    });
+  }
+
+  private handleInitialPersistenceFailure(
+    taskId: string,
+    error: unknown
+  ): void {
+    console.error(
+      `[TaskQueueService] Failed to persist task ${taskId} before execution:`,
+      error
+    );
+
+    const task = this.tasks.get(taskId);
+    if (!task || !isTaskActive(task) || this.blockedTaskIds.has(taskId)) {
+      return;
+    }
+
+    this.updateTaskStatus(taskId, TaskStatus.FAILED, {
+      error: {
+        code: 'TASK_PERSISTENCE_FAILED',
+        message: '任务初始化存储失败，请重试',
+      },
+    });
   }
 
   private shouldSkipExecutionWriteback(taskId: string): boolean {
@@ -1953,8 +1992,9 @@ class TaskQueueService {
     this.tasks.set(task.id, task);
     this.currentSessionTaskIds.add(task.id);
 
-    // Persist to IndexedDB
-    this.persistTask(task);
+    // Persist to IndexedDB. Keep createTask() synchronous for callers, but do
+    // not spend an API request until the initial task transaction commits.
+    const initialPersistence = this.persistTaskInternal(task);
 
     // Emit event
     this.emitEvent('taskCreated', task);
@@ -1964,13 +2004,36 @@ class TaskQueueService {
     this.enforceRetentionLimit();
 
     if (!usesDedicatedTaskExecutor) {
-      // Execute task asynchronously (fire-and-forget)
-      this.executeTask(task).catch((error) => {
-        console.error('[TaskQueueService] Task execution error:', error);
-      });
+      initialPersistence.then(
+        (written) => {
+          if (written === false) {
+            this.handleInitialPersistenceFailure(
+              task.id,
+              new Error('Initial task state was rejected by storage guards')
+            );
+            return;
+          }
+          this.executeTask(task).catch((error) => {
+            console.error('[TaskQueueService] Task execution error:', error);
+          });
+        },
+        (error) => this.handleInitialPersistenceFailure(task.id, error)
+      );
 
       // 任务开始执行后剥离大字段（base64 参考图等）
       this.stripLargeParams(task.id);
+    } else {
+      initialPersistence.then(
+        (written) => {
+          if (written === false) {
+            this.handleInitialPersistenceFailure(
+              task.id,
+              new Error('Initial task state was rejected by storage guards')
+            );
+          }
+        },
+        (error) => this.handleInitialPersistenceFailure(task.id, error)
+      );
     }
 
     // console.log(`[TaskQueueService] Created task ${task.id} (${type})`);
@@ -1987,8 +2050,25 @@ class TaskQueueService {
   updateTaskStatus(
     taskId: string,
     status: TaskStatus,
-    updates?: Partial<Task>
+    updates?: Partial<Task>,
+    persistenceOptions: TaskSaveOptions = {}
   ): void {
+    this.updateTaskStatusInternal(
+      taskId,
+      status,
+      updates,
+      persistenceOptions
+    )?.catch((error) => {
+      console.error('[TaskQueueService] Failed to persist task:', error);
+    });
+  }
+
+  private updateTaskStatusInternal(
+    taskId: string,
+    status: TaskStatus,
+    updates?: Partial<Task>,
+    persistenceOptions: TaskSaveOptions = {}
+  ): Promise<boolean> | undefined {
     if (this.blockedTaskIds.has(taskId) && status !== TaskStatus.CANCELLED) {
       return;
     }
@@ -2032,8 +2112,12 @@ class TaskQueueService {
 
     this.tasks.set(taskId, updatedTask);
 
-    // Persist to IndexedDB
-    this.persistTask(updatedTask);
+    // Start persistence before emitting so callers that need an execution
+    // barrier can wait for the exact state transition that reopened the task.
+    const persistence = this.persistTaskInternal(
+      updatedTask,
+      persistenceOptions
+    );
 
     this.emitEvent('taskUpdated', updatedTask);
 
@@ -2045,6 +2129,8 @@ class TaskQueueService {
       // 任务进入终态后检查是否需要归档旧任务
       this.enforceRetentionLimit();
     }
+
+    return persistence;
   }
 
   /**
@@ -2227,7 +2313,7 @@ class TaskQueueService {
     });
     this.blockedTaskIds.delete(taskId);
     this.currentSessionTaskIds.add(taskId);
-    this.updateTaskStatus(
+    const retryPersistence = this.updateTaskStatusInternal(
       taskId,
       usesDedicatedTaskExecutor ? TaskStatus.PENDING : TaskStatus.PROCESSING,
       {
@@ -2248,15 +2334,32 @@ class TaskQueueService {
               typeof task.params.musicAnalyzerAction === 'string'))
             ? 0
             : undefined, // Reset progress for async media
-      }
+      },
+      { allowTerminalReopen: true }
     );
 
     // Execute task after retry
     const updatedTask = this.tasks.get(taskId);
-    if (updatedTask && !usesDedicatedTaskExecutor) {
-      this.executeTask(updatedTask).catch((error) => {
-        console.error('[TaskQueueService] Retry execution error:', error);
-      });
+    if (updatedTask && !usesDedicatedTaskExecutor && retryPersistence) {
+      retryPersistence.then(
+        (written) => {
+          if (written === false) {
+            this.handleInitialPersistenceFailure(
+              taskId,
+              new Error('Retry state was rejected by storage guards')
+            );
+            return;
+          }
+          this.executeTask(updatedTask).catch((error) => {
+            console.error('[TaskQueueService] Retry execution error:', error);
+          });
+        },
+        (error) => this.handleInitialPersistenceFailure(taskId, error)
+      );
+    } else if (retryPersistence) {
+      retryPersistence.catch((error) =>
+        this.handleInitialPersistenceFailure(taskId, error)
+      );
     }
 
     // console.log(`[TaskQueueService] Retrying task ${taskId}`);

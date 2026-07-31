@@ -8,7 +8,10 @@
 import type { ModelRef } from '../../utils/settings-manager';
 import type { GenerationParams } from '../../types/shared/core.types';
 import type { ExecutionOptions } from './types';
-import { taskStorageWriter } from './task-storage-writer';
+import {
+  taskStorageWriter,
+  TaskStorageTaskNotFoundError,
+} from './task-storage-writer';
 import { createTaskInvocationRouteSnapshot } from '../task-invocation-route';
 import {
   startLLMApiLog,
@@ -300,14 +303,23 @@ export async function executeVideoViaAdapter(
             });
           },
           onSubmitted: (videoId: string) => {
-            void taskStorageWriter.updateRemoteId(
-              taskId,
-              videoId,
-              createTaskInvocationRouteSnapshot(
-                'video',
-                params.modelRef || params.model
+            void taskStorageWriter
+              .updateRemoteId(
+                taskId,
+                videoId,
+                createTaskInvocationRouteSnapshot(
+                  'video',
+                  params.modelRef || params.model
+                )
               )
-            );
+              .catch((error) => {
+                if (!(error instanceof TaskStorageTaskNotFoundError)) {
+                  console.error(
+                    `[fallback-adapter-routes] Failed to persist remote ID for task ${taskId}:`,
+                    error
+                  );
+                }
+              });
           },
         },
       }

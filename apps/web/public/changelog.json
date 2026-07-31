@@ -1,6 +1,20 @@
 {
   "versions": [
     {
+      "version": "1.0.1",
+      "date": "2026-07-31",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "修复 Base64 图片已缓存但任务仍停留在生成中的持久化竞态",
+          "任务首次落库完成后再执行，并防止迟到状态覆盖终态"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "修复图片生成任务完成状态丢失"
+    },
+    {
       "version": "1.0.0",
       "date": "2026-05-26",
       "changes": {

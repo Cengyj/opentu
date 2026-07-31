@@ -18,7 +18,10 @@ import type {
   VideoAPIConfig,
 } from './types';
 import { Task, TaskStatus } from '../../types/task.types';
-import { taskStorageWriter } from './task-storage-writer';
+import {
+  taskStorageWriter,
+  TaskStorageTaskNotFoundError,
+} from './task-storage-writer';
 import { taskStorageReader } from '../task-storage-reader';
 import {
   resolveInvocationRoute,
@@ -1290,10 +1293,24 @@ export class FallbackMediaExecutor implements IMediaExecutor {
             // taskStorageWriter.updateStatus 会写入 storage
             taskStorageWriter
               .updateStatus(task.id, TaskStatus.PROCESSING)
-              .catch(() => undefined);
+              .catch((error) => {
+                if (!(error instanceof TaskStorageTaskNotFoundError)) {
+                  console.error(
+                    `[FallbackMediaExecutor] Failed to persist resumed task status ${task.id}:`,
+                    error
+                  );
+                }
+              });
             taskStorageWriter
               .updateProgress(task.id, mappedProgress)
-              .catch(() => undefined);
+              .catch((error) => {
+                if (!(error instanceof TaskStorageTaskNotFoundError)) {
+                  console.error(
+                    `[FallbackMediaExecutor] Failed to persist resumed task progress ${task.id}:`,
+                    error
+                  );
+                }
+              });
           }
         }
       );

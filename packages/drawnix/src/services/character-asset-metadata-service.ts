@@ -4,7 +4,10 @@ import {
   type Asset,
 } from '../types/asset.types';
 import { assetStorageService } from './asset-storage-service';
-import { taskStorageWriter } from './media-executor/task-storage-writer';
+import {
+  taskStorageWriter,
+  TaskStorageTaskNotFoundError,
+} from './media-executor/task-storage-writer';
 import { unifiedCacheService } from './unified-cache-service';
 
 export interface CharacterAssetMark {
@@ -40,13 +43,17 @@ export async function markAssetAsCharacter(
 
   if (asset.source === AssetSource.AI_GENERATED) {
     const taskId = asset.taskId || asset.id;
-    const task = await taskStorageWriter.getTask(taskId);
-    if (task) {
-      task.params = {
-        ...task.params,
+    try {
+      await taskStorageWriter.mergeTaskParams(taskId, {
         assetMetadata: metadata,
-      };
-      await taskStorageWriter.saveTask(task);
+      });
+    } catch (error) {
+      // AI assets can outlive their task-history entry after the user clears
+      // completed tasks. Cache metadata is already the durable source for this
+      // asset in that case, so preserve the previous successful behavior.
+      if (!(error instanceof TaskStorageTaskNotFoundError)) {
+        throw error;
+      }
     }
     return;
   }
