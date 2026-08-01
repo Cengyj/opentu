@@ -397,7 +397,7 @@ export interface Task {
   remoteId?: string;
   /** Provider/model route snapshot used to resume async tasks with the original supplier */
   invocationRoute?: TaskInvocationRouteSnapshot;
-  /** Current execution phase for recovery support */
+  /** Current active execution phase for recovery support; unset in terminal states */
   executionPhase?: TaskExecutionPhase;
   /** Whether the task result has been saved to the media library */
   savedToLibrary?: boolean;

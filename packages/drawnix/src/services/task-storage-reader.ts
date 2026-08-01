@@ -22,6 +22,7 @@ import { STORAGE_LIMITS } from '../constants/TASK_CONSTANTS';
 import type { CacheWarning } from '../types/cache-warning.types';
 
 import { APP_DB_NAME, APP_DB_STORES, getAppDB } from './app-database';
+import { normalizeTerminalTaskExecutionPhase } from './task-lifecycle-invariants';
 
 // 使用主线程专用数据库
 const DB_NAME = APP_DB_NAME;
@@ -200,7 +201,7 @@ function convertSWTaskToTask(swTask: SWTask): Task {
         }
       : swTask.result;
 
-  return {
+  return normalizeTerminalTaskExecutionPhase({
     id: swTask.id,
     type: swTask.type,
     status: swTask.status,
@@ -219,7 +220,7 @@ function convertSWTaskToTask(swTask: SWTask): Task {
     insertedToCanvas: swTask.insertedToCanvas,
     syncedFromRemote: swTask.syncedFromRemote,
     archived: swTask.archived,
-  };
+  });
 }
 
 function normalizeComparableImageTaskUrl(value: string): string {

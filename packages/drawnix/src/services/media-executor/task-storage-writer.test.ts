@@ -70,7 +70,9 @@ describe('TaskStorageWriter persistence guards', () => {
 
   it('preserves completion when it arrives before the initial task save finishes', async () => {
     const { taskStorageWriter } = await import('./task-storage-writer');
-    const writerInternals = taskStorageWriter as any;
+    const writerInternals = taskStorageWriter as unknown as {
+      getDB(): Promise<IDBDatabase>;
+    };
     const database = await writerInternals.getDB();
     let releaseInitialSave!: () => void;
     let firstDatabaseAccess = true;
@@ -113,7 +115,8 @@ describe('TaskStorageWriter persistence guards', () => {
     releaseInitialSave();
     await Promise.all([initialSave, completion]);
 
-    await expect(taskStorageWriter.getTask(taskId)).resolves.toMatchObject({
+    const storedTask = await taskStorageWriter.getTask(taskId);
+    expect(storedTask).toMatchObject({
       status: 'completed',
       progress: 100,
       result: {
@@ -122,6 +125,92 @@ describe('TaskStorageWriter persistence guards', () => {
         size: 0,
       },
     });
+    expect(storedTask?.executionPhase).toBeUndefined();
+  });
+
+  it('clears the active execution phase when a task reaches any terminal state', async () => {
+    const { taskStorageWriter } = await import('./task-storage-writer');
+
+    await taskStorageWriter.saveTask({
+      ...imageTask('terminal-phase-completed', 'processing', 1),
+      executionPhase: 'submitting',
+    });
+    await taskStorageWriter.completeTask('terminal-phase-completed', {
+      url: '/__aitu_cache__/image/content-terminal-phase.png',
+      format: 'png',
+      size: 0,
+    });
+
+    await taskStorageWriter.saveTask({
+      ...imageTask('terminal-phase-failed', 'processing', 1),
+      executionPhase: 'polling',
+    });
+    await taskStorageWriter.failTask('terminal-phase-failed', {
+      code: 'PROVIDER_ERROR',
+      message: 'Provider failed',
+    });
+
+    await taskStorageWriter.saveTask({
+      ...imageTask('terminal-phase-cancelled', 'processing', 1),
+      status: 'cancelled',
+      executionPhase: 'downloading',
+    });
+
+    const completedTask = await taskStorageWriter.getTask(
+      'terminal-phase-completed'
+    );
+    const failedTask = await taskStorageWriter.getTask('terminal-phase-failed');
+    const cancelledTask = await taskStorageWriter.getTask(
+      'terminal-phase-cancelled'
+    );
+    expect(completedTask).toMatchObject({
+      status: 'completed',
+    });
+    expect(completedTask?.executionPhase).toBeUndefined();
+    expect(completedTask).not.toHaveProperty('executionPhase');
+    expect(failedTask).toMatchObject({
+      status: 'failed',
+    });
+    expect(failedTask?.executionPhase).toBeUndefined();
+    expect(failedTask).not.toHaveProperty('executionPhase');
+    expect(cancelledTask).toMatchObject({
+      status: 'cancelled',
+    });
+    expect(cancelledTask?.executionPhase).toBeUndefined();
+    expect(cancelledTask).not.toHaveProperty('executionPhase');
+  });
+
+  it('repairs legacy terminal rows that still contain an active execution phase', async () => {
+    const { taskStorageWriter } = await import('./task-storage-writer');
+    const writerInternals = taskStorageWriter as unknown as {
+      getDB(): Promise<IDBDatabase>;
+    };
+    const staleTask = {
+      ...imageTask('legacy-terminal-active-phase', 'completed', 10),
+      executionPhase: 'submitting',
+    };
+
+    const database = await writerInternals.getDB();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction('tasks', 'readwrite');
+      transaction.objectStore('tasks').put(staleTask);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+
+    await expect(
+      taskStorageWriter.repairTerminalExecutionPhases()
+    ).resolves.toBe(1);
+    const repairedTask = await taskStorageWriter.getTask(
+      'legacy-terminal-active-phase'
+    );
+    expect(repairedTask).toMatchObject({
+      status: 'completed',
+      updatedAt: 10,
+    });
+    expect(repairedTask?.executionPhase).toBeUndefined();
+    expect(repairedTask).not.toHaveProperty('executionPhase');
   });
 
   it('does not reopen a completed task when a late processing status arrives', async () => {

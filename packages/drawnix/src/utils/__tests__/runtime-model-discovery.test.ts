@@ -661,7 +661,7 @@ describe('runtime-model-discovery', () => {
       '../runtime-model-discovery'
     );
 
-    const result = runtimeModelDiscovery.applySelection('provider-text', [
+    const result = await runtimeModelDiscovery.applySelection('provider-text', [
       'model-b',
       'model-c',
     ]);
@@ -672,6 +672,88 @@ describe('runtime-model-discovery', () => {
     ]);
     expect(result.addedModelIds).toEqual(['model-c']);
     expect(result.removedModelIds).toEqual(['model-a']);
+  });
+
+  it('模型发现和选择只有在目录持久化完成后才对调用方完成', async () => {
+    const pendingWrites: Array<{
+      catalogs: Array<Record<string, unknown>>;
+      resolve: () => void;
+    }> = [];
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        text: async () =>
+          JSON.stringify({
+            data: [{ id: 'provider-image-model', category: 'image' }],
+          }),
+      }))
+    );
+    vi.doMock('../settings-manager', () => ({
+      LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
+      providerCatalogsSettings: {
+        get: () => [],
+        addListener: () => {},
+        removeListener: () => {},
+        update: (catalogs: Array<Record<string, unknown>>) =>
+          new Promise<void>((resolve) => {
+            pendingWrites.push({ catalogs, resolve });
+          }),
+      },
+      providerProfilesSettings: {
+        get: () => [
+          {
+            id: 'provider-image',
+            name: '图片供应商',
+            enabled: true,
+          },
+        ],
+        addListener: () => {},
+        removeListener: () => {},
+      },
+      invocationPresetsSettings: {
+        addListener: () => {},
+        removeListener: () => {},
+      },
+      settingsManager: {
+        getSetting: () => ({}),
+        addListener: () => {},
+        removeListener: () => {},
+      },
+    }));
+
+    const { runtimeModelDiscovery } = await import(
+      '../runtime-model-discovery'
+    );
+
+    let discoveryResolved = false;
+    const discoveryPromise = runtimeModelDiscovery
+      .discover('provider-image', 'https://api.example.com/v1', 'test-key')
+      .then(() => {
+        discoveryResolved = true;
+      });
+
+    await vi.waitFor(() => expect(pendingWrites).toHaveLength(1));
+    await Promise.resolve();
+    expect(discoveryResolved).toBe(false);
+    pendingWrites[0].resolve();
+    await discoveryPromise;
+
+    let selectionResolved = false;
+    const selectionPromise = Promise.resolve(
+      runtimeModelDiscovery.applySelection('provider-image', [
+        'provider-image-model',
+      ])
+    ).then(() => {
+      selectionResolved = true;
+    });
+
+    await vi.waitFor(() => expect(pendingWrites).toHaveLength(2));
+    await Promise.resolve();
+    expect(selectionResolved).toBe(false);
+    pendingWrites[1].resolve();
+    await selectionPromise;
   });
 
   it('加载旧目录时会刷新 HappyHorse 的供应商分类', async () => {
@@ -1010,5 +1092,4 @@ describe('runtime-model-discovery', () => {
       vendor: 'GPT',
     });
   });
-
 });

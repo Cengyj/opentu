@@ -1516,7 +1516,7 @@ export const SettingsDialog = ({
       return;
     }
 
-    const selectionChange = runtimeModelDiscovery.applySelection(
+    const selectionChange = await runtimeModelDiscovery.applySelection(
       selectedProfile.id,
       selectedModelIds
     );

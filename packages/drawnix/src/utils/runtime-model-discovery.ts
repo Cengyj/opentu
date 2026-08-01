@@ -1133,6 +1133,8 @@ function removeLegacyPersistedState(): void {
 class RuntimeModelDiscoveryStore {
   private catalogStates = new Map<string, RuntimeModelDiscoveryState>();
   private listeners = new Set<() => void>();
+  private revision = 0;
+  private catalogPersistenceQueue: Promise<void> = Promise.resolve();
 
   constructor() {
     this.catalogStates = this.loadCatalogStatesFromSettings();
@@ -1190,6 +1192,7 @@ class RuntimeModelDiscoveryStore {
   }
 
   private emit(): void {
+    this.revision += 1;
     for (const listener of this.listeners) {
       listener();
     }
@@ -1228,14 +1231,23 @@ class RuntimeModelDiscoveryStore {
 
   private async persistCatalogs(): Promise<void> {
     const catalogs = Array.from(this.catalogStates.values()).map(toCatalog);
-    await providerCatalogsSettings.update(catalogs);
+    const persistence = this.catalogPersistenceQueue.then(() =>
+      providerCatalogsSettings.update(catalogs)
+    );
+    this.catalogPersistenceQueue = persistence.catch((error) => {
+      console.warn(
+        '[RuntimeModelDiscovery] Failed to persist provider catalogs:',
+        error instanceof Error ? error.message : String(error)
+      );
+    });
+    return persistence;
   }
 
   private setCatalogState(
     profileId: string,
     state: RuntimeModelDiscoveryState,
     persist = true
-  ): void {
+  ): Promise<void> {
     this.catalogStates.set(profileId, {
       ...state,
       profileId,
@@ -1253,10 +1265,9 @@ class RuntimeModelDiscoveryStore {
     });
 
     this.syncRuntimeModelConfigs();
-    if (persist) {
-      void this.persistCatalogs();
-    }
+    const persistence = persist ? this.persistCatalogs() : Promise.resolve();
     this.emit();
+    return persistence;
   }
 
   private getCatalogState(profileId: string): RuntimeModelDiscoveryState {
@@ -1285,6 +1296,10 @@ class RuntimeModelDiscoveryStore {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  getRevision(): number {
+    return this.revision;
   }
 
   getState(
@@ -1470,7 +1485,7 @@ class RuntimeModelDiscoveryStore {
     if (!force && (!state.signature || state.signature === signature)) {
       return;
     }
-    this.setCatalogState(profileId, {
+    void this.setCatalogState(profileId, {
       ...createDefaultState(profileId),
       sourceBaseUrl: normalizeModelApiBaseUrl(baseUrl),
       signature,
@@ -1480,10 +1495,10 @@ class RuntimeModelDiscoveryStore {
     }
   }
 
-  applySelection(
+  async applySelection(
     profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
     modelIds: string[]
-  ): RuntimeModelSelectionChange {
+  ): Promise<RuntimeModelSelectionChange> {
     const state = this.getCatalogState(profileId);
     const previousSelectedModelIds = normalizeSelectedModelIds(
       state.discoveredModels,
@@ -1506,7 +1521,7 @@ class RuntimeModelDiscoveryStore {
       (modelId) => !nextSelectedSet.has(modelId)
     );
 
-    this.setCatalogState(profileId, {
+    await this.setCatalogState(profileId, {
       ...state,
       status: state.discoveredModels.length > 0 ? 'ready' : state.status,
       selectedModelIds,
@@ -1522,7 +1537,7 @@ class RuntimeModelDiscoveryStore {
   }
 
   clear(profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID): void {
-    this.setCatalogState(profileId, createDefaultState(profileId));
+    void this.setCatalogState(profileId, createDefaultState(profileId));
     if (profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID) {
       removeLegacyPersistedState();
     }
@@ -1543,7 +1558,7 @@ class RuntimeModelDiscoveryStore {
     const signature = buildDiscoverySignature(normalizedBaseUrl, trimmedApiKey);
     const isSameCredential = state.signature === signature;
 
-    this.setCatalogState(
+    void this.setCatalogState(
       profileId,
       {
         ...state,
@@ -1607,7 +1622,7 @@ class RuntimeModelDiscoveryStore {
       : [];
     const models = buildSelectedModels(adaptedModels, selectedModelIds);
 
-    this.setCatalogState(profileId, {
+    await this.setCatalogState(profileId, {
       profileId,
       status: 'ready',
       sourceBaseUrl: normalizedBaseUrl,
@@ -1627,7 +1642,7 @@ class RuntimeModelDiscoveryStore {
     error: string
   ): void {
     const state = this.getCatalogState(profileId);
-    this.setCatalogState(profileId, {
+    void this.setCatalogState(profileId, {
       ...state,
       status: 'error',
       error,

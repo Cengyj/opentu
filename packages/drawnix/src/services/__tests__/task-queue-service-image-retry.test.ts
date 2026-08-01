@@ -506,6 +506,17 @@ describe('task-queue-service lifecycle integration', () => {
         size: 0,
       },
     });
+    expect(storedTasks.get(task.id)?.executionPhase).toBeUndefined();
+    expect(taskQueueService.getTask(task.id)?.executionPhase).toBeUndefined();
+
+    taskQueueService.markAsInserted(task.id, 'auto_insert');
+    await flushAsyncWork();
+
+    expect(storedTasks.get(task.id)).toMatchObject({
+      status: TaskStatus.COMPLETED,
+      insertedToCanvas: true,
+    });
+    expect(storedTasks.get(task.id)?.executionPhase).toBeUndefined();
   });
 
   it('does not execute when initial task persistence fails and records a retryable failure', async () => {

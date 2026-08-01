@@ -75,6 +75,7 @@ import {
   normalizeGenerationParamsKnowledgeContext,
 } from './generation-context-service';
 import { MAX_VIDEO_GENERATION_PROMPT_LENGTH } from '../components/shared/workflow/prompt-builders';
+import { normalizeTerminalTaskExecutionPhase } from './task-lifecycle-invariants';
 
 const VIDEO_ANALYZER_SIMULATED_DURATION_MS = 10 * 60 * 1000;
 const VIDEO_ANALYZER_SIMULATED_INTERVAL_MS = 5000;
@@ -447,7 +448,7 @@ class TaskQueueService {
    * Converts Task to SWTask format for IndexedDB storage
    */
   private convertToSWTask(task: Task): SWTask {
-    return {
+    return normalizeTerminalTaskExecutionPhase({
       id: task.id,
       type: task.type,
       status: task.status,
@@ -464,7 +465,7 @@ class TaskQueueService {
       executionPhase: task.executionPhase,
       savedToLibrary: task.savedToLibrary,
       insertedToCanvas: task.insertedToCanvas,
-    };
+    });
   }
 
   /**
@@ -1154,7 +1155,7 @@ class TaskQueueService {
           // 创建新对象存入 Map，确保 React 能检测到引用变化
           const localTask = this.tasks.get(task.id);
           if (localTask) {
-            const newTask: Task = {
+            const newTask: Task = normalizeTerminalTaskExecutionPhase({
               ...localTask,
               status: updatedTask.status as TaskStatus,
               progress: updatedTask.progress,
@@ -1164,7 +1165,8 @@ class TaskQueueService {
               ...(updatedTask.completedAt && {
                 completedAt: updatedTask.completedAt,
               }),
-            };
+              executionPhase: updatedTask.executionPhase,
+            });
             trackTerminalTaskAnalytics(newTask, localTask.status);
             this.tasks.set(task.id, newTask);
             this.emitEvent('taskUpdated', newTask);
@@ -1179,14 +1181,15 @@ class TaskQueueService {
         result.task &&
         !this.shouldSkipExecutionWriteback(task.id)
       ) {
-        const finalTask: Task = {
+        const finalTask: Task = normalizeTerminalTaskExecutionPhase({
           ...localTask,
           status: result.task.status as TaskStatus,
           result: result.task.result,
           error: result.task.error,
           completedAt: result.task.completedAt,
           updatedAt: Date.now(),
-        };
+          executionPhase: result.task.executionPhase,
+        });
         trackTerminalTaskAnalytics(finalTask, localTask.status);
         this.tasks.set(task.id, finalTask);
 
@@ -1203,7 +1206,7 @@ class TaskQueueService {
       const localTask = this.tasks.get(task.id);
       if (localTask) {
         const now = Date.now();
-        const failedTask: Task = {
+        const failedTask: Task = normalizeTerminalTaskExecutionPhase({
           ...localTask,
           status: TaskStatus.FAILED,
           error: {
@@ -1213,7 +1216,7 @@ class TaskQueueService {
           updatedAt: now,
           completedAt: now,
           progress: undefined,
-        };
+        });
         trackTerminalTaskAnalytics(failedTask, localTask.status);
         this.tasks.set(task.id, failedTask);
         this.persistTask(failedTask);
@@ -2093,12 +2096,12 @@ class TaskQueueService {
     }
 
     const now = Date.now();
-    const updatedTask: Task = {
+    const updatedTask: Task = normalizeTerminalTaskExecutionPhase({
       ...task,
       ...updates,
       status,
       updatedAt: now,
-    };
+    });
 
     // Set timestamps based on status
     if (status === TaskStatus.PROCESSING && !updatedTask.startedAt) {
@@ -2451,11 +2454,11 @@ class TaskQueueService {
       return;
     }
 
-    const updatedTask: Task = {
+    const updatedTask: Task = normalizeTerminalTaskExecutionPhase({
       ...task,
       ...storageTask,
       updatedAt: Date.now(),
-    };
+    });
     this.tasks.set(taskId, updatedTask);
     this.emitEvent('taskUpdated', updatedTask);
   }
@@ -2487,10 +2490,11 @@ class TaskQueueService {
       }
 
       // Ensure video tasks have progress field (for backward compatibility)
-      let restoredTask: Task =
+      let restoredTask: Task = normalizeTerminalTaskExecutionPhase(
         task.type === TaskType.VIDEO && task.progress === undefined
           ? { ...task, progress: 0 }
-          : { ...task };
+          : { ...task }
+      );
 
       // 剥离大字段（base64 参考图等），减少内存占用
       if (

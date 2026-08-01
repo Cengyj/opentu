@@ -17,6 +17,7 @@ import { taskStorageReader } from '../services/task-storage-reader';
 import { getTaskInterruptionSkipReason } from '../services/task-storage-recovery';
 import { TaskType, TaskStatus, TaskExecutionPhase } from '../types/task.types';
 import { isResumableAsyncImageTask } from '../utils/task-utils';
+import { taskStorageWriter } from '../services/media-executor/task-storage-writer';
 
 // Global flag to prevent multiple initializations (persists across HMR)
 let initializationStarted = false;
@@ -66,6 +67,21 @@ export function useTaskStorage(): boolean {
           '../services/app-database'
         );
         await migrateFromLegacyDB();
+
+        try {
+          const repairedTerminalPhases =
+            await taskStorageWriter.repairTerminalExecutionPhases();
+          if (repairedTerminalPhases > 0) {
+            console.warn(
+              `[useTaskStorage] Repaired ${repairedTerminalPhases} terminal task execution phase(s)`
+            );
+          }
+        } catch (error) {
+          console.warn(
+            '[useTaskStorage] Failed to repair terminal task execution phases; continuing with normalized reads:',
+            error
+          );
+        }
 
         // Load tasks from IndexedDB (aitu-app)
         const storedTasks = await taskStorageReader.getAllTasks();

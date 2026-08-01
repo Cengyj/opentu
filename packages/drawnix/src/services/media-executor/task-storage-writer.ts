@@ -8,6 +8,10 @@
 import { normalizeImageDataUrl } from '@aitu/utils';
 import { APP_DB_NAME, APP_DB_STORES } from '../app-database';
 import type { TaskInvocationRouteSnapshot } from '../../types/task.types';
+import {
+  hasTerminalExecutionPhaseField,
+  normalizeTerminalTaskExecutionPhase,
+} from '../task-lifecycle-invariants';
 
 // 使用主线程专用数据库
 const DB_NAME = APP_DB_NAME;
@@ -204,13 +208,47 @@ class TaskStorageWriter {
    */
   private async saveTaskRecord(task: SWTask): Promise<void> {
     const db = await this.getDB();
+    const normalizedTask = normalizeTerminalTaskExecutionPhase(task);
     return new Promise((resolve, reject) => {
       const transaction = db.transaction(TASKS_STORE, 'readwrite');
       const store = transaction.objectStore(TASKS_STORE);
-      const request = store.put(task);
+      const request = store.put(normalizedTask);
 
       request.onerror = () => reject(request.error);
       transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || request.error);
+      transaction.onabort = () => reject(transaction.error || request.error);
+    });
+  }
+
+  /**
+   * Lazily repairs rows written by older builds that combined a terminal
+   * status with an active execution phase. Timestamps are intentionally kept
+   * unchanged because this is metadata normalization, not a new task event.
+   */
+  async repairTerminalExecutionPhases(): Promise<number> {
+    const db = await this.getDB();
+    return new Promise<number>((resolve, reject) => {
+      const transaction = db.transaction(TASKS_STORE, 'readwrite');
+      const store = transaction.objectStore(TASKS_STORE);
+      const request = store.openCursor();
+      let repairedCount = 0;
+
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          return;
+        }
+
+        const task = cursor.value as SWTask;
+        if (hasTerminalExecutionPhaseField(task)) {
+          cursor.update(normalizeTerminalTaskExecutionPhase(task));
+          repairedCount += 1;
+        }
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve(repairedCount);
       transaction.onerror = () => reject(transaction.error || request.error);
       transaction.onabort = () => reject(transaction.error || request.error);
     });

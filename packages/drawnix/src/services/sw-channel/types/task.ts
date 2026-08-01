@@ -90,6 +90,7 @@ export interface SWTask {
   progress?: number;
   remoteId?: string;
   invocationRoute?: TaskInvocationRouteSnapshot;
+  /** Active execution phase; terminal task snapshots must leave this unset. */
   executionPhase?: TaskExecutionPhase;
   insertedToCanvas?: boolean;
 }
