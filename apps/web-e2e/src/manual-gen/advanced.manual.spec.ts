@@ -298,9 +298,14 @@ test.describe('进阶功能手册', () => {
     await page.waitForTimeout(500);
 
     // 基于菜单项实际位置的标注
-    const settingsItem = page.getByRole('button', { name: '设置' });
-    const backupItemInMenu = page.getByRole('button', { name: /备份.*恢复/ });
-    const helpItem = page.getByRole('button', { name: /帮助|使用说明/ });
+    const settingsItem = page.getByRole('menuitem', {
+      name: '设置',
+      exact: true,
+    });
+    const backupItemInMenu = page.getByRole('menuitem', {
+      name: /备份.*恢复/,
+    });
+    const helpItem = page.getByRole('menuitem', { name: '用户手册' });
     
     const annotations1: Annotation[] = [];
     
@@ -346,18 +351,19 @@ test.describe('进阶功能手册', () => {
     await settingsItem.click();
     await page.waitForTimeout(500);
 
-    // 等待设置对话框并获取位置
-    const settingsDialog = page.locator('.t-dialog').or(page.locator('[role="dialog"]'));
-    const dialogBox = await settingsDialog.boundingBox().catch(() => null);
+    // 设置使用 WinBox 承载，以组件稳定标识等待窗口完成挂载
+    const settingsDialog = page.getByTestId('settings-dialog');
+    await expect(settingsDialog).toBeVisible();
+    const dialogBox = await settingsDialog.boundingBox();
     
     // 基于对话框位置的标注
     const annotations2: Annotation[] = [];
     const dialogX = dialogBox ? dialogBox.x + 50 : 150;
     const dialogY = dialogBox ? dialogBox.y + 100 : 200;
     
-    annotations2.push(arrow(dialogX, dialogY, 'API 配置', 'right'));
-    annotations2.push(arrow(dialogX, dialogY + 80, '主题设置', 'right'));
-    annotations2.push(arrow(dialogX, dialogY + 160, '语言选择', 'right'));
+    annotations2.push(arrow(dialogX, dialogY, '供应商配置', 'right'));
+    annotations2.push(arrow(dialogX, dialogY + 80, '模型预设', 'right'));
+    annotations2.push(arrow(dialogX, dialogY + 160, '画布显示', 'right'));
     
     await screenshotWithAnnotations(
       page,
@@ -391,8 +397,8 @@ test.describe('进阶功能手册', () => {
     await menuBtn.click();
     await page.waitForTimeout(500);
 
-    // 点击备份恢复（使用 button，名称是 "备份 / 恢复"）
-    const backupItem = page.getByRole('button', { name: /备份.*恢复/ });
+    // 点击应用菜单中的“备份 / 恢复”菜单项
+    const backupItem = page.getByRole('menuitem', { name: /备份.*恢复/ });
     await expect(backupItem).toBeVisible();
     await backupItem.click();
     await page.waitForTimeout(800);

@@ -41,7 +41,14 @@ test.describe('AI 生成功能手册', () => {
 
     // 步骤 0: 展示 AI 输入框（带标注）
     const textarea = page.locator('[data-testid="ai-input-textarea"]');
-    const modelSelector = page.getByRole('button', { name: /#/ }).first();
+    const modelSelector = page
+      .getByTestId('ai-input-bar')
+      .getByTestId('model-selector')
+      .first()
+      .locator('button[aria-haspopup="listbox"]');
+
+    await expect(textarea).toBeVisible();
+    await expect(modelSelector).toBeVisible();
     
     const annotations0: Annotation[] = [];
     const inputHighlight = await highlightElement(textarea, '输入提示词');
@@ -61,7 +68,6 @@ test.describe('AI 生成功能手册', () => {
     });
 
     // 步骤 1: 输入提示词（必须通过）
-    await expect(textarea).toBeVisible();
     await textarea.click();
     await textarea.fill('一只可爱的猫咪在阳光下玩耍');
     await page.waitForTimeout(500);
@@ -73,7 +79,6 @@ test.describe('AI 生成功能手册', () => {
     });
 
     // 步骤 2: 展示模型选择器（必须通过）
-    await expect(modelSelector).toBeVisible();
     await modelSelector.click();
     await page.waitForTimeout(300);
     
