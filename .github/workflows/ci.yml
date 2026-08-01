@@ -59,8 +59,22 @@ jobs:
           name: smoke-test-results
           path: apps/web-e2e/test-results/
 
-      # PR 时运行视觉回归测试
+      # Playwright snapshots are platform-specific. Only run the Linux visual
+      # suite after reviewed Linux baselines have been committed; never accept
+      # runner-generated screenshots as baselines automatically.
+      - name: Detect Linux visual baselines
+        id: linux-visual-baselines
+        shell: bash
+        run: |
+          if find apps/web-e2e/src/visual -type f -name '*-linux.png' -print -quit | grep -q .; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping visual regression tests because no reviewed Linux baselines are committed."
+          fi
+
       - name: Run Visual Regression Tests
+        if: steps.linux-visual-baselines.outputs.available == 'true'
         run: pnpm run e2e:visual
 
       - name: Upload Visual Test Report
@@ -115,8 +129,19 @@ jobs:
       - name: Run Full E2E Tests
         run: pnpm run e2e:features
 
-      # 运行视觉回归测试
+      - name: Detect Linux visual baselines
+        id: linux-visual-baselines
+        shell: bash
+        run: |
+          if find apps/web-e2e/src/visual -type f -name '*-linux.png' -print -quit | grep -q .; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping visual regression tests because no reviewed Linux baselines are committed."
+          fi
+
       - name: Run Visual Tests
+        if: steps.linux-visual-baselines.outputs.available == 'true'
         run: pnpm run e2e:visual
 
       # 运行手册生成测试
