@@ -9,6 +9,7 @@ import type { VideoAPIConfig, GeminiConfig } from './types';
 import {
   calculateBlobChecksum,
   compressImageBlob,
+  dataUrlToBlob,
   getFileExtension,
   isDataURL,
   normalizeImageDataUrl,
@@ -29,6 +30,45 @@ import {
 
 /** 参考图转 base64 时最大体积（1MB），避免请求体过大 */
 export const MAX_REFERENCE_IMAGE_BYTES = 1 * 1024 * 1024;
+
+/**
+ * Local persistence is post-provider work and must never keep a successfully
+ * returned image in the generating state indefinitely. The underlying Cache
+ * Storage/IndexedDB APIs are not abortable, so callers fall back to the
+ * normalized provider value when this deadline wins.
+ */
+export const MEDIA_CACHE_SETTLEMENT_TIMEOUT_MS = 10_000;
+
+class MediaCacheSettlementTimeoutError extends Error {
+  constructor(operation: string) {
+    super(
+      `[cacheRemoteUrl] ${operation} did not settle within ${MEDIA_CACHE_SETTLEMENT_TIMEOUT_MS}ms`
+    );
+    this.name = 'MediaCacheSettlementTimeoutError';
+  }
+}
+
+async function withMediaCacheDeadline<T>(
+  operation: string,
+  run: () => Promise<T>
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new MediaCacheSettlementTimeoutError(operation));
+    }, MEDIA_CACHE_SETTLEMENT_TIMEOUT_MS);
+  });
+
+  try {
+    // Defer the operation to a microtask so the deadline is armed before any
+    // synchronous base64 decoding begins.
+    return await Promise.race([Promise.resolve().then(run), timeout]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
 
 /** 将 Blob 压缩到 1MB 以内再转 base64（仅图片类型） */
 export async function blobToBase64Under1MB(blob: Blob): Promise<string> {
@@ -353,44 +393,54 @@ export async function cacheRemoteUrl(
       : `/__aitu_cache__/${mediaType}/${taskId}${suffix}.${finalFormat}`;
 
   try {
-    // data URL / 原始 base64：直接转 Blob 再缓存，避免把大串 base64 存进任务结果
+    // data URL / 原始 base64：直接解码为 Blob，避免通过 fetch(data:)
+    // 制造一条伪网络请求，也避免在开发者工具中复制巨大的 URL。
     if (isDataURL(normalizedUrl)) {
-      const response = await fetch(normalizedUrl);
-      const blob = await response.blob();
-      if (blob.size === 0) {
-        console.warn(
-          '[cacheRemoteUrl] Empty data URL blob, using original URL'
-        );
-        return normalizedUrl;
-      }
-      const contentHash = await calculateBlobChecksum(blob);
-      const hashedFormat = getFileExtension('', blob.type);
-      const contentAddressedUrl =
-        mediaType === 'audio'
-          ? `${AI_GENERATED_AUDIO_URL_PREFIX}content-${contentHash}.${
-              hashedFormat !== 'bin' ? hashedFormat : finalFormat
-            }`
-          : `/__aitu_cache__/${mediaType}/content-${contentHash}.${
-              hashedFormat !== 'bin' ? hashedFormat : finalFormat
-            }`;
+      return await withMediaCacheDeadline(
+        'inline media persistence',
+        async () => {
+          const blob = dataUrlToBlob(normalizedUrl);
+          if (blob.size === 0) {
+            console.warn(
+              '[cacheRemoteUrl] Empty data URL blob, using original URL'
+            );
+            return normalizedUrl;
+          }
 
-      if (await unifiedCacheService.isCached(contentAddressedUrl)) {
-        return contentAddressedUrl;
-      }
+          const contentHash = await calculateBlobChecksum(blob);
+          const hashedFormat = getFileExtension('', blob.type);
+          const contentAddressedUrl =
+            mediaType === 'audio'
+              ? `${AI_GENERATED_AUDIO_URL_PREFIX}content-${contentHash}.${
+                  hashedFormat !== 'bin' ? hashedFormat : finalFormat
+                }`
+              : `/__aitu_cache__/${mediaType}/content-${contentHash}.${
+                  hashedFormat !== 'bin' ? hashedFormat : finalFormat
+                }`;
 
-      await unifiedCacheService.cacheMediaFromBlob(
-        contentAddressedUrl,
-        blob,
-        mediaType,
-        {
-          taskId,
-          ...(mediaType === 'audio' ? { source: 'AI_GENERATED' } : {}),
-          ...options?.extraMetadata,
+          if (await unifiedCacheService.isCached(contentAddressedUrl)) {
+            return contentAddressedUrl;
+          }
+
+          await unifiedCacheService.cacheMediaFromBlob(
+            contentAddressedUrl,
+            blob,
+            mediaType,
+            {
+              contentHash,
+              metadata: {
+                taskId,
+                ...(mediaType === 'audio' ? { source: 'AI_GENERATED' } : {}),
+                ...options?.extraMetadata,
+              },
+            }
+          );
+          // cacheMediaFromBlob resolves only after Cache Storage and metadata
+          // transactions commit; a second read-back adds another failure point
+          // without strengthening that contract.
+          return contentAddressedUrl;
         }
       );
-      return (await unifiedCacheService.isCached(contentAddressedUrl))
-        ? contentAddressedUrl
-        : normalizedUrl;
     }
 
     return normalizedUrl;

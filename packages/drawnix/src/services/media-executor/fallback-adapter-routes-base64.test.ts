@@ -1,3 +1,7 @@
+/**
+ * @vitest-environment node
+ */
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ImageModelAdapter } from '../model-adapters/types';
 
@@ -18,7 +22,17 @@ describe('executeImageViaAdapter base64 completion', () => {
   });
 
   it('caches a b64_json-style result and persists the local cache URL as the task result', async () => {
-    const completeTask = vi.fn(async () => undefined);
+    const completeTask = vi.fn(async (taskId: string, result: any) => ({
+      id: taskId,
+      type: 'image' as const,
+      status: 'completed' as const,
+      params: { prompt: 'A tiny test image' },
+      createdAt: 1,
+      updatedAt: 2,
+      completedAt: 2,
+      progress: 100,
+      result,
+    }));
     const cachedUrls = new Set<string>();
     const isCached = vi.fn(async (url: string) => cachedUrls.has(url));
     const cacheMediaFromBlob = vi.fn(async (url: string) => {
@@ -34,7 +48,7 @@ describe('executeImageViaAdapter base64 completion', () => {
     vi.doMock('./task-storage-writer', () => ({
       taskStorageWriter: {
         completeTask,
-        failTask: vi.fn(async () => undefined),
+        failTask: vi.fn(),
       },
     }));
     vi.doMock('../unified-cache-service', () => ({
@@ -87,9 +101,7 @@ describe('executeImageViaAdapter base64 completion', () => {
     });
 
     const cachedUrl = cacheMediaFromBlob.mock.calls[0]?.[0] as string;
-    expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringMatching(/^data:image\/png;base64,/)
-    );
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(cacheMediaFromBlob).toHaveBeenCalledTimes(1);
     expect(cachedUrl).toMatch(
       /^\/__aitu_cache__\/image\/content-[a-f0-9]{64}\.png$/

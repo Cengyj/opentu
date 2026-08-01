@@ -16,6 +16,7 @@ import {
 // 使用主线程专用数据库
 const DB_NAME = APP_DB_NAME;
 const TASKS_STORE = APP_DB_STORES.TASKS;
+export const TASK_STORAGE_OPERATION_TIMEOUT_MS = 10_000;
 
 // 使用与 SW 端一致的字符串字面量类型
 type SWTaskType =
@@ -25,13 +26,24 @@ type SWTaskType =
   | 'character'
   | 'inspiration_board'
   | 'chat';
-type SWTaskStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+type SWTaskStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 const TERMINAL_TASK_STATUSES = new Set<SWTaskStatus>([
   'completed',
   'failed',
   'cancelled',
 ]);
+
+const MONOTONIC_TASK_FLAGS = [
+  'savedToLibrary',
+  'insertedToCanvas',
+  'archived',
+] as const satisfies readonly (keyof SWTask)[];
 
 export interface TaskSaveOptions {
   allowTerminalReopen?: boolean;
@@ -123,6 +135,43 @@ export class TaskStorageTaskNotFoundError extends Error {
   }
 }
 
+export class TaskStorageOperationTimeoutError extends Error {
+  readonly code = 'TASK_STORAGE_TIMEOUT';
+
+  constructor(operation: string) {
+    super(
+      `[TaskStorageWriter] ${operation} did not settle within ${TASK_STORAGE_OPERATION_TIMEOUT_MS}ms`
+    );
+    this.name = 'TaskStorageOperationTimeoutError';
+  }
+}
+
+async function withTaskStorageDeadline<T>(
+  operation: string,
+  run: () => Promise<T>,
+  onTimeout?: () => void
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const operationPromise = run();
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      try {
+        onTimeout?.();
+      } finally {
+        reject(new TaskStorageOperationTimeoutError(operation));
+      }
+    }, TASK_STORAGE_OPERATION_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([operationPromise, timeout]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 /**
  * 任务存储写入器
  *
@@ -174,51 +223,173 @@ class TaskStorageWriter {
       return this.dbPromise;
     }
 
-    this.dbPromise = new Promise((resolve, reject) => {
-      const request = indexedDB.open(DB_NAME);
+    let resolveOpen!: (database: IDBDatabase) => void;
+    let rejectOpen!: (reason: unknown) => void;
+    const openPromise = new Promise<IDBDatabase>((resolve, reject) => {
+      resolveOpen = resolve;
+      rejectOpen = reject;
+    });
+    this.dbPromise = openPromise;
 
-      request.onerror = () => {
+    const request = (() => {
+      try {
+        return indexedDB.open(DB_NAME);
+      } catch (error) {
+        if (this.dbPromise === openPromise) {
+          this.dbPromise = null;
+        }
+        rejectOpen(error);
+        return null;
+      }
+    })();
+    if (!request) {
+      return openPromise;
+    }
+
+    let settled = false;
+
+    const releaseOpenAttempt = () => {
+      clearTimeout(timeoutId);
+      if (this.dbPromise === openPromise) {
         this.dbPromise = null;
-        reject(new Error('Failed to open database'));
-      };
+      }
+    };
 
-      request.onsuccess = () => {
-        this.db = request.result;
-        this.dbPromise = null;
-        resolve(this.db);
-      };
+    const rejectOnce = (error: unknown) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      releaseOpenAttempt();
+      rejectOpen(error);
+    };
 
-      request.onupgradeneeded = () => {
-        // 如果数据库不存在，创建必要的 object store
-        const db = request.result;
-        if (!db.objectStoreNames.contains(TASKS_STORE)) {
-          const store = db.createObjectStore(TASKS_STORE, { keyPath: 'id' });
-          store.createIndex('status', 'status', { unique: false });
-          store.createIndex('type', 'type', { unique: false });
-          store.createIndex('createdAt', 'createdAt', { unique: false });
+    const timeoutId = setTimeout(() => {
+      rejectOnce(new TaskStorageOperationTimeoutError('open task database'));
+    }, TASK_STORAGE_OPERATION_TIMEOUT_MS);
+
+    request.onerror = () => {
+      rejectOnce(request.error || new Error('Failed to open database'));
+    };
+
+    request.onsuccess = () => {
+      const database = request.result;
+      if (settled || this.dbPromise !== openPromise) {
+        // IDB open requests cannot be aborted. If this request settled after
+        // its caller timed out (or after a retry took ownership), close the
+        // stale connection instead of leaking it or replacing the retry.
+        database.close();
+        return;
+      }
+
+      settled = true;
+      releaseOpenAttempt();
+      this.db = database;
+      database.onclose = () => {
+        if (this.db === database) {
+          this.db = null;
         }
       };
-    });
+      database.onversionchange = () => {
+        database.close();
+        if (this.db === database) {
+          this.db = null;
+        }
+      };
+      resolveOpen(database);
+    };
 
-    return this.dbPromise;
+    request.onblocked = () => {
+      rejectOnce(new Error('[TaskStorageWriter] Task database open blocked'));
+    };
+
+    request.onupgradeneeded = () => {
+      // 如果数据库不存在，创建必要的 object store
+      const db = request.result;
+      if (!db.objectStoreNames.contains(TASKS_STORE)) {
+        const store = db.createObjectStore(TASKS_STORE, { keyPath: 'id' });
+        store.createIndex('status', 'status', { unique: false });
+        store.createIndex('type', 'type', { unique: false });
+        store.createIndex('createdAt', 'createdAt', { unique: false });
+      }
+    };
+
+    return openPromise;
   }
 
   /**
-   * 保存任务
+   * Read, decide, and write one task row in the same IndexedDB transaction.
+   * The process-local queue preserves call order in this tab; the readwrite
+   * transaction is the serialization boundary shared by tabs and workers.
    */
-  private async saveTaskRecord(task: SWTask): Promise<void> {
-    const db = await this.getDB();
-    const normalizedTask = normalizeTerminalTaskExecutionPhase(task);
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(TASKS_STORE, 'readwrite');
-      const store = transaction.objectStore(TASKS_STORE);
-      const request = store.put(normalizedTask);
+  private async mutateTaskRecord<T>(
+    taskId: string,
+    operation: string,
+    mutate: (storedTask: SWTask | null) => { task?: SWTask; result: T }
+  ): Promise<T> {
+    const db = await withTaskStorageDeadline('open task database', () =>
+      this.getDB()
+    );
+    let transaction: IDBTransaction | undefined;
 
-      request.onerror = () => reject(request.error);
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error || request.error);
-      transaction.onabort = () => reject(transaction.error || request.error);
-    });
+    return withTaskStorageDeadline(
+      operation,
+      () =>
+        new Promise<T>((resolve, reject) => {
+          transaction = db.transaction(TASKS_STORE, 'readwrite');
+          const store = transaction.objectStore(TASKS_STORE);
+          const readRequest = store.get(taskId);
+          let mutationResult: T;
+          let hasMutationResult = false;
+          let mutationError: unknown;
+
+          readRequest.onsuccess = () => {
+            try {
+              const mutation = mutate(
+                (readRequest.result as SWTask | undefined) || null
+              );
+              mutationResult = mutation.result;
+              hasMutationResult = true;
+              if (mutation.task) {
+                store.put(normalizeTerminalTaskExecutionPhase(mutation.task));
+              }
+            } catch (error) {
+              mutationError = error;
+              try {
+                transaction?.abort();
+              } catch {
+                reject(error);
+              }
+            }
+          };
+          readRequest.onerror = () => {
+            mutationError = readRequest.error;
+          };
+          transaction.oncomplete = () => {
+            if (!hasMutationResult) {
+              reject(
+                mutationError ||
+                  new Error(
+                    `[TaskStorageWriter] ${operation} completed without a result`
+                  )
+              );
+              return;
+            }
+            resolve(mutationResult!);
+          };
+          transaction.onerror = () =>
+            reject(mutationError || transaction?.error || readRequest.error);
+          transaction.onabort = () =>
+            reject(mutationError || transaction?.error || readRequest.error);
+        }),
+      () => {
+        try {
+          transaction?.abort();
+        } catch {
+          // The transaction may already have completed between timer ticks.
+        }
+      }
+    );
   }
 
   /**
@@ -227,31 +398,47 @@ class TaskStorageWriter {
    * unchanged because this is metadata normalization, not a new task event.
    */
   async repairTerminalExecutionPhases(): Promise<number> {
-    const db = await this.getDB();
-    return new Promise<number>((resolve, reject) => {
-      const transaction = db.transaction(TASKS_STORE, 'readwrite');
-      const store = transaction.objectStore(TASKS_STORE);
-      const request = store.openCursor();
-      let repairedCount = 0;
+    const db = await withTaskStorageDeadline('open task database', () =>
+      this.getDB()
+    );
+    let transaction: IDBTransaction | undefined;
+    return withTaskStorageDeadline(
+      'repair terminal task execution phases',
+      () =>
+        new Promise<number>((resolve, reject) => {
+          transaction = db.transaction(TASKS_STORE, 'readwrite');
+          const store = transaction.objectStore(TASKS_STORE);
+          const request = store.openCursor();
+          let repairedCount = 0;
 
-      request.onsuccess = () => {
-        const cursor = request.result;
-        if (!cursor) {
-          return;
-        }
+          request.onsuccess = () => {
+            const cursor = request.result;
+            if (!cursor) {
+              return;
+            }
 
-        const task = cursor.value as SWTask;
-        if (hasTerminalExecutionPhaseField(task)) {
-          cursor.update(normalizeTerminalTaskExecutionPhase(task));
-          repairedCount += 1;
+            const task = cursor.value as SWTask;
+            if (hasTerminalExecutionPhaseField(task)) {
+              cursor.update(normalizeTerminalTaskExecutionPhase(task));
+              repairedCount += 1;
+            }
+            cursor.continue();
+          };
+          request.onerror = () => reject(request.error);
+          transaction.oncomplete = () => resolve(repairedCount);
+          transaction.onerror = () =>
+            reject(transaction?.error || request.error);
+          transaction.onabort = () =>
+            reject(transaction?.error || request.error);
+        }),
+      () => {
+        try {
+          transaction?.abort();
+        } catch {
+          // The transaction may already have completed between timer ticks.
         }
-        cursor.continue();
-      };
-      request.onerror = () => reject(request.error);
-      transaction.oncomplete = () => resolve(repairedCount);
-      transaction.onerror = () => reject(transaction.error || request.error);
-      transaction.onabort = () => reject(transaction.error || request.error);
-    });
+      }
+    );
   }
 
   private shouldKeepStoredTask(
@@ -298,18 +485,59 @@ class TaskStorageWriter {
     );
   }
 
+  /**
+   * User-visible durable facts are monotonic for one execution. A normal
+   * lifecycle snapshot must never erase a fact already committed by another
+   * callback or browser context. An explicit terminal reopen is the only
+   * operation allowed to start a fresh execution with reset flags.
+   */
+  private mergeMonotonicTaskFlags(
+    storedTask: SWTask | null,
+    nextTask: SWTask,
+    options: TaskSaveOptions
+  ): SWTask {
+    if (!storedTask) {
+      return nextTask;
+    }
+
+    const explicitlyReopensTerminal =
+      options.allowTerminalReopen === true &&
+      TERMINAL_TASK_STATUSES.has(storedTask.status) &&
+      !TERMINAL_TASK_STATUSES.has(nextTask.status);
+    if (explicitlyReopensTerminal) {
+      return nextTask;
+    }
+
+    let mergedTask = nextTask;
+    for (const flag of MONOTONIC_TASK_FLAGS) {
+      if (storedTask[flag] === true && nextTask[flag] !== true) {
+        if (mergedTask === nextTask) {
+          mergedTask = { ...nextTask };
+        }
+        mergedTask[flag] = true;
+      }
+    }
+    return mergedTask;
+  }
+
   async saveTask(
     task: SWTask,
     options: TaskSaveOptions = {}
   ): Promise<boolean> {
-    return this.enqueueTaskWrite(task.id, async () => {
-      const storedTask = await this.getTaskRecord(task.id);
-      if (storedTask && this.shouldKeepStoredTask(storedTask, task, options)) {
-        return false;
-      }
-      await this.saveTaskRecord(task);
-      return true;
-    });
+    return this.enqueueTaskWrite(task.id, () =>
+      this.mutateTaskRecord(task.id, `save task ${task.id}`, (storedTask) => {
+        if (
+          storedTask &&
+          this.shouldKeepStoredTask(storedTask, task, options)
+        ) {
+          return { result: false };
+        }
+        return {
+          task: this.mergeMonotonicTaskFlags(storedTask, task, options),
+          result: true,
+        };
+      })
+    );
   }
 
   /**
@@ -322,40 +550,67 @@ class TaskStorageWriter {
     preservedParamKeys: readonly string[],
     options: TaskSaveOptions = {}
   ): Promise<boolean> {
-    return this.enqueueTaskWrite(task.id, async () => {
-      const storedTask = await this.getTaskRecord(task.id);
-      if (storedTask && this.shouldKeepStoredTask(storedTask, task, options)) {
-        return false;
-      }
+    return this.enqueueTaskWrite(task.id, () =>
+      this.mutateTaskRecord(
+        task.id,
+        `save task ${task.id} while preserving parameters`,
+        (storedTask) => {
+          if (
+            storedTask &&
+            this.shouldKeepStoredTask(storedTask, task, options)
+          ) {
+            return { result: false };
+          }
 
-      const params = { ...task.params };
-      for (const key of preservedParamKeys) {
-        if (params[key] === undefined && storedTask?.params[key] !== undefined) {
-          params[key] = storedTask.params[key];
+          const params = { ...task.params };
+          for (const key of preservedParamKeys) {
+            if (
+              params[key] === undefined &&
+              storedTask?.params[key] !== undefined
+            ) {
+              params[key] = storedTask.params[key];
+            }
+          }
+
+          return {
+            task: this.mergeMonotonicTaskFlags(
+              storedTask,
+              { ...task, params },
+              options
+            ),
+            result: true,
+          };
         }
-      }
-
-      await this.saveTaskRecord({
-        ...task,
-        params,
-      });
-      return true;
-    });
+      )
+    );
   }
 
   async mergeTaskParams(
     taskId: string,
     params: Partial<SWTask['params']>
   ): Promise<void> {
-    return this.enqueueTaskWrite(taskId, async () => {
-      const task = await this.requireTaskRecord(taskId, 'merge task params');
-      task.params = {
-        ...task.params,
-        ...params,
-      };
-      task.updatedAt = Date.now();
-      await this.saveTaskRecord(task);
-    });
+    return this.enqueueTaskWrite(taskId, () =>
+      this.mutateTaskRecord(
+        taskId,
+        `merge task ${taskId} parameters`,
+        (task) => {
+          if (!task) {
+            throw new TaskStorageTaskNotFoundError(taskId, 'merge task params');
+          }
+          return {
+            task: {
+              ...task,
+              params: {
+                ...task.params,
+                ...params,
+              },
+              updatedAt: Date.now(),
+            },
+            result: undefined,
+          };
+        }
+      )
+    );
   }
 
   /**
@@ -366,15 +621,33 @@ class TaskStorageWriter {
       return null;
     }
 
-    const db = await this.getDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(TASKS_STORE, 'readonly');
-      const store = transaction.objectStore(TASKS_STORE);
-      const request = store.get(taskId);
+    const db = await withTaskStorageDeadline('open task database', () =>
+      this.getDB()
+    );
+    let transaction: IDBTransaction | undefined;
+    return withTaskStorageDeadline(
+      `read task ${taskId}`,
+      () =>
+        new Promise((resolve, reject) => {
+          transaction = db.transaction(TASKS_STORE, 'readonly');
+          const store = transaction.objectStore(TASKS_STORE);
+          const request = store.get(taskId);
 
-      request.onerror = () => reject(request.error);
-      request.onsuccess = () => resolve(request.result || null);
-    });
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result || null);
+          transaction.onerror = () =>
+            reject(transaction?.error || request.error);
+          transaction.onabort = () =>
+            reject(transaction?.error || request.error);
+        }),
+      () => {
+        try {
+          transaction?.abort();
+        } catch {
+          // The transaction may already have completed between timer ticks.
+        }
+      }
+    );
   }
 
   async getTask(taskId: string): Promise<SWTask | null> {
@@ -384,17 +657,6 @@ class TaskStorageWriter {
 
     await this.waitForTaskWrites(taskId);
     return this.getTaskRecord(taskId);
-  }
-
-  private async requireTaskRecord(
-    taskId: string,
-    operation: string
-  ): Promise<SWTask> {
-    const task = await this.getTaskRecord(taskId);
-    if (!task) {
-      throw new TaskStorageTaskNotFoundError(taskId, operation);
-    }
-    return task;
   }
 
   private shouldIgnoreLateTerminalMutation(
@@ -442,18 +704,31 @@ class TaskStorageWriter {
    * 更新任务状态
    */
   async updateStatus(taskId: string, status: SWTaskStatus): Promise<void> {
-    return this.enqueueTaskWrite(taskId, async () => {
-      const task = await this.requireTaskRecord(taskId, 'update status');
-      if (this.shouldIgnoreLateTerminalMutation(task, status, 'status update')) {
-        return;
-      }
-      task.status = status;
-      task.updatedAt = Date.now();
-      if (status === 'processing' && !task.startedAt) {
-        task.startedAt = Date.now();
-      }
-      await this.saveTaskRecord(task);
-    });
+    return this.enqueueTaskWrite(taskId, () =>
+      this.mutateTaskRecord(taskId, `update task ${taskId} status`, (task) => {
+        if (!task) {
+          throw new TaskStorageTaskNotFoundError(taskId, 'update status');
+        }
+        if (
+          this.shouldIgnoreLateTerminalMutation(task, status, 'status update')
+        ) {
+          return { result: undefined };
+        }
+
+        const now = Date.now();
+        return {
+          task: {
+            ...task,
+            status,
+            updatedAt: now,
+            ...(status === 'processing' && !task.startedAt
+              ? { startedAt: now }
+              : {}),
+          },
+          result: undefined,
+        };
+      })
+    );
   }
 
   /**
@@ -464,72 +739,104 @@ class TaskStorageWriter {
     progress: number,
     phase?: string
   ): Promise<void> {
-    return this.enqueueTaskWrite(taskId, async () => {
-      const task = await this.requireTaskRecord(taskId, 'update progress');
-      if (TERMINAL_TASK_STATUSES.has(task.status)) {
-        console.warn(
-          `[TaskStorageWriter] Ignoring progress update for terminal task ${task.id} (${task.status})`
-        );
-        return;
-      }
-      task.progress = progress;
-      task.updatedAt = Date.now();
-      if (phase) {
-        task.executionPhase = phase;
-      }
-      await this.saveTaskRecord(task);
-    });
+    return this.enqueueTaskWrite(taskId, () =>
+      this.mutateTaskRecord(
+        taskId,
+        `update task ${taskId} progress`,
+        (task) => {
+          if (!task) {
+            throw new TaskStorageTaskNotFoundError(taskId, 'update progress');
+          }
+          if (TERMINAL_TASK_STATUSES.has(task.status)) {
+            console.warn(
+              `[TaskStorageWriter] Ignoring progress update for terminal task ${task.id} (${task.status})`
+            );
+            return { result: undefined };
+          }
+          return {
+            task: {
+              ...task,
+              progress,
+              updatedAt: Date.now(),
+              ...(phase ? { executionPhase: phase } : {}),
+            },
+            result: undefined,
+          };
+        }
+      )
+    );
   }
 
   /**
    * 完成任务
    */
-  async completeTask(taskId: string, result: SWTask['result']): Promise<void> {
-    return this.enqueueTaskWrite(taskId, async () => {
-      const task = await this.requireTaskRecord(taskId, 'complete task');
-      if (
-        this.shouldIgnoreLateTerminalMutation(task, 'completed', 'completion')
-      ) {
-        return;
-      }
-      const normalizedResult =
-        task.type === 'image' && result
-          ? {
-              ...result,
-              url: normalizeImageDataUrl(result.url),
-              urls: result.urls?.map((url) => normalizeImageDataUrl(url)),
-              thumbnailUrl: result.thumbnailUrl
-                ? normalizeImageDataUrl(result.thumbnailUrl)
-                : result.thumbnailUrl,
-              thumbnailUrls: result.thumbnailUrls?.map((url) =>
-                normalizeImageDataUrl(url)
-              ),
-            }
-          : result;
-
-      task.status = 'completed';
-      task.result = normalizedResult;
-      task.completedAt = Date.now();
-      task.updatedAt = Date.now();
-      task.progress = 100;
-      await this.saveTaskRecord(task);
-    });
+  async completeTask(
+    taskId: string,
+    result: SWTask['result']
+  ): Promise<SWTask> {
+    return this.enqueueTaskWrite(taskId, () =>
+      this.mutateTaskRecord(taskId, `complete task ${taskId}`, (task) => {
+        if (!task) {
+          throw new TaskStorageTaskNotFoundError(taskId, 'complete task');
+        }
+        if (
+          this.shouldIgnoreLateTerminalMutation(task, 'completed', 'completion')
+        ) {
+          return {
+            result: normalizeTerminalTaskExecutionPhase(task),
+          };
+        }
+        const normalizedResult =
+          task.type === 'image' && result
+            ? {
+                ...result,
+                url: normalizeImageDataUrl(result.url),
+                urls: result.urls?.map((url) => normalizeImageDataUrl(url)),
+                thumbnailUrl: result.thumbnailUrl
+                  ? normalizeImageDataUrl(result.thumbnailUrl)
+                  : result.thumbnailUrl,
+                thumbnailUrls: result.thumbnailUrls?.map((url) =>
+                  normalizeImageDataUrl(url)
+                ),
+              }
+            : result;
+        const now = Date.now();
+        const completedTask: SWTask = normalizeTerminalTaskExecutionPhase({
+          ...task,
+          status: 'completed',
+          result: normalizedResult,
+          completedAt: now,
+          updatedAt: now,
+          progress: 100,
+        });
+        return { task: completedTask, result: completedTask };
+      })
+    );
   }
 
   /**
    * 任务失败
    */
-  async failTask(taskId: string, error: SWTask['error']): Promise<void> {
-    return this.enqueueTaskWrite(taskId, async () => {
-      const task = await this.requireTaskRecord(taskId, 'fail task');
-      if (this.shouldIgnoreLateTerminalMutation(task, 'failed', 'failure')) {
-        return;
-      }
-      task.status = 'failed';
-      task.error = error;
-      task.updatedAt = Date.now();
-      await this.saveTaskRecord(task);
-    });
+  async failTask(taskId: string, error: SWTask['error']): Promise<SWTask> {
+    return this.enqueueTaskWrite(taskId, () =>
+      this.mutateTaskRecord(taskId, `fail task ${taskId}`, (task) => {
+        if (!task) {
+          throw new TaskStorageTaskNotFoundError(taskId, 'fail task');
+        }
+        if (this.shouldIgnoreLateTerminalMutation(task, 'failed', 'failure')) {
+          return {
+            result: normalizeTerminalTaskExecutionPhase(task),
+          };
+        }
+        const failedTask: SWTask = normalizeTerminalTaskExecutionPhase({
+          ...task,
+          status: 'failed',
+          error,
+          updatedAt: Date.now(),
+        });
+        return { task: failedTask, result: failedTask };
+      })
+    );
   }
 
   /**
@@ -540,22 +847,33 @@ class TaskStorageWriter {
     remoteId: string,
     invocationRoute?: TaskInvocationRouteSnapshot
   ): Promise<void> {
-    return this.enqueueTaskWrite(taskId, async () => {
-      const task = await this.requireTaskRecord(taskId, 'update remote ID');
-      if (TERMINAL_TASK_STATUSES.has(task.status)) {
-        console.warn(
-          `[TaskStorageWriter] Ignoring remote ID update for terminal task ${task.id} (${task.status})`
-        );
-        return;
-      }
-      task.remoteId = remoteId;
-      if (invocationRoute) {
-        task.invocationRoute = invocationRoute;
-      }
-      task.updatedAt = Date.now();
-      task.executionPhase = 'polling';
-      await this.saveTaskRecord(task);
-    });
+    return this.enqueueTaskWrite(taskId, () =>
+      this.mutateTaskRecord(
+        taskId,
+        `update task ${taskId} remote ID`,
+        (task) => {
+          if (!task) {
+            throw new TaskStorageTaskNotFoundError(taskId, 'update remote ID');
+          }
+          if (TERMINAL_TASK_STATUSES.has(task.status)) {
+            console.warn(
+              `[TaskStorageWriter] Ignoring remote ID update for terminal task ${task.id} (${task.status})`
+            );
+            return { result: undefined };
+          }
+          return {
+            task: {
+              ...task,
+              remoteId,
+              ...(invocationRoute ? { invocationRoute } : {}),
+              updatedAt: Date.now(),
+              executionPhase: 'polling',
+            },
+            result: undefined,
+          };
+        }
+      )
+    );
   }
 
   /**
@@ -567,25 +885,40 @@ class TaskStorageWriter {
     }
 
     return this.enqueueTaskWrite(taskId, async () => {
-      const db = await this.getDB();
-      await new Promise<void>((resolve, reject) => {
-        const transaction = db.transaction(TASKS_STORE, 'readwrite');
-        const store = transaction.objectStore(TASKS_STORE);
-        const request = store.delete(taskId);
+      const db = await withTaskStorageDeadline('open task database', () =>
+        this.getDB()
+      );
+      let transaction: IDBTransaction | undefined;
+      await withTaskStorageDeadline(
+        `delete task ${taskId}`,
+        () =>
+          new Promise<void>((resolve, reject) => {
+            transaction = db.transaction(TASKS_STORE, 'readwrite');
+            const store = transaction.objectStore(TASKS_STORE);
+            const request = store.delete(taskId);
 
-        request.onerror = () => reject(request.error);
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () =>
-          reject(transaction.error || request.error);
-        transaction.onabort = () => reject(transaction.error || request.error);
-      });
+            request.onerror = () => reject(request.error);
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () =>
+              reject(transaction?.error || request.error);
+            transaction.onabort = () =>
+              reject(transaction?.error || request.error);
+          }),
+        () => {
+          try {
+            transaction?.abort();
+          } catch {
+            // The transaction may already have committed between timer ticks.
+          }
+        }
+      );
     });
   }
 
   /**
    * 批量导入任务（用于云同步恢复）
    * 只导入不存在的任务，已存在的跳过
-   * 
+   *
    * @returns 成功导入的任务数量
    */
   async importTasks(
@@ -603,50 +936,20 @@ class TaskStorageWriter {
 
     for (let i = 0; i < tasks.length; i += batchSize) {
       const batch = tasks.slice(i, i + batchSize);
-      const result = await new Promise<{ imported: number; skipped: number }>((resolve, reject) => {
-        const transaction = db.transaction(TASKS_STORE, 'readwrite');
-        const store = transaction.objectStore(TASKS_STORE);
+      const result = await new Promise<{ imported: number; skipped: number }>(
+        (resolve, reject) => {
+          const transaction = db.transaction(TASKS_STORE, 'readwrite');
+          const store = transaction.objectStore(TASKS_STORE);
 
-        let imported = 0;
-        let skipped = 0;
-        let completed = 0;
+          let imported = 0;
+          let skipped = 0;
+          let completed = 0;
 
-        // 处理每个任务
-        for (const task of batch) {
-          if (options.replaceExisting) {
-            const putRequest = store.put(task);
-            putRequest.onsuccess = () => {
-              imported++;
-              completed++;
-              if (completed === batch.length) {
-                resolve({ imported, skipped });
-              }
-            };
-            putRequest.onerror = () => {
-              // 单个任务失败不影响其他任务
-              skipped++;
-              completed++;
-              if (completed === batch.length) {
-                resolve({ imported, skipped });
-              }
-            };
-            continue;
-          }
-
-          // 先检查是否存在
-          const getRequest = store.get(task.id);
-
-          getRequest.onsuccess = () => {
-            if (getRequest.result) {
-              // 任务已存在，跳过
-              skipped++;
-              completed++;
-              if (completed === batch.length) {
-                resolve({ imported, skipped });
-              }
-            } else {
-              // 任务不存在，插入
-              const putRequest = store.put(task);
+          // 处理每个任务
+          for (const task of batch) {
+            const normalizedTask = normalizeTerminalTaskExecutionPhase(task);
+            if (options.replaceExisting) {
+              const putRequest = store.put(normalizedTask);
               putRequest.onsuccess = () => {
                 imported++;
                 completed++;
@@ -662,23 +965,56 @@ class TaskStorageWriter {
                   resolve({ imported, skipped });
                 }
               };
+              continue;
             }
-          };
 
-          getRequest.onerror = () => {
-            skipped++;
-            completed++;
-            if (completed === batch.length) {
-              resolve({ imported, skipped });
-            }
-          };
+            // 先检查是否存在
+            const getRequest = store.get(task.id);
+
+            getRequest.onsuccess = () => {
+              if (getRequest.result) {
+                // 任务已存在，跳过
+                skipped++;
+                completed++;
+                if (completed === batch.length) {
+                  resolve({ imported, skipped });
+                }
+              } else {
+                // 任务不存在，插入
+                const putRequest = store.put(normalizedTask);
+                putRequest.onsuccess = () => {
+                  imported++;
+                  completed++;
+                  if (completed === batch.length) {
+                    resolve({ imported, skipped });
+                  }
+                };
+                putRequest.onerror = () => {
+                  // 单个任务失败不影响其他任务
+                  skipped++;
+                  completed++;
+                  if (completed === batch.length) {
+                    resolve({ imported, skipped });
+                  }
+                };
+              }
+            };
+
+            getRequest.onerror = () => {
+              skipped++;
+              completed++;
+              if (completed === batch.length) {
+                resolve({ imported, skipped });
+              }
+            };
+          }
+
+          transaction.onerror = () => reject(transaction.error);
         }
-
-        transaction.onerror = () => reject(transaction.error);
-      });
+      );
       totalImported += result.imported;
       totalSkipped += result.skipped;
-      await new Promise(resolve => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
     }
 
     return { imported: totalImported, skipped: totalSkipped };
@@ -704,13 +1040,20 @@ class TaskStorageWriter {
    * 归档任务（标记 archived=true，不删除数据）
    */
   async archiveTask(taskId: string): Promise<void> {
-    return this.enqueueTaskWrite(taskId, async () => {
-      const task = await this.getTaskRecord(taskId);
-      if (!task) return;
-      task.archived = true;
-      task.updatedAt = Date.now();
-      await this.saveTaskRecord(task);
-    });
+    return this.enqueueTaskWrite(taskId, () =>
+      this.mutateTaskRecord(taskId, `archive task ${taskId}`, (task) => ({
+        ...(task && !task.archived
+          ? {
+              task: {
+                ...task,
+                archived: true,
+                updatedAt: Date.now(),
+              },
+            }
+          : {}),
+        result: undefined,
+      }))
+    );
   }
 
   /**
@@ -725,12 +1068,43 @@ class TaskStorageWriter {
    * 标记任务已插入画布
    */
   async markInserted(taskId: string): Promise<void> {
-    return this.enqueueTaskWrite(taskId, async () => {
-      const task = await this.requireTaskRecord(taskId, 'mark inserted');
-      task.insertedToCanvas = true;
-      task.updatedAt = Date.now();
-      await this.saveTaskRecord(task);
-    });
+    return this.markMonotonicFlag(taskId, 'insertedToCanvas', 'mark inserted');
+  }
+
+  /**
+   * 标记任务结果已保存到媒体库
+   */
+  async markSaved(taskId: string): Promise<void> {
+    return this.markMonotonicFlag(taskId, 'savedToLibrary', 'mark saved');
+  }
+
+  private async markMonotonicFlag(
+    taskId: string,
+    flag: 'insertedToCanvas' | 'savedToLibrary',
+    operation: string
+  ): Promise<void> {
+    return this.enqueueTaskWrite(taskId, () =>
+      this.mutateTaskRecord(
+        taskId,
+        `${operation} for task ${taskId}`,
+        (task) => {
+          if (!task) {
+            throw new TaskStorageTaskNotFoundError(taskId, operation);
+          }
+          if (task[flag] === true) {
+            return { result: undefined };
+          }
+          return {
+            task: {
+              ...task,
+              [flag]: true,
+              updatedAt: Date.now(),
+            },
+            result: undefined,
+          };
+        }
+      )
+    );
   }
 
   /**

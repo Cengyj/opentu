@@ -8,7 +8,7 @@
  * writes lifecycle snapshots directly to IndexedDB.
  */
 
-import { Subject, Observable } from 'rxjs';
+import { Subject, Observable, type Subscription } from 'rxjs';
 import {
   Task,
   TaskStatus,
@@ -28,7 +28,13 @@ import {
   type SWTask,
 } from './media-executor/task-storage-writer';
 import { taskStorageReader } from './task-storage-reader';
-import { executorFactory, waitForTaskCompletion } from './media-executor';
+import {
+  executorFactory,
+  waitForTaskCompletion,
+  type ImageExecutionOutcome,
+  type PollingOptions,
+  type PollingResult,
+} from './media-executor';
 import { hasInvocationRouteCredentials } from '../utils/settings-manager';
 import { DEFAULT_AUDIO_MODEL_ID } from '../constants/model-config';
 import { analytics } from '../utils/posthog-analytics';
@@ -107,6 +113,14 @@ const STRIPPED_TASK_PARAM_KEYS = [
 
 type InsertionSource = 'manual' | 'auto_insert';
 type StrippedTaskParamKey = (typeof STRIPPED_TASK_PARAM_KEYS)[number];
+interface StorageTaskSyncOptions {
+  /** A durable terminal transaction beat a conflicting local terminal state. */
+  allowTerminalStatusReconciliation?: boolean;
+}
+interface RestoreTasksOptions {
+  /** An explicit replace operation authorizes imported task history. */
+  allowTerminalStatusReconciliation?: boolean;
+}
 const STORAGE_SYNC_FIELDS = [
   'status',
   'progress',
@@ -153,6 +167,21 @@ function hasStorageTaskChanges(
     }
     return !areStorageSyncValuesEqual(task[field], storageTask[field]);
   });
+}
+
+function preserveMonotonicStorageFlags(
+  task: Task,
+  storageTask: Partial<Task>
+): Partial<Task> {
+  return {
+    ...storageTask,
+    ...(task.insertedToCanvas === true && storageTask.insertedToCanvas !== true
+      ? { insertedToCanvas: true }
+      : {}),
+    ...(task.savedToLibrary === true && storageTask.savedToLibrary !== true
+      ? { savedToLibrary: true }
+      : {}),
+  };
 }
 
 function getTaskResultCount(task: Task): number {
@@ -527,7 +556,7 @@ class TaskQueueService {
     const task = this.tasks.get(taskId);
     return (
       !task ||
-      task.status === TaskStatus.CANCELLED ||
+      isTrackedTerminalTaskStatus(task.status) ||
       this.blockedTaskIds.has(taskId)
     );
   }
@@ -537,6 +566,72 @@ class TaskQueueService {
     if (task?.status === TaskStatus.CANCELLED) {
       this.persistTask(task);
     }
+  }
+
+  private reconcileRejectedCancellation(
+    taskId: string,
+    previousStatus: TaskStatus,
+    persistenceError?: unknown
+  ): void {
+    if (persistenceError) {
+      console.error(
+        `[TaskQueueService] Failed to persist cancellation for ${taskId}:`,
+        persistenceError
+      );
+    }
+
+    taskStorageWriter
+      .getTask(taskId)
+      .then((storedTask) => {
+        if (!storedTask) return;
+
+        if (
+          storedTask.status !== 'completed' &&
+          storedTask.status !== 'failed' &&
+          storedTask.status !== 'cancelled'
+        ) {
+          // The cancelled snapshot remains authoritative in memory. Retry its
+          // bounded persistence once; executeTask's finally block provides a
+          // second best-effort retry for queue-owned tasks.
+          this.repersistCancelledTask(taskId);
+          return;
+        }
+
+        if (storedTask.status !== 'cancelled') {
+          this.blockedTaskIds.delete(taskId);
+        }
+        this.syncTaskFromStorage(
+          taskId,
+          {
+            status: storedTask.status as TaskStatus,
+            progress: storedTask.progress,
+            result: storedTask.result,
+            error: storedTask.error,
+            completedAt: storedTask.completedAt,
+            startedAt: storedTask.startedAt,
+            remoteId: storedTask.remoteId,
+            invocationRoute: storedTask.invocationRoute,
+            insertedToCanvas: storedTask.insertedToCanvas,
+            executionPhase: storedTask.executionPhase as
+              | Task['executionPhase']
+              | undefined,
+            savedToLibrary: storedTask.savedToLibrary,
+          },
+          { allowTerminalStatusReconciliation: true }
+        );
+        const reconciledTask = this.tasks.get(taskId);
+        if (reconciledTask) {
+          trackTerminalTaskAnalytics(reconciledTask, previousStatus, {
+            reconciledFromRejectedCancellation: true,
+          });
+        }
+      })
+      .catch((error) => {
+        console.error(
+          `[TaskQueueService] Failed to reconcile rejected cancellation for ${taskId}:`,
+          error
+        );
+      });
   }
 
   private async resolveTaskKnowledgeContext(task: Task): Promise<Task> {
@@ -871,6 +966,10 @@ class TaskQueueService {
           }
         }
 
+        if (this.shouldSkipExecutionWriteback(task.id)) {
+          return;
+        }
+
         const now = Date.now();
         const previousTask = this.tasks.get(task.id) || task;
         const completedTask: Task = {
@@ -922,9 +1021,13 @@ class TaskQueueService {
 
           const localTask = this.tasks.get(task.id);
           if (localTask) {
+            const maxActiveProgress = task.type === TaskType.IMAGE ? 95 : 100;
+            const boundedProgress = Number.isFinite(progress.progress)
+              ? Math.min(maxActiveProgress, Math.max(0, progress.progress))
+              : localTask.progress;
             const updatedTask: Task = {
               ...localTask,
-              progress: progress.progress,
+              progress: boundedProgress,
               updatedAt: Date.now(),
               ...(progress.phase && {
                 executionPhase: progress.phase as Task['executionPhase'],
@@ -935,6 +1038,8 @@ class TaskQueueService {
           }
         },
       };
+
+      let imageOutcome: ImageExecutionOutcome | undefined;
 
       // Execute based on task type
       switch (task.type) {
@@ -959,7 +1064,7 @@ class TaskQueueService {
           ) {
             extraParams.n = task.params.count;
           }
-          await executor.generateImage(
+          imageOutcome = await executor.generateImage(
             {
               taskId: task.id,
               prompt: task.params.prompt,
@@ -1138,6 +1243,16 @@ class TaskQueueService {
       }
 
       if (this.shouldSkipExecutionWriteback(task.id)) {
+        return;
+      }
+
+      if (task.type === TaskType.IMAGE) {
+        if (!imageOutcome || imageOutcome.taskId !== task.id) {
+          throw new Error(
+            `[TaskQueueService] Image executor did not return the terminal outcome for task ${task.id}`
+          );
+        }
+        this.applyImageExecutionOutcome(imageOutcome);
         return;
       }
 
@@ -2070,7 +2185,8 @@ class TaskQueueService {
     taskId: string,
     status: TaskStatus,
     updates?: Partial<Task>,
-    persistenceOptions: TaskSaveOptions = {}
+    persistenceOptions: TaskSaveOptions = {},
+    deferTerminalAnalytics = false
   ): Promise<boolean> | undefined {
     if (this.blockedTaskIds.has(taskId) && status !== TaskStatus.CANCELLED) {
       return;
@@ -2093,6 +2209,18 @@ class TaskQueueService {
         updatedAt: now,
       };
       this.tasks.set(taskId, task);
+    }
+
+    const explicitlyReopensTerminal =
+      persistenceOptions.allowTerminalReopen === true &&
+      isTrackedTerminalTaskStatus(task.status) &&
+      !isTrackedTerminalTaskStatus(status);
+    if (
+      isTrackedTerminalTaskStatus(task.status) &&
+      status !== task.status &&
+      !explicitlyReopensTerminal
+    ) {
+      return Promise.resolve(false);
     }
 
     const now = Date.now();
@@ -2128,7 +2256,9 @@ class TaskQueueService {
     const enteredTerminalStatus =
       isTrackedTerminalTaskStatus(status) && task.status !== status;
     if (enteredTerminalStatus) {
-      trackTerminalTaskAnalytics(updatedTask, task.status);
+      if (!deferTerminalAnalytics) {
+        trackTerminalTaskAnalytics(updatedTask, task.status);
+      }
       // 任务进入终态后检查是否需要归档旧任务
       this.enforceRetentionLimit();
     }
@@ -2150,6 +2280,9 @@ class TaskQueueService {
     const task = this.tasks.get(taskId);
     if (!task) {
       console.warn(`[TaskQueueService] Task ${taskId} not found`);
+      return;
+    }
+    if (isTrackedTerminalTaskStatus(task.status)) {
       return;
     }
 
@@ -2274,7 +2407,32 @@ class TaskQueueService {
 
     this.blockedTaskIds.add(taskId);
     this.taskAbortControllers.get(taskId)?.abort();
-    this.updateTaskStatus(taskId, TaskStatus.CANCELLED);
+    const previousStatus = task.status;
+    const persistence = this.updateTaskStatusInternal(
+      taskId,
+      TaskStatus.CANCELLED,
+      undefined,
+      {},
+      true
+    );
+    persistence?.then(
+      (written) => {
+        if (written === false) {
+          // A terminal storage transaction (typically completion) committed
+          // before cancellation entered the per-task write lane. Storage
+          // guards keep that winner; memory must converge to the same row.
+          this.reconcileRejectedCancellation(taskId, previousStatus);
+          return;
+        }
+
+        const cancelledTask = this.tasks.get(taskId);
+        if (cancelledTask?.status === TaskStatus.CANCELLED) {
+          trackTerminalTaskAnalytics(cancelledTask, previousStatus);
+        }
+      },
+      (error) =>
+        this.reconcileRejectedCancellation(taskId, previousStatus, error)
+    );
     // console.log(`[TaskQueueService] Cancelled task ${taskId}`);
   }
 
@@ -2329,6 +2487,7 @@ class TaskQueueService {
           ? undefined
           : TaskExecutionPhase.SUBMITTING,
         insertedToCanvas: false,
+        savedToLibrary: false,
         progress:
           task.type === TaskType.VIDEO ||
           task.type === TaskType.AUDIO ||
@@ -2443,24 +2602,190 @@ class TaskQueueService {
    * Used by media generation services to keep the in-memory state in sync
    * when the executor updates IndexedDB directly.
    */
-  syncTaskFromStorage(taskId: string, storageTask: Partial<Task>): void {
+  syncTaskFromStorage(
+    taskId: string,
+    storageTask: Partial<Task>,
+    options: StorageTaskSyncOptions = {}
+  ): void {
     if (this.blockedTaskIds.has(taskId)) {
       return;
     }
 
     const task = this.tasks.get(taskId);
     if (!task) return;
-    if (!hasStorageTaskChanges(task, storageTask)) {
+    if (
+      isTrackedTerminalTaskStatus(task.status) &&
+      storageTask.status !== undefined &&
+      storageTask.status !== task.status &&
+      !options.allowTerminalStatusReconciliation
+    ) {
+      return;
+    }
+    const monotonicStorageTask = preserveMonotonicStorageFlags(
+      task,
+      storageTask
+    );
+    if (!hasStorageTaskChanges(task, monotonicStorageTask)) {
       return;
     }
 
     const updatedTask: Task = normalizeTerminalTaskExecutionPhase({
       ...task,
-      ...storageTask,
+      ...monotonicStorageTask,
       updatedAt: Date.now(),
     });
     this.tasks.set(taskId, updatedTask);
     this.emitEvent('taskUpdated', updatedTask);
+  }
+
+  /**
+   * Apply the terminal image snapshot returned by the executor whose storage
+   * transaction already committed. This is the single in-memory convergence
+   * path for queue-owned and externally tracked image tasks.
+   */
+  applyImageExecutionOutcome(outcome: ImageExecutionOutcome): Task | undefined {
+    const task = this.tasks.get(outcome.taskId);
+    if (!task) {
+      return undefined;
+    }
+
+    // Cancellation and an already different terminal decision are
+    // irreversible in memory, just as they are in task storage. This also
+    // protects external callers that do not pass through executeTask()'s
+    // writeback guard.
+    if (
+      this.shouldSkipExecutionWriteback(outcome.taskId) ||
+      (isTrackedTerminalTaskStatus(task.status) &&
+        (task.status !== outcome.status || task.updatedAt >= outcome.updatedAt))
+    ) {
+      return task;
+    }
+
+    const terminalTask: Task = normalizeTerminalTaskExecutionPhase({
+      ...task,
+      status: outcome.status as TaskStatus,
+      progress:
+        outcome.progress ??
+        (outcome.status === TaskStatus.COMPLETED ? 100 : undefined),
+      result: outcome.result,
+      error: outcome.error,
+      completedAt: outcome.completedAt,
+      updatedAt: outcome.updatedAt,
+    });
+
+    trackTerminalTaskAnalytics(terminalTask, task.status);
+    this.tasks.set(outcome.taskId, terminalTask);
+    this.emitEvent('taskUpdated', terminalTask);
+
+    if (isTrackedTerminalTaskStatus(terminalTask.status)) {
+      this.enforceRetentionLimit();
+    }
+
+    return terminalTask;
+  }
+
+  /**
+   * Wait for the in-memory task event stream to reach a terminal state.
+   *
+   * Queue-owned image execution already returns an authoritative terminal
+   * outcome and applies it to this Map. Waiting on the same event stream keeps
+   * UI consumers on that lifecycle owner instead of polling IndexedDB as a
+   * second response channel. The check-subscribe-check order closes the race
+   * where a task completes while the subscription is being installed.
+   */
+  waitForTaskTerminalState(
+    taskId: string,
+    options: Pick<PollingOptions, 'timeout' | 'signal'> = {}
+  ): Promise<PollingResult> {
+    const { timeout = IMAGE_GENERATION_TIMEOUT_MS, signal } = options;
+
+    const terminalResult = (task: Task): PollingResult | undefined => {
+      if (task.status === TaskStatus.COMPLETED) {
+        return { success: true, task };
+      }
+      if (task.status === TaskStatus.FAILED) {
+        return {
+          success: false,
+          task,
+          error: task.error?.message || 'Task failed',
+        };
+      }
+      if (task.status === TaskStatus.CANCELLED) {
+        return { success: false, task, error: 'Task cancelled' };
+      }
+      return undefined;
+    };
+
+    const initialTask = this.tasks.get(taskId);
+    if (initialTask) {
+      const initialResult = terminalResult(initialTask);
+      if (initialResult) {
+        return Promise.resolve(initialResult);
+      }
+    }
+    if (signal?.aborted) {
+      return Promise.resolve({ success: false, error: 'Task wait cancelled' });
+    }
+
+    return new Promise<PollingResult>((resolve) => {
+      let settled = false;
+      let sawTask = Boolean(initialTask);
+      const cleanupState: {
+        timeoutId?: ReturnType<typeof setTimeout>;
+        subscription?: Subscription;
+      } = {};
+
+      const cleanup = () => {
+        if (cleanupState.timeoutId !== undefined) {
+          clearTimeout(cleanupState.timeoutId);
+        }
+        signal?.removeEventListener('abort', handleAbort);
+        cleanupState.subscription?.unsubscribe();
+      };
+      const finish = (result: PollingResult) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(result);
+      };
+      const inspect = (task: Task | undefined) => {
+        if (!task || task.id !== taskId) return;
+        sawTask = true;
+        const result = terminalResult(task);
+        if (result) finish(result);
+      };
+      const handleAbort = () =>
+        finish({ success: false, error: 'Task wait cancelled' });
+
+      signal?.addEventListener('abort', handleAbort, { once: true });
+      if (signal?.aborted) {
+        handleAbort();
+        return;
+      }
+
+      cleanupState.subscription = this.taskUpdates$.subscribe((event) => {
+        if (event.task.id !== taskId) return;
+        if (event.type === 'taskDeleted') {
+          finish({ success: false, error: 'Task deleted while waiting' });
+          return;
+        }
+        inspect(event.task);
+      });
+
+      // Re-read after subscribing to close the initial check/subscription gap.
+      const currentTask = this.tasks.get(taskId);
+      if (!currentTask && sawTask) {
+        finish({ success: false, error: 'Task deleted while waiting' });
+        return;
+      }
+      inspect(currentTask);
+      if (settled) return;
+
+      cleanupState.timeoutId = setTimeout(
+        () => finish({ success: false, error: 'Task wait timeout' }),
+        Math.max(0, timeout)
+      );
+    });
   }
 
   /**
@@ -2473,7 +2798,7 @@ class TaskQueueService {
    *
    * @param tasks - Array of tasks to restore
    */
-  restoreTasks(tasks: Task[]): void {
+  restoreTasks(tasks: Task[], options: RestoreTasksOptions = {}): void {
     let restoredCount = 0;
     tasks.forEach((task) => {
       // 跳过已归档的任务
@@ -2487,13 +2812,29 @@ class TaskQueueService {
         if (existing.updatedAt >= task.updatedAt) {
           return;
         }
+        if (
+          isTrackedTerminalTaskStatus(existing.status) &&
+          task.status !== existing.status &&
+          !options.allowTerminalStatusReconciliation
+        ) {
+          return;
+        }
       }
+
+      const taskWithMonotonicFlags =
+        existing?.status === task.status
+          ? ({
+              ...task,
+              ...preserveMonotonicStorageFlags(existing, task),
+            } as Task)
+          : task;
 
       // Ensure video tasks have progress field (for backward compatibility)
       let restoredTask: Task = normalizeTerminalTaskExecutionPhase(
-        task.type === TaskType.VIDEO && task.progress === undefined
-          ? { ...task, progress: 0 }
-          : { ...task }
+        taskWithMonotonicFlags.type === TaskType.VIDEO &&
+          taskWithMonotonicFlags.progress === undefined
+          ? { ...taskWithMonotonicFlags, progress: 0 }
+          : { ...taskWithMonotonicFlags }
       );
 
       // 剥离大字段（base64 参考图等），减少内存占用
@@ -2554,6 +2895,36 @@ class TaskQueueService {
     return this.taskUpdates$.asObservable();
   }
 
+  private markDurableTaskFlag(
+    task: Task,
+    flag: 'savedToLibrary' | 'insertedToCanvas'
+  ): void {
+    if (task[flag] === true) {
+      return;
+    }
+
+    const updatedTask: Task = {
+      ...task,
+      [flag]: true,
+      updatedAt: Date.now(),
+    };
+    this.tasks.set(task.id, updatedTask);
+    this.emitEvent('taskUpdated', updatedTask);
+
+    const persistence =
+      flag === 'insertedToCanvas'
+        ? taskStorageWriter.markInserted(task.id)
+        : taskStorageWriter.markSaved(task.id);
+    persistence.then(
+      () => taskStorageReader.invalidateCache(),
+      (error) =>
+        console.error(
+          `[TaskQueueService] Failed to persist ${flag} for task ${task.id}:`,
+          error
+        )
+    );
+  }
+
   /**
    * Marks a task as saved to the media library
    * This prevents duplicate saves when task updates occur
@@ -2567,9 +2938,7 @@ class TaskQueueService {
       return;
     }
 
-    this.updateTaskStatus(taskId, task.status, {
-      savedToLibrary: true,
-    });
+    this.markDurableTaskFlag(task, 'savedToLibrary');
 
     // console.log(`[TaskQueueService] Marked task ${taskId} as saved to library`);
   }
@@ -2597,9 +2966,7 @@ class TaskQueueService {
       inserted_to_canvas: true,
     });
 
-    this.updateTaskStatus(taskId, task.status, {
-      insertedToCanvas: true,
-    });
+    this.markDurableTaskFlag(task, 'insertedToCanvas');
   }
 
   /**

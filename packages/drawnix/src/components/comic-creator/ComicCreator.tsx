@@ -52,7 +52,6 @@ import {
   type Task,
 } from '../../types/task.types';
 import { createImageTask } from '../../mcp/tools/image-generation';
-import { waitForTaskCompletion } from '../../services/media-executor';
 import { MessagePlugin } from '../../utils/message-plugin';
 import {
   analytics,
@@ -1741,10 +1740,12 @@ const ComicCreator: React.FC = () => {
 
       const waitResults = await Promise.all(
         taskIds.map(async (id) => {
-          const waitResult = await waitForTaskCompletion(id, {
-            signal: abortControllerRef.current?.signal,
-            interval: 1200,
-          });
+          const waitResult = await taskQueueService.waitForTaskTerminalState(
+            id,
+            {
+              signal: abortControllerRef.current?.signal,
+            }
+          );
           activeTaskIdsRef.current.delete(id);
           return { taskId: id, waitResult };
         })

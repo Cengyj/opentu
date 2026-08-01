@@ -302,6 +302,7 @@ function normalizeGoogleResponseContent(response: Record<string, any>): string {
 function normalizeGoogleResponse(
   response: Record<string, any>
 ): GeminiResponse {
+  const inlineMedia = extractGoogleInlineMedia(response);
   return {
     choices: [
       {
@@ -311,17 +312,17 @@ function normalizeGoogleResponse(
         },
       },
     ],
+    ...(inlineMedia.length > 0 ? { inlineMedia } : {}),
   };
 }
 
-export function normalizeGoogleImageResponse(response: Record<string, any>): {
-  data: Array<{ b64_json?: string; url?: string; mime_type?: string }>;
-  raw: Record<string, any>;
-} {
+function extractGoogleInlineMedia(
+  response: Record<string, any>
+): NonNullable<GeminiResponse['inlineMedia']> {
   const candidates = Array.isArray(response.candidates)
     ? response.candidates
     : [];
-  const data = candidates.flatMap((candidate) => {
+  return candidates.flatMap((candidate) => {
     const parts = Array.isArray(candidate?.content?.parts)
       ? candidate.content.parts
       : [];
@@ -332,9 +333,8 @@ export function normalizeGoogleImageResponse(response: Record<string, any>): {
           part.inline_data || part.inlineData;
         if (inlineData?.data) {
           return {
-            b64_json: inlineData.data,
-            mime_type:
-              inlineData.mime_type || inlineData.mimeType || 'video/mp4',
+            data: inlineData.data,
+            mimeType: inlineData.mime_type || inlineData.mimeType,
           };
         }
 
@@ -346,12 +346,29 @@ export function normalizeGoogleImageResponse(response: Record<string, any>): {
 
         return null;
       })
-      .filter(Boolean);
+      .filter(
+        (
+          item: NonNullable<GeminiResponse['inlineMedia']>[number] | null
+        ): item is NonNullable<GeminiResponse['inlineMedia']>[number] =>
+          item !== null
+      );
   });
+}
+
+export function normalizeGoogleImageResponse(response: Record<string, any>): {
+  data: Array<{ b64_json?: string; url?: string; mime_type?: string }>;
+} {
+  const data = extractGoogleInlineMedia(response).map((item) =>
+    item.data
+      ? {
+          b64_json: item.data,
+          mime_type: item.mimeType || 'image/png',
+        }
+      : { url: item.url }
+  );
 
   return {
     data,
-    raw: response,
   };
 }
 

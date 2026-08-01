@@ -74,13 +74,15 @@ const extractImageUrl = (
   ) {
     const imageData = response.data[0];
     const urls = response.data
-      .map(
-        (item: any) =>
-          item?.url ||
-          (item?.b64_json
-            ? `data:image/png;base64,${item.b64_json}`
-            : undefined)
-      )
+      .map((item: any) => {
+        if (item?.url) return item.url;
+        if (!item?.b64_json) return undefined;
+        const mimeType =
+          typeof item.mime_type === 'string' && item.mime_type.startsWith('image/')
+            ? item.mime_type
+            : 'image/png';
+        return `data:${mimeType};base64,${item.b64_json}`;
+      })
       .filter(Boolean) as string[];
     const format = getFileExtension(urls[0]) || 'png';
     if (imageData.url) {
@@ -92,7 +94,15 @@ const extractImageUrl = (
       };
     }
     if (imageData.b64_json) {
-      const normalizedUrl = normalizeImageDataUrl(imageData.b64_json);
+      const mimeType =
+        typeof imageData.mime_type === 'string' &&
+        imageData.mime_type.startsWith('image/')
+          ? imageData.mime_type
+          : 'image/png';
+      const normalizedUrl = normalizeImageDataUrl(
+        imageData.b64_json,
+        mimeType
+      );
       return {
         url: normalizedUrl,
         urls,

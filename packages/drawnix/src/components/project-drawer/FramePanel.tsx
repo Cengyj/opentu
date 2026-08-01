@@ -97,7 +97,6 @@ import {
   type PPTSlideTransitionType,
 } from '../../services/ppt';
 import { createImageTask } from '../../mcp/tools/image-generation';
-import { waitForTaskCompletion } from '../../services/media-executor';
 import { taskQueueService } from '../../services/task-queue';
 import { useSharedTaskState } from '../../hooks/useTaskQueue';
 import { usePromptHistory } from '../../hooks/usePromptHistory';
@@ -3120,13 +3119,17 @@ export const FramePanel: React.FC<FramePanelProps> = ({
         throw new Error(PPT_OUTLINE_CANCELLED_ERROR);
       }
 
-      let completion: Awaited<ReturnType<typeof waitForTaskCompletion>> | null =
-        null;
+      let completion: Awaited<
+        ReturnType<typeof taskQueueService.waitForTaskTerminalState>
+      > | null = null;
       try {
-        completion = await waitForTaskCompletion(result.taskId, {
-          timeout: PPT_TASK_WAIT_TIMEOUT_MS,
-          signal: runtime.controller.signal,
-        });
+        completion = await taskQueueService.waitForTaskTerminalState(
+          result.taskId,
+          {
+            timeout: PPT_TASK_WAIT_TIMEOUT_MS,
+            signal: runtime.controller.signal,
+          }
+        );
       } finally {
         runtime.activeTaskIds.delete(result.taskId);
         emitPPTOutlineRuntimeChange();

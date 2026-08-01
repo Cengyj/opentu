@@ -2,12 +2,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { TaskType } from '../../types/shared/core.types';
 import { TaskExecutionPhase, TaskStatus } from '../../types/task.types';
 import type { Task } from '../../types/shared/core.types';
+import type {
+  ExecutionOptions,
+  ImageExecutionOutcome,
+  ImageGenerationParams,
+} from '../media-executor/types';
 
 const createTaskMock = vi.fn(async () => undefined);
 const claimTaskForCurrentSessionMock = vi.fn();
 const trackExternalTaskMock = vi.fn();
 const syncTaskFromStorageMock = vi.fn();
-const generateImageMock = vi.fn(async () => undefined);
+const applyImageExecutionOutcomeMock = vi.fn();
+const getTaskMock = vi.fn();
+const updateTaskStatusMock = vi.fn();
+const generateImageMock = vi.fn(
+  async (
+    _params: ImageGenerationParams,
+    _options?: ExecutionOptions
+  ): Promise<ImageExecutionOutcome> => {
+    throw new Error('generateImage mock was not configured');
+  }
+);
 const waitForTaskCompletionMock = vi.fn();
 const waitForInitializationMock = vi.fn(async () => undefined);
 const hasInvocationRouteCredentialsMock = vi.fn(() => true);
@@ -15,6 +30,7 @@ const resolveInvocationPlanFromRouteMock = vi.fn(() => null);
 const getFallbackExecutorMock = vi.fn(() => ({
   generateImage: generateImageMock,
 }));
+const getExecutorMock = vi.fn();
 
 vi.mock('../media-executor/task-storage-writer', () => ({
   taskStorageWriter: {
@@ -25,7 +41,7 @@ vi.mock('../media-executor/task-storage-writer', () => ({
 vi.mock('../media-executor', () => ({
   executorFactory: {
     getFallbackExecutor: getFallbackExecutorMock,
-    getExecutor: vi.fn(),
+    getExecutor: getExecutorMock,
   },
   waitForTaskCompletion: waitForTaskCompletionMock,
 }));
@@ -58,6 +74,9 @@ vi.mock('../task-queue-service', () => ({
     claimTaskForCurrentSession: claimTaskForCurrentSessionMock,
     trackExternalTask: trackExternalTaskMock,
     syncTaskFromStorage: syncTaskFromStorageMock,
+    applyImageExecutionOutcome: applyImageExecutionOutcomeMock,
+    getTask: getTaskMock,
+    updateTaskStatus: updateTaskStatusMock,
   },
 }));
 
@@ -66,25 +85,55 @@ vi.mock('../../utils/task-utils', () => ({
 }));
 
 describe('image-generation-service', () => {
+  let memoryTask: Task | undefined;
+
   beforeEach(() => {
     vi.clearAllMocks();
-
-    waitForTaskCompletionMock.mockResolvedValue({
-      success: true,
-      task: {
-        id: 'task-image-1',
-        type: TaskType.IMAGE,
-        status: TaskStatus.COMPLETED,
-        params: { prompt: 'Edit this' },
-        createdAt: 1,
-        updatedAt: 1,
-        result: {
-          url: 'https://example.com/out.png',
-          format: 'png',
-          size: 1,
-        },
-      } satisfies Task,
+    memoryTask = undefined;
+    trackExternalTaskMock.mockImplementation((task: Task) => {
+      memoryTask = task;
     });
+    getTaskMock.mockImplementation(() => memoryTask);
+    updateTaskStatusMock.mockImplementation(
+      (taskId: string, status: TaskStatus, updates?: Partial<Task>) => {
+        if (!memoryTask || memoryTask.id !== taskId) return;
+        const now = Date.now();
+        memoryTask = {
+          ...memoryTask,
+          ...updates,
+          status,
+          updatedAt: now,
+          completedAt: now,
+          executionPhase: undefined,
+        };
+      }
+    );
+
+    const completedTask = {
+      id: 'task-image-1',
+      type: TaskType.IMAGE,
+      status: TaskStatus.COMPLETED,
+      params: { prompt: 'Edit this' },
+      createdAt: 1,
+      updatedAt: 2,
+      completedAt: 2,
+      progress: 100,
+      result: {
+        url: 'https://example.com/out.png',
+        format: 'png',
+        size: 1,
+      },
+    } satisfies Task;
+    generateImageMock.mockResolvedValue({
+      taskId: completedTask.id,
+      status: 'completed',
+      progress: 100,
+      result: completedTask.result,
+      completedAt: completedTask.completedAt,
+      updatedAt: completedTask.updatedAt,
+    });
+    applyImageExecutionOutcomeMock.mockReturnValue(completedTask);
+    getExecutorMock.mockResolvedValue({ generateImage: generateImageMock });
   });
 
   it('persists the full image contract for edit-capable GPT requests', async () => {
@@ -176,5 +225,140 @@ describe('image-generation-service', () => {
         signal: undefined,
       })
     );
+  });
+
+  it('returns a synchronous executor completion without waiting for IndexedDB polling', async () => {
+    const completedTask = {
+      id: 'task-image-1',
+      type: TaskType.IMAGE,
+      status: TaskStatus.COMPLETED,
+      params: { prompt: 'Generate this' },
+      createdAt: 1,
+      updatedAt: 3,
+      completedAt: 3,
+      progress: 100,
+      result: {
+        url: 'https://example.com/generated.png',
+        format: 'png',
+        size: 1,
+      },
+    } satisfies Task;
+
+    generateImageMock.mockResolvedValueOnce({
+      taskId: completedTask.id,
+      status: 'completed',
+      result: completedTask.result,
+      completedAt: completedTask.completedAt,
+      updatedAt: completedTask.updatedAt,
+    });
+    applyImageExecutionOutcomeMock.mockReturnValue(completedTask);
+    waitForTaskCompletionMock.mockImplementationOnce(
+      () => new Promise(() => undefined)
+    );
+
+    const { generateImage } = await import(
+      '../media-generation/image-generation-service'
+    );
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const outcome = await Promise.race([
+      generateImage('Generate this', { forceMainThread: true }),
+      new Promise<'poll-timeout'>((resolve) => {
+        timeoutId = setTimeout(() => resolve('poll-timeout'), 50);
+      }),
+    ]);
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+
+    expect(outcome).toEqual({
+      task: completedTask,
+      url: completedTask.result.url,
+    });
+    expect(applyImageExecutionOutcomeMock).toHaveBeenCalledWith({
+      taskId: 'task-image-1',
+      status: 'completed',
+      result: completedTask.result,
+      completedAt: completedTask.completedAt,
+      updatedAt: completedTask.updatedAt,
+    });
+    expect(syncTaskFromStorageMock).not.toHaveBeenCalled();
+    expect(waitForTaskCompletionMock).not.toHaveBeenCalled();
+  });
+
+  it('converges the in-memory task to failed when execution cannot return an outcome', async () => {
+    generateImageMock.mockRejectedValueOnce(
+      new Error('Simulated terminal storage timeout')
+    );
+
+    const { generateImage } = await import(
+      '../media-generation/image-generation-service'
+    );
+    const result = await generateImage('Do not leave this processing', {
+      forceMainThread: true,
+    });
+
+    expect(result.task).toMatchObject({
+      id: 'task-image-1',
+      status: TaskStatus.FAILED,
+      error: {
+        code: 'IMAGE_EXECUTION_ERROR',
+        message: 'Simulated terminal storage timeout',
+      },
+    });
+    expect(result.task.executionPhase).toBeUndefined();
+    expect(updateTaskStatusMock).toHaveBeenCalledWith(
+      'task-image-1',
+      TaskStatus.FAILED,
+      {
+        error: {
+          code: 'IMAGE_EXECUTION_ERROR',
+          message: 'Simulated terminal storage timeout',
+        },
+      }
+    );
+    expect(waitForTaskCompletionMock).not.toHaveBeenCalled();
+  });
+
+  it('converges to failed when executor acquisition fails after task creation', async () => {
+    getExecutorMock.mockRejectedValueOnce(
+      new Error('Simulated executor acquisition failure')
+    );
+
+    const { generateImage } = await import(
+      '../media-generation/image-generation-service'
+    );
+    const result = await generateImage('Executor factory failure');
+
+    expect(generateImageMock).not.toHaveBeenCalled();
+    expect(result.task).toMatchObject({
+      status: TaskStatus.FAILED,
+      error: {
+        code: 'IMAGE_EXECUTION_ERROR',
+        message: 'Simulated executor acquisition failure',
+      },
+    });
+    expect(result.task.executionPhase).toBeUndefined();
+  });
+
+  it('converges to failed when the task-created callback throws before submission', async () => {
+    const { generateImage } = await import(
+      '../media-generation/image-generation-service'
+    );
+    const result = await generateImage('Callback failure', {
+      forceMainThread: true,
+      onTaskCreated: () => {
+        throw new Error('Simulated task-created callback failure');
+      },
+    });
+
+    expect(generateImageMock).not.toHaveBeenCalled();
+    expect(result.task).toMatchObject({
+      status: TaskStatus.FAILED,
+      error: {
+        code: 'IMAGE_EXECUTION_ERROR',
+        message: 'Simulated task-created callback failure',
+      },
+    });
   });
 });

@@ -2,19 +2,18 @@
  * Image Generation Service
  *
  * 独立的图片生成服务，不依赖工作流概念。
- * 薄代理层：参数构建 → 调用 executor → 等待完成 → 返回结果。
+ * 薄代理层：参数构建 → 调用 executor → 同步已提交的终态 → 返回结果。
  * 任务状态管理和 IndexedDB 持久化由 executor 层负责。
  */
 
 import type { ImageGenerationOptions, ImageGenerationResult } from './types';
-import { TaskStatus } from './types';
 import { generateTaskId } from '../../utils/task-utils';
 import {
   validateGenerationParams,
   sanitizeGenerationParams,
 } from '../../utils/validation-utils';
 import { taskStorageWriter } from '../media-executor/task-storage-writer';
-import { executorFactory, waitForTaskCompletion } from '../media-executor';
+import { executorFactory } from '../media-executor';
 import {
   hasInvocationRouteCredentials,
   settingsManager,
@@ -150,61 +149,89 @@ export async function generateImage(
     executionPhase: TaskExecutionPhase.SUBMITTING,
   });
 
-  // 通知调用方 taskId，以便提前持久化到工作流步骤
-  options.onTaskCreated?.(taskId);
+  try {
+    // 通知调用方 taskId，以便提前持久化到工作流步骤。回调、执行器获取
+    // 和执行本身属于同一收敛边界：任一步骤抛错都必须离开 processing。
+    options.onTaskCreated?.(taskId);
 
-  // 构建 executor 参数
-  const executorParams: ImageGenerationParams = {
-    taskId,
-    prompt: sanitizedParams.prompt,
-    model: options.model,
-    modelRef: options.modelRef || null,
-    size: options.size,
-    resolution: options.resolution,
-    generationMode: options.generationMode,
-    quality: options.quality,
-    referenceImages: options.referenceImages,
-    maskImage: options.maskImage,
-    inputFidelity: options.inputFidelity,
-    background: options.background,
-    outputFormat: options.outputFormat,
-    outputCompression: options.outputCompression,
-    uploadedImages: options.uploadedImages,
-    count: options.count,
-    assetMetadata: options.assetMetadata,
-    params: options.params,
-  };
-
-  // 调用 executor 执行
-  const executor = options.forceMainThread
-    ? executorFactory.getFallbackExecutor()
-    : await executorFactory.getExecutor();
-
-  await executor.generateImage(executorParams, { signal: options.signal });
-
-  // 等待任务完成（轮询 IndexedDB）
-  const result = await waitForTaskCompletion(taskId, {
-    signal: options.signal,
-    onProgress: (updatedTask) => {
-      taskQueueService.syncTaskFromStorage(taskId, updatedTask);
-    },
-  });
-
-  if (!result.success || !result.task) {
-    const errorTask = result.task || {
-      id: taskId,
-      type: TaskType.IMAGE,
-      status: TaskStatus.FAILED,
-      params: { prompt },
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      error: {
-        code: 'GENERATION_ERROR',
-        message: result.error || '图片生成失败',
-      },
+    const executorParams: ImageGenerationParams = {
+      taskId,
+      prompt: sanitizedParams.prompt,
+      model: options.model,
+      modelRef: options.modelRef || null,
+      size: options.size,
+      resolution: options.resolution,
+      generationMode: options.generationMode,
+      quality: options.quality,
+      referenceImages: options.referenceImages,
+      maskImage: options.maskImage,
+      inputFidelity: options.inputFidelity,
+      background: options.background,
+      outputFormat: options.outputFormat,
+      outputCompression: options.outputCompression,
+      uploadedImages: options.uploadedImages,
+      count: options.count,
+      assetMetadata: options.assetMetadata,
+      params: options.params,
     };
-    return { task: errorTask };
-  }
 
-  return { task: result.task, url: result.task.result?.url };
+    const executor = options.forceMainThread
+      ? executorFactory.getFallbackExecutor()
+      : await executorFactory.getExecutor();
+    const outcome = await executor.generateImage(executorParams, {
+      signal: options.signal,
+    });
+    if (outcome.taskId !== taskId) {
+      throw new Error(
+        `[ImageGeneration] Executor returned outcome for ${outcome.taskId}, expected ${taskId}`
+      );
+    }
+
+    // The executor returns the exact terminal state whose transaction already
+    // committed. Do not poll IndexedDB to rediscover a result from the same call
+    // stack: storage read failures used to be collapsed into "missing" and left
+    // the in-memory task processing until the generic 15-minute timeout.
+    const terminalTask = taskQueueService.applyImageExecutionOutcome(outcome);
+    if (!terminalTask) {
+      throw new Error(
+        `[ImageGeneration] Terminal task ${taskId} is missing from memory`
+      );
+    }
+
+    return { task: terminalTask, url: terminalTask.result?.url };
+  } catch (error) {
+    const currentTask = taskQueueService.getTask(taskId);
+    if (!currentTask) {
+      throw error;
+    }
+    if (
+      currentTask.status === QueueTaskStatus.COMPLETED ||
+      currentTask.status === QueueTaskStatus.FAILED ||
+      currentTask.status === QueueTaskStatus.CANCELLED
+    ) {
+      return { task: currentTask, url: currentTask.result?.url };
+    }
+
+    const aborted = options.signal?.aborted === true;
+    const message =
+      error instanceof Error ? error.message : '图片执行未能收敛到终态';
+    taskQueueService.updateTaskStatus(
+      taskId,
+      aborted ? QueueTaskStatus.CANCELLED : QueueTaskStatus.FAILED,
+      aborted
+        ? undefined
+        : {
+            error: {
+              code: 'IMAGE_EXECUTION_ERROR',
+              message,
+            },
+          }
+    );
+
+    const terminalTask = taskQueueService.getTask(taskId);
+    if (!terminalTask) {
+      throw error;
+    }
+    return { task: terminalTask, url: terminalTask.result?.url };
+  }
 }

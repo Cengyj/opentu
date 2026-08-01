@@ -1,6 +1,7 @@
 import type { ModelRef } from '../../utils/settings-manager';
 import type { GeminiMessagePart } from '../../utils/gemini-api/types';
 import type { GenerationParams as TaskGenerationParams } from '../../types/shared/core.types';
+import type { Task } from '../../types/task.types';
 import type {
   ProviderAuthStrategy,
   ProviderModelBinding,
@@ -172,6 +173,23 @@ export interface ExecutionOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * Authoritative terminal snapshot returned by image execution.
+ *
+ * The executor has already committed this state to task storage. Returning it
+ * directly lets the in-memory queue converge without polling IndexedDB to
+ * rediscover a result owned by the same call stack.
+ */
+export interface ImageExecutionOutcome {
+  taskId: string;
+  status: 'completed' | 'failed' | 'cancelled';
+  progress?: number;
+  result?: Task['result'];
+  error?: Task['error'];
+  completedAt?: number;
+  updatedAt: number;
+}
+
 // ============================================================================
 // 媒体执行器接口
 // ============================================================================
@@ -180,8 +198,7 @@ export interface ExecutionOptions {
  * 媒体执行器接口
  *
  * SW 执行器和主线程降级执行器都实现此接口。
- * 方法返回 void，结果直接写入 IndexedDB 的 tasks 表。
- * 调用方通过轮询 IndexedDB 获取结果。
+ * 图片执行返回已经提交的终态快照；其他媒体仍沿用 IndexedDB 结果通道。
  */
 export interface IMediaExecutor {
   /**
@@ -206,7 +223,7 @@ export interface IMediaExecutor {
   generateImage(
     params: ImageGenerationParams,
     options?: ExecutionOptions
-  ): Promise<void>;
+  ): Promise<ImageExecutionOutcome>;
 
   /**
    * 生成视频

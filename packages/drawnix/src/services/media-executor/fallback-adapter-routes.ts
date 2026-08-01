@@ -7,7 +7,7 @@
 
 import type { ModelRef } from '../../utils/settings-manager';
 import type { GenerationParams } from '../../types/shared/core.types';
-import type { ExecutionOptions } from './types';
+import type { ExecutionOptions, ImageExecutionOutcome } from './types';
 import {
   taskStorageWriter,
   TaskStorageTaskNotFoundError,
@@ -35,6 +35,10 @@ import {
   cacheRemoteUrl,
   cacheRemoteUrls,
 } from './fallback-utils';
+import {
+  completeImageExecution,
+  failImageExecution,
+} from './image-execution-outcome';
 
 type ImageGenerationMode = 'text_to_image' | 'image_to_image' | 'image_edit';
 type ImageInputFidelity = 'high' | 'low';
@@ -110,7 +114,7 @@ export async function executeImageViaAdapter(
   },
   options?: ExecutionOptions,
   startTime?: number
-): Promise<void> {
+): Promise<ImageExecutionOutcome> {
   const logStartTime = startTime || Date.now();
   const preferredRequestSchema = resolvePreferredRequestSchema(params);
 
@@ -180,7 +184,7 @@ export async function executeImageViaAdapter(
       resultUrl: result.url,
     });
 
-    options?.onProgress?.({ progress: 100 });
+    options?.onProgress?.({ progress: 95, phase: 'downloading' });
 
     // 缓存远程签名 URL 到本地，避免 Referer 校验导致 403
     const fmt = result.format || 'png';
@@ -192,7 +196,7 @@ export async function executeImageViaAdapter(
     });
     const cachedPrimary = cachedUrls[0];
 
-    await taskStorageWriter.completeTask(taskId, {
+    return await completeImageExecution(taskId, {
       url: cachedPrimary,
       urls: cachedUrls.length > 1 ? cachedUrls : undefined,
       format: fmt,
@@ -212,11 +216,10 @@ export async function executeImageViaAdapter(
     }
 
     failLLMApiLog(logId, { duration, errorMessage });
-    await taskStorageWriter.failTask(taskId, {
+    return await failImageExecution(taskId, {
       code: 'IMAGE_GENERATION_ERROR',
       message: errorMessage,
     });
-    throw error;
   }
 }
 

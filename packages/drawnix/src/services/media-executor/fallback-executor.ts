@@ -14,6 +14,7 @@ import type {
   TextGenerationParams,
   TextGenerationResult,
   ExecutionOptions,
+  ImageExecutionOutcome,
   GeminiConfig,
   VideoAPIConfig,
 } from './types';
@@ -68,6 +69,10 @@ import {
   executeImageViaAdapter,
   executeVideoViaAdapter,
 } from './fallback-adapter-routes';
+import {
+  completeImageExecution,
+  failImageExecution,
+} from './image-execution-outcome';
 import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
 import {
   assertTaskInvocationRouteAvailable,
@@ -244,7 +249,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
   async generateImage(
     params: ImageGenerationParams,
     options?: ExecutionOptions
-  ): Promise<void> {
+  ): Promise<ImageExecutionOutcome> {
     const {
       taskId,
       prompt,
@@ -427,7 +432,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         resultUrl: result.url,
       });
 
-      options?.onProgress?.({ progress: 100 });
+      options?.onProgress?.({ progress: 95, phase: 'downloading' });
 
       // 缓存远程 URL 到本地，避免签名 URL 的 Referer 校验问题
       const allImgUrls = result.urls?.length ? result.urls : [result.url];
@@ -439,7 +444,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       );
 
       // 完成任务
-      await taskStorageWriter.completeTask(taskId, {
+      return await completeImageExecution(taskId, {
         url: cachedImgUrls[0],
         urls: cachedImgUrls.length > 1 ? cachedImgUrls : undefined,
         format: 'png',
@@ -473,11 +478,10 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         duration,
         errorMessage,
       });
-      await taskStorageWriter.failTask(taskId, {
+      return await failImageExecution(taskId, {
         code: 'IMAGE_GENERATION_ERROR',
         message: errorMessage,
       });
-      throw error;
     }
   }
 
@@ -499,7 +503,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
     config: { imageConfig: GeminiConfig; videoConfig: VideoAPIConfig },
     options?: ExecutionOptions,
     startTime?: number
-  ): Promise<void> {
+  ): Promise<ImageExecutionOutcome> {
     const logStartTime = startTime || Date.now();
 
     // 开始记录 LLM API 调用
@@ -549,9 +553,10 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         config.imageConfig,
         {
           onProgress: (progress) => {
+            const boundedProgress = Math.min(progress, 95);
             options?.onProgress?.({
-              progress,
-              phase: progress < 10 ? 'submitting' : 'polling',
+              progress: boundedProgress,
+              phase: boundedProgress < 10 ? 'submitting' : 'polling',
             });
           },
           onSubmitted: async (remoteId) => {
@@ -580,7 +585,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         resultUrl: result.url,
       });
 
-      options?.onProgress?.({ progress: 100 });
+      options?.onProgress?.({ progress: 95, phase: 'downloading' });
 
       // 缓存远程 URL 到本地
       const cachedAsyncUrl = await cacheRemoteUrl(
@@ -597,7 +602,7 @@ export class FallbackMediaExecutor implements IMediaExecutor {
       );
 
       // 完成任务
-      await taskStorageWriter.completeTask(taskId, {
+      return await completeImageExecution(taskId, {
         url: cachedAsyncUrl,
         format: result.format,
         size: 0,
@@ -620,11 +625,10 @@ export class FallbackMediaExecutor implements IMediaExecutor {
         duration,
         errorMessage,
       });
-      await taskStorageWriter.failTask(taskId, {
+      return await failImageExecution(taskId, {
         code: 'ASYNC_IMAGE_GENERATION_ERROR',
         message: errorMessage,
       });
-      throw error;
     }
   }
 

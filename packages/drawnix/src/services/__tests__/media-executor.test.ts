@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type {
   IMediaExecutor,
+  ImageExecutionOutcome,
   ImageGenerationParams,
   VideoGenerationParams,
   AIAnalyzeParams,
@@ -193,8 +194,18 @@ describe('Media Executor Module', () => {
       vi.doMock('../media-executor/task-storage-writer', () => ({
         taskStorageWriter: {
           updateStatus: vi.fn(async () => {}),
-          completeTask: vi.fn(async () => {}),
-          failTask: vi.fn(async () => {}),
+          completeTask: vi.fn(async (taskId: string, result: any) => ({
+            id: taskId,
+            type: 'image',
+            status: 'completed',
+            params: { prompt: 'Edit this' },
+            createdAt: 1,
+            updatedAt: 2,
+            completedAt: 2,
+            progress: 100,
+            result,
+          })),
+          failTask: vi.fn(),
         },
       }));
       vi.doMock('../unified-cache-service', () => ({
@@ -209,6 +220,7 @@ describe('Media Executor Module', () => {
       }));
       vi.doMock('../../utils/api-auth-error-event', () => ({
         isAuthError: vi.fn(() => false),
+        classifyApiCredentialError: vi.fn(() => null),
         dispatchApiAuthError: vi.fn(),
       }));
       vi.doMock('../model-adapters', async (importOriginal) => {
@@ -260,9 +272,7 @@ describe('Media Executor Module', () => {
         'image',
         'gpt-image-2',
         {
-          preferredRequestSchema: [
-            'openai.image.gpt-edit-form',
-          ],
+          preferredRequestSchema: ['openai.image.gpt-edit-form'],
         }
       );
       expect(generateSpy).toHaveBeenCalledWith(
@@ -277,7 +287,19 @@ describe('Media Executor Module', () => {
     }, 15000);
 
     it('routes Midjourney runtime image models through the MJ adapter', async () => {
-      const executeImageViaAdapter = vi.fn(async () => undefined);
+      const adapterOutcome: ImageExecutionOutcome = {
+        taskId: 'task-mj-1',
+        status: 'completed',
+        progress: 100,
+        result: {
+          url: 'https://example.com/mj.png',
+          format: 'png',
+          size: 1,
+        },
+        completedAt: 2,
+        updatedAt: 2,
+      };
+      const executeImageViaAdapter = vi.fn(async () => adapterOutcome);
       const resolveAdapterForInvocation = vi.fn(() => ({
         id: 'mj-image-adapter',
         kind: 'image',
@@ -338,7 +360,7 @@ describe('Media Executor Module', () => {
       );
       const executor = new FallbackMediaExecutor();
 
-      await executor.generateImage({
+      const outcome = await executor.generateImage({
         taskId: 'task-mj-1',
         prompt: '生成一个兔子',
         model: 'mj_fast_background_eraser',
@@ -375,6 +397,7 @@ describe('Media Executor Module', () => {
         undefined,
         expect.any(Number)
       );
+      expect(outcome).toEqual(adapterOutcome);
     }, 15000);
 
     it('passes video adapter progress through fallback adapter routes', async () => {

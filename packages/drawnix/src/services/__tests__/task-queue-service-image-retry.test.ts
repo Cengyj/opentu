@@ -29,6 +29,8 @@ async function setupTaskQueueServiceHarness(
     blockTerminalReopenPersistence?: boolean;
     completeImageFromBase64?: boolean;
     passThroughTaskCompletion?: boolean;
+    rejectCancelledAfterCompleted?: boolean;
+    emitLateImageProgress?: boolean;
   } = {}
 ) {
   const storedTasks = new Map<string, any>();
@@ -44,6 +46,13 @@ async function setupTaskQueueServiceHarness(
     notifyTerminalReopenPersistence = resolve;
   });
   const saveTask = vi.fn(async (task: any, saveOptions?: any) => {
+    if (
+      options.rejectCancelledAfterCompleted &&
+      task.status === TaskStatus.CANCELLED &&
+      storedTasks.get(task.id)?.status === TaskStatus.COMPLETED
+    ) {
+      return false;
+    }
     if (
       options.rejectInitialImagePersistence &&
       !rejectedInitialImagePersistence &&
@@ -99,8 +108,10 @@ async function setupTaskQueueServiceHarness(
       return saveTask(persistedTask, saveOptions);
     }
   );
+  let imageExecutionCount = 0;
 
   const mocks = {
+    analyticsTrack: vi.fn(),
     saveTask,
     saveTaskPreservingParams,
     getStoredTask: vi.fn(async (taskId: string) => {
@@ -112,7 +123,57 @@ async function setupTaskQueueServiceHarness(
     }),
     archiveTasks: vi.fn(async () => undefined),
     invalidateCache: vi.fn(),
-    generateImage: vi.fn(async (_params?: any, _options?: any) => undefined),
+    generateImage: vi.fn(async (params?: any, executionOptions?: any) => {
+      const taskId = params?.taskId as string;
+      const currentTask = storedTasks.get(taskId);
+      const callIndex = imageExecutionCount;
+      imageExecutionCount += 1;
+      const status =
+        statusSequence[callIndex] || statusSequence[statusSequence.length - 1];
+      const now = Date.now();
+      const terminalTask: any = {
+        ...clone(currentTask),
+        status,
+        updatedAt: now,
+      };
+      if (status === TaskStatus.COMPLETED) {
+        terminalTask.progress = 100;
+        terminalTask.result = {
+          url: 'https://example.com/out.png',
+          format: 'png',
+          size: 1,
+        };
+        terminalTask.completedAt = now;
+      } else if (status === TaskStatus.FAILED) {
+        terminalTask.error = {
+          code: 'EXECUTION_ERROR',
+          message: 'Image generation failed',
+        };
+        terminalTask.completedAt = now;
+      }
+      delete terminalTask.executionPhase;
+      storedTasks.set(taskId, terminalTask);
+      if (options.emitLateImageProgress) {
+        setTimeout(
+          () =>
+            executionOptions?.onProgress?.({
+              progress: 40,
+              phase: TaskExecutionPhase.SUBMITTING,
+            }),
+          0
+        );
+      }
+      return {
+        taskId,
+        status: terminalTask.status,
+        progress: terminalTask.progress,
+        result: terminalTask.result,
+        error: terminalTask.error,
+        completedAt: terminalTask.completedAt,
+        updatedAt: terminalTask.updatedAt,
+      };
+    }),
+    generateVideo: vi.fn(async () => undefined),
     updateStatus: vi.fn(async (taskId: string, status: TaskStatus) => {
       const task = storedTasks.get(taskId);
       if (!task) return;
@@ -126,12 +187,32 @@ async function setupTaskQueueServiceHarness(
     completeTask: vi.fn(async (taskId: string, result: any) => {
       const task = storedTasks.get(taskId);
       if (!task) return;
-      storedTasks.set(taskId, {
+      const completedTask = {
         ...task,
         status: TaskStatus.COMPLETED,
         result: clone(result),
         progress: 100,
         completedAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      delete completedTask.executionPhase;
+      storedTasks.set(taskId, completedTask);
+    }),
+    markInserted: vi.fn(async (taskId: string) => {
+      const task = storedTasks.get(taskId);
+      if (!task) return;
+      storedTasks.set(taskId, {
+        ...task,
+        insertedToCanvas: true,
+        updatedAt: Date.now(),
+      });
+    }),
+    markSaved: vi.fn(async (taskId: string) => {
+      const task = storedTasks.get(taskId);
+      if (!task) return;
+      storedTasks.set(taskId, {
+        ...task,
+        savedToLibrary: true,
         updatedAt: Date.now(),
       });
     }),
@@ -152,6 +233,15 @@ async function setupTaskQueueServiceHarness(
         format: 'png',
         size: 0,
       });
+      const completedTask = storedTasks.get(params.taskId);
+      return {
+        taskId: params.taskId,
+        status: 'completed',
+        progress: 100,
+        result: clone(completedTask.result),
+        completedAt: completedTask.completedAt,
+        updatedAt: completedTask.updatedAt,
+      };
     });
   }
 
@@ -216,6 +306,8 @@ async function setupTaskQueueServiceHarness(
       getTask: mocks.getStoredTask,
       updateStatus: mocks.updateStatus,
       completeTask: mocks.completeTask,
+      markInserted: mocks.markInserted,
+      markSaved: mocks.markSaved,
       deleteTask: mocks.deleteTask,
       archiveTasks: mocks.archiveTasks,
     },
@@ -236,6 +328,7 @@ async function setupTaskQueueServiceHarness(
     executorFactory: {
       getExecutor: vi.fn(async () => ({
         generateImage: mocks.generateImage,
+        generateVideo: mocks.generateVideo,
       })),
     },
     waitForTaskCompletion: (taskId: string, taskOptions?: any) =>
@@ -324,7 +417,7 @@ async function setupTaskQueueServiceHarness(
 
   vi.doMock('../../utils/posthog-analytics', () => ({
     analytics: {
-      track: vi.fn(),
+      track: mocks.analyticsTrack,
       trackModelCall: vi.fn(),
       trackModelSuccess: vi.fn(),
       trackModelFailure: vi.fn(),
@@ -508,6 +601,7 @@ describe('task-queue-service lifecycle integration', () => {
     });
     expect(storedTasks.get(task.id)?.executionPhase).toBeUndefined();
     expect(taskQueueService.getTask(task.id)?.executionPhase).toBeUndefined();
+    expect(mocks.waitForTaskCompletion).not.toHaveBeenCalled();
 
     taskQueueService.markAsInserted(task.id, 'auto_insert');
     await flushAsyncWork();
@@ -517,6 +611,233 @@ describe('task-queue-service lifecycle integration', () => {
       insertedToCanvas: true,
     });
     expect(storedTasks.get(task.id)?.executionPhase).toBeUndefined();
+  });
+
+  it('uses direct image outcomes for failures without entering the IndexedDB poller', async () => {
+    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness([
+      TaskStatus.FAILED,
+    ]);
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Fail without a second completion channel',
+        model: 'gpt-image-2',
+        size: '1x1',
+      },
+      TaskType.IMAGE
+    );
+
+    await flushAsyncWork();
+
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      status: TaskStatus.FAILED,
+      error: { code: 'EXECUTION_ERROR' },
+    });
+    expect(mocks.waitForTaskCompletion).not.toHaveBeenCalled();
+  });
+
+  it('ignores an executor progress callback that arrives after image completion', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness(
+      [TaskStatus.COMPLETED],
+      { emitLateImageProgress: true }
+    );
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Late image progress callback',
+        model: 'gemini-3.1-flash-image-preview',
+        size: '1x1',
+      },
+      TaskType.IMAGE
+    );
+
+    await flushAsyncWork();
+
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      result: { url: 'https://example.com/out.png' },
+    });
+    expect(taskQueueService.getTask(task.id)?.executionPhase).toBeUndefined();
+  });
+
+  it('applies a cancelled executor outcome without result or IndexedDB polling', async () => {
+    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness([
+      TaskStatus.CANCELLED,
+    ]);
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Executor observes cancellation before completion',
+        model: 'gpt-image-2',
+        size: '1x1',
+      },
+      TaskType.IMAGE
+    );
+    await flushAsyncWork();
+
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      status: TaskStatus.CANCELLED,
+    });
+    expect(taskQueueService.getTask(task.id)?.result).toBeUndefined();
+    expect(taskQueueService.getTask(task.id)?.executionPhase).toBeUndefined();
+    expect(mocks.waitForTaskCompletion).not.toHaveBeenCalled();
+    expect(
+      mocks.analyticsTrack.mock.calls.filter(
+        ([eventName]) => eventName === 'generation_task_cancelled'
+      )
+    ).toHaveLength(1);
+  });
+
+  it('keeps active image progress below 100 until the terminal outcome', async () => {
+    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const activeProgress: number[] = [];
+    const subscription = taskQueueService
+      .observeTaskUpdates()
+      .subscribe((event) => {
+        if (
+          event.type === 'taskUpdated' &&
+          event.task.type === TaskType.IMAGE &&
+          event.task.status === TaskStatus.PROCESSING &&
+          typeof event.task.progress === 'number'
+        ) {
+          activeProgress.push(event.task.progress);
+        }
+      });
+    mocks.generateImage.mockImplementationOnce(async (params, options) => {
+      options?.onProgress?.({ progress: 100, phase: 'downloading' });
+      const now = Date.now();
+      return {
+        taskId: params.taskId,
+        status: 'completed',
+        progress: 100,
+        result: {
+          url: 'https://example.com/terminal-progress.png',
+          format: 'png',
+          size: 1,
+        },
+        completedAt: now,
+        updatedAt: now,
+      };
+    });
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Only terminal state may expose 100 percent',
+        model: 'gpt-image-2',
+        size: '1x1',
+      },
+      TaskType.IMAGE
+    );
+    await flushAsyncWork();
+
+    expect(activeProgress).toContain(95);
+    expect(activeProgress.every((progress) => progress < 100)).toBe(true);
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+    });
+    subscription.unsubscribe();
+  });
+
+  it('keeps the IndexedDB completion channel for non-image executors', async () => {
+    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+
+    taskQueueService.createTask(
+      {
+        prompt: 'Video still uses the legacy result channel',
+        model: 'video-model',
+      },
+      TaskType.VIDEO
+    );
+
+    await flushAsyncWork();
+
+    expect(mocks.generateVideo).toHaveBeenCalledTimes(1);
+    expect(mocks.waitForTaskCompletion).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits on the in-memory task stream and closes the subscription race', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const activeTask: Task = {
+      id: 'task-event-race',
+      type: TaskType.IMAGE,
+      status: TaskStatus.PROCESSING,
+      params: { prompt: 'Complete between check and subscription' },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const completedTask: Task = {
+      ...activeTask,
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      result: {
+        url: 'https://example.com/event-result.png',
+        format: 'png',
+        size: 1,
+      },
+      completedAt: 2,
+      updatedAt: 2,
+    };
+    taskQueueService.trackExternalTask(activeTask);
+
+    const taskMap = (taskQueueService as any).tasks as Map<string, Task>;
+    const originalGet = taskMap.get.bind(taskMap);
+    let taskReads = 0;
+    const getSpy = vi.spyOn(taskMap, 'get').mockImplementation((taskId) => {
+      if (taskId === activeTask.id) {
+        taskReads += 1;
+        return taskReads === 1 ? activeTask : completedTask;
+      }
+      return originalGet(taskId);
+    });
+
+    await expect(
+      taskQueueService.waitForTaskTerminalState(activeTask.id, { timeout: 50 })
+    ).resolves.toEqual({ success: true, task: completedTask });
+    expect(taskReads).toBe(2);
+
+    getSpy.mockRestore();
+  });
+
+  it('removes the in-memory task subscription when waiting is aborted', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const activeTask: Task = {
+      id: 'task-event-abort',
+      type: TaskType.IMAGE,
+      status: TaskStatus.PROCESSING,
+      params: { prompt: 'Abort event wait' },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    taskQueueService.trackExternalTask(activeTask);
+
+    const subject = (taskQueueService as any).taskUpdates$ as {
+      observers: unknown[];
+    };
+    const observersBefore = subject.observers.length;
+    const controller = new AbortController();
+    const wait = taskQueueService.waitForTaskTerminalState(activeTask.id, {
+      signal: controller.signal,
+      timeout: 50,
+    });
+    expect(subject.observers).toHaveLength(observersBefore + 1);
+
+    controller.abort();
+
+    await expect(wait).resolves.toEqual({
+      success: false,
+      error: 'Task wait cancelled',
+    });
+    expect(subject.observers).toHaveLength(observersBefore);
   });
 
   it('does not execute when initial task persistence fails and records a retryable failure', async () => {
@@ -595,10 +916,11 @@ describe('task-queue-service lifecycle integration', () => {
   });
 
   it('allows explicit manual retry for completed image tasks and clears stale results', async () => {
-    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness([
-      TaskStatus.COMPLETED,
-      TaskStatus.COMPLETED,
-    ]);
+    const { taskQueueService, storedTasks, mocks } =
+      await setupTaskQueueServiceHarness([
+        TaskStatus.COMPLETED,
+        TaskStatus.COMPLETED,
+      ]);
 
     const task = taskQueueService.createTask(
       {
@@ -617,6 +939,14 @@ describe('task-queue-service lifecycle integration', () => {
     );
     expect(taskQueueService.getTask(task.id)?.result).toBeTruthy();
 
+    taskQueueService.markAsInserted(task.id);
+    taskQueueService.markAsSaved(task.id);
+    await flushAsyncWork();
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      insertedToCanvas: true,
+      savedToLibrary: true,
+    });
+
     taskQueueService.retryTask(task.id, { allowCompleted: true });
 
     expect(taskQueueService.getTask(task.id)?.status).toBe(
@@ -624,10 +954,15 @@ describe('task-queue-service lifecycle integration', () => {
     );
     expect(taskQueueService.getTask(task.id)?.result).toBeUndefined();
     expect(taskQueueService.getTask(task.id)?.insertedToCanvas).toBe(false);
+    expect(taskQueueService.getTask(task.id)?.savedToLibrary).toBe(false);
 
     await flushAsyncWork();
 
     expect(mocks.generateImage).toHaveBeenCalledTimes(2);
+    expect(storedTasks.get(task.id)).toMatchObject({
+      insertedToCanvas: false,
+      savedToLibrary: false,
+    });
     expect(mocks.generateImage.mock.calls[1]?.[0]).toMatchObject({
       prompt: 'Regenerate completed image',
       model: 'gpt-image-2',
@@ -861,6 +1196,164 @@ describe('task-queue-service lifecycle integration', () => {
     expect(storedTasks.get(task.id)?.status).toBe(TaskStatus.CANCELLED);
   });
 
+  it('rejects a late external image outcome after in-memory cancellation', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const task: Task = {
+      id: 'task-external-cancel-race',
+      type: TaskType.IMAGE,
+      status: TaskStatus.PROCESSING,
+      params: { prompt: 'Cancel before an external executor returns' },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    taskQueueService.trackExternalTask(task);
+    taskQueueService.cancelTask(task.id);
+
+    const applied = taskQueueService.applyImageExecutionOutcome({
+      taskId: task.id,
+      status: 'completed',
+      progress: 100,
+      result: {
+        url: 'https://example.com/late-external.png',
+        format: 'png',
+        size: 1,
+      },
+      completedAt: 3,
+      updatedAt: 3,
+    });
+
+    expect(applied?.status).toBe(TaskStatus.CANCELLED);
+    expect(applied?.result).toBeUndefined();
+    expect(taskQueueService.getTask(task.id)?.status).toBe(
+      TaskStatus.CANCELLED
+    );
+  });
+
+  it('applies each terminal image outcome idempotently with one event and one analytic', async () => {
+    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const updatedTaskIds: string[] = [];
+    const subscription = taskQueueService
+      .observeTaskUpdates()
+      .subscribe((event) => {
+        if (event.type === 'taskUpdated') {
+          updatedTaskIds.push(event.task.id);
+        }
+      });
+    const cases = [
+      {
+        status: 'completed' as const,
+        eventName: 'generation_task_completed',
+        result: {
+          url: 'https://example.com/idempotent.png',
+          format: 'png',
+          size: 1,
+        },
+      },
+      {
+        status: 'failed' as const,
+        eventName: 'generation_task_failed',
+        error: { code: 'IMAGE_FAILED', message: 'expected failure' },
+      },
+      {
+        status: 'cancelled' as const,
+        eventName: 'generation_task_cancelled',
+      },
+    ];
+
+    for (const [index, terminalCase] of cases.entries()) {
+      const task: Task = {
+        id: `task-idempotent-${terminalCase.status}`,
+        type: TaskType.IMAGE,
+        status: TaskStatus.PROCESSING,
+        params: { prompt: `Terminal case ${terminalCase.status}` },
+        createdAt: 1,
+        updatedAt: 1,
+      };
+      taskQueueService.trackExternalTask(task);
+      const outcome = {
+        taskId: task.id,
+        status: terminalCase.status,
+        progress: terminalCase.status === 'completed' ? 100 : undefined,
+        result: terminalCase.result,
+        error: terminalCase.error,
+        completedAt: index + 2,
+        updatedAt: index + 2,
+      };
+
+      taskQueueService.applyImageExecutionOutcome(outcome);
+      taskQueueService.applyImageExecutionOutcome(outcome);
+
+      expect(
+        updatedTaskIds.filter((updatedTaskId) => updatedTaskId === task.id)
+      ).toHaveLength(1);
+      expect(
+        mocks.analyticsTrack.mock.calls.filter(
+          ([eventName]) => eventName === terminalCase.eventName
+        )
+      ).toHaveLength(1);
+    }
+
+    subscription.unsubscribe();
+  });
+
+  it('reconciles memory when completion commits before cancellation persistence', async () => {
+    const { taskQueueService, storedTasks, mocks } =
+      await setupTaskQueueServiceHarness([TaskStatus.COMPLETED], {
+        rejectCancelledAfterCompleted: true,
+      });
+    const task: Task = {
+      id: 'task-completion-wins-cancel-race',
+      type: TaskType.IMAGE,
+      status: TaskStatus.PROCESSING,
+      params: { prompt: 'Completion already committed' },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    taskQueueService.trackExternalTask(task);
+    await flushAsyncWork();
+
+    const completedTask: Task = {
+      ...task,
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      result: {
+        url: 'https://example.com/already-committed.png',
+        format: 'png',
+        size: 1,
+      },
+      completedAt: 2,
+      updatedAt: 2,
+    };
+    storedTasks.set(task.id, clone(completedTask));
+
+    taskQueueService.cancelTask(task.id);
+    expect(taskQueueService.getTask(task.id)?.status).toBe(
+      TaskStatus.CANCELLED
+    );
+
+    await flushAsyncWork();
+
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      status: TaskStatus.COMPLETED,
+      result: { url: 'https://example.com/already-committed.png' },
+    });
+    expect(storedTasks.get(task.id)?.status).toBe(TaskStatus.COMPLETED);
+    expect(
+      mocks.analyticsTrack.mock.calls.filter(
+        ([eventName]) => eventName === 'generation_task_completed'
+      )
+    ).toHaveLength(1);
+    expect(
+      mocks.analyticsTrack.mock.calls.filter(
+        ([eventName]) => eventName === 'generation_task_cancelled'
+      )
+    ).toHaveLength(0);
+  });
+
   it('emits storage sync updates when completed result or insertion flag changes without status progress changes', async () => {
     const { taskQueueService } = await setupTaskQueueServiceHarness([
       TaskStatus.COMPLETED,
@@ -911,6 +1404,290 @@ describe('task-queue-service lifecycle integration', () => {
     expect(taskQueueService.getTask(task.id)?.insertedToCanvas).toBe(true);
 
     subscription.unsubscribe();
+  });
+
+  it('does not regress durable flags from a stale storage snapshot', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const task: Task = {
+      id: 'task-storage-sync-monotonic-flags',
+      type: TaskType.IMAGE,
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      insertedToCanvas: true,
+      savedToLibrary: true,
+      params: { prompt: 'Keep committed durable flags' },
+      result: {
+        url: 'https://example.com/inserted-and-saved.png',
+        format: 'png',
+        size: 1,
+      },
+      createdAt: 1,
+      completedAt: 2,
+      updatedAt: 2,
+    };
+    const updatedTasks: Task[] = [];
+
+    taskQueueService.trackExternalTask(clone(task));
+    const subscription = taskQueueService
+      .observeTaskUpdates()
+      .subscribe((event) => {
+        if (event.type === 'taskUpdated') {
+          updatedTasks.push(event.task);
+        }
+      });
+
+    taskQueueService.syncTaskFromStorage(task.id, {
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      insertedToCanvas: false,
+      savedToLibrary: false,
+    });
+
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      insertedToCanvas: true,
+      savedToLibrary: true,
+    });
+    expect(updatedTasks).toHaveLength(0);
+
+    subscription.unsubscribe();
+  });
+
+  it('does not reopen a terminal in-memory task from a stale storage sync', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const task: Task = {
+      id: 'task-storage-sync-terminal-regression',
+      type: TaskType.IMAGE,
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      params: { prompt: 'Keep terminal state irreversible' },
+      result: {
+        url: 'https://example.com/terminal.png',
+        format: 'png',
+        size: 1,
+      },
+      createdAt: 1,
+      completedAt: 2,
+      updatedAt: 2,
+    };
+    const updatedTasks: Task[] = [];
+
+    taskQueueService.trackExternalTask(clone(task));
+    const subscription = taskQueueService
+      .observeTaskUpdates()
+      .subscribe((event) => {
+        if (event.type === 'taskUpdated') {
+          updatedTasks.push(event.task);
+        }
+      });
+
+    taskQueueService.syncTaskFromStorage(task.id, {
+      status: TaskStatus.PROCESSING,
+      progress: 40,
+      executionPhase: TaskExecutionPhase.SUBMITTING,
+    });
+
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      result: { url: 'https://example.com/terminal.png' },
+    });
+    expect(taskQueueService.getTask(task.id)?.executionPhase).toBeUndefined();
+    expect(updatedTasks).toHaveLength(0);
+
+    subscription.unsubscribe();
+  });
+
+  it('ignores late progress and active status callbacks after completion', async () => {
+    const { taskQueueService, mocks, storedTasks } =
+      await setupTaskQueueServiceHarness([TaskStatus.COMPLETED]);
+    const task: Task = {
+      id: 'task-late-active-callbacks-after-completion',
+      type: TaskType.IMAGE,
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      params: { prompt: 'Ignore late callbacks' },
+      result: {
+        url: 'https://example.com/completed.png',
+        format: 'png',
+        size: 1,
+      },
+      createdAt: 1,
+      completedAt: 2,
+      updatedAt: 2,
+    };
+
+    taskQueueService.trackExternalTask(clone(task));
+    await flushAsyncWork();
+    const saveCountBeforeLateCallbacks = mocks.saveTask.mock.calls.length;
+    const updatedTasks: Task[] = [];
+    const subscription = taskQueueService
+      .observeTaskUpdates()
+      .subscribe((event) => {
+        if (event.type === 'taskUpdated') {
+          updatedTasks.push(event.task);
+        }
+      });
+
+    taskQueueService.updateTaskProgress(task.id, 40);
+    taskQueueService.updateTaskStatus(task.id, TaskStatus.PROCESSING, {
+      executionPhase: TaskExecutionPhase.SUBMITTING,
+    });
+    await flushAsyncWork();
+
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      result: { url: 'https://example.com/completed.png' },
+    });
+    expect(taskQueueService.getTask(task.id)?.executionPhase).toBeUndefined();
+    expect(storedTasks.get(task.id)).toMatchObject({
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+    });
+    expect(mocks.saveTask).toHaveBeenCalledTimes(saveCountBeforeLateCallbacks);
+    expect(updatedTasks).toHaveLength(0);
+
+    subscription.unsubscribe();
+  });
+
+  it('preserves durable flags while restoring a newer same-state snapshot', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const task: Task = {
+      id: 'task-restore-monotonic-flags',
+      type: TaskType.IMAGE,
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      insertedToCanvas: true,
+      savedToLibrary: true,
+      params: { prompt: 'Restore without losing durable facts' },
+      result: {
+        url: 'https://example.com/original.png',
+        format: 'png',
+        size: 1,
+      },
+      createdAt: 1,
+      completedAt: 1,
+      updatedAt: 1,
+    };
+
+    taskQueueService.trackExternalTask(clone(task));
+    taskQueueService.restoreTasks([
+      {
+        ...clone(task),
+        insertedToCanvas: false,
+        savedToLibrary: false,
+        result: {
+          url: 'https://example.com/newer.png',
+          format: 'png',
+          size: 1,
+        },
+        completedAt: 2,
+        updatedAt: 2,
+      },
+    ]);
+
+    expect(taskQueueService.getTask(task.id)).toMatchObject({
+      insertedToCanvas: true,
+      savedToLibrary: true,
+      result: { url: 'https://example.com/newer.png' },
+      updatedAt: 2,
+    });
+  });
+
+  it('does not reopen a terminal task from a newer ordinary restore snapshot', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const completedTask: Task = {
+      id: 'task-restore-terminal-regression',
+      type: TaskType.IMAGE,
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      params: { prompt: 'Restore keeps terminal state' },
+      result: {
+        url: 'https://example.com/completed-before-restore.png',
+        format: 'png',
+        size: 1,
+      },
+      createdAt: 1,
+      completedAt: 1,
+      updatedAt: 1,
+    };
+
+    taskQueueService.trackExternalTask(clone(completedTask));
+    taskQueueService.restoreTasks([
+      {
+        ...clone(completedTask),
+        status: TaskStatus.PROCESSING,
+        progress: 40,
+        result: undefined,
+        completedAt: undefined,
+        executionPhase: TaskExecutionPhase.SUBMITTING,
+        updatedAt: 2,
+      },
+    ]);
+
+    expect(taskQueueService.getTask(completedTask.id)).toMatchObject({
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      result: {
+        url: 'https://example.com/completed-before-restore.png',
+      },
+      updatedAt: 1,
+    });
+    expect(
+      taskQueueService.getTask(completedTask.id)?.executionPhase
+    ).toBeUndefined();
+  });
+
+  it('allows an explicit replace restore to reconcile terminal status', async () => {
+    const { taskQueueService } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const completedTask: Task = {
+      id: 'task-explicit-replace-restore',
+      type: TaskType.IMAGE,
+      status: TaskStatus.COMPLETED,
+      progress: 100,
+      params: { prompt: 'Explicit replacement owns imported history' },
+      result: {
+        url: 'https://example.com/before-replace.png',
+        format: 'png',
+        size: 1,
+      },
+      createdAt: 1,
+      completedAt: 1,
+      updatedAt: 1,
+    };
+
+    taskQueueService.trackExternalTask(clone(completedTask));
+    taskQueueService.restoreTasks(
+      [
+        {
+          ...clone(completedTask),
+          status: TaskStatus.PROCESSING,
+          progress: 40,
+          result: undefined,
+          completedAt: undefined,
+          executionPhase: TaskExecutionPhase.SUBMITTING,
+          updatedAt: 2,
+        },
+      ],
+      { allowTerminalStatusReconciliation: true }
+    );
+
+    expect(taskQueueService.getTask(completedTask.id)).toMatchObject({
+      status: TaskStatus.PROCESSING,
+      progress: 40,
+      executionPhase: TaskExecutionPhase.SUBMITTING,
+      updatedAt: 2,
+    });
   });
 
   it('persists invocation route for externally tracked video tasks', async () => {

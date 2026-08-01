@@ -1,6 +1,6 @@
 {
   "version": "1.0.2",
-  "buildTime": "2026-08-01T10:48:53.000Z",
+  "buildTime": "2026-08-01T14:31:42.210Z",
   "gitCommit": "unknown",
   "changelog": [
     "修复运行时模型添加后设置与对话列表偶发不同步",

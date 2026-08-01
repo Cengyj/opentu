@@ -70,6 +70,18 @@ export interface GeminiResponse {
       content: string;
     };
   }>;
+  /**
+   * Structured media returned by Google generateContent.
+   *
+   * Keep inline payloads structured so image callers do not have to build a
+   * multi-megabyte data URL and then parse it again. `choices` remains for
+   * chat/backward compatibility.
+   */
+  inlineMedia?: Array<{
+    data?: string;
+    url?: string;
+    mimeType?: string;
+  }>;
 }
 
 export interface ProcessedContent {

@@ -155,7 +155,7 @@ function normalizeGoogleImageSize(
 }
 
 function normalizeGoogleImageResult(content: string): {
-  data: Array<{ b64_json?: string; url?: string }>;
+  data: Array<{ b64_json?: string; url?: string; mime_type?: string }>;
 } {
   const base64Matches = Array.from(
     content.matchAll(/data:([^;]+);base64,([A-Za-z0-9+/=]+)/g)
@@ -166,12 +166,34 @@ function normalizeGoogleImageResult(content: string): {
     data: [
       ...base64Matches.map((match) => ({
         b64_json: match[2],
+        mime_type: match[1],
       })),
       ...urlMatches.map((match) => ({
         url: match[0],
       })),
     ],
   };
+}
+
+function normalizeStructuredGoogleImageResult(response: GeminiResponse): {
+  data: Array<{ b64_json?: string; url?: string; mime_type?: string }>;
+} {
+  if (response.inlineMedia?.length) {
+    return {
+      data: response.inlineMedia.map((item) =>
+        item.data
+          ? {
+              b64_json: item.data,
+              mime_type: item.mimeType || 'image/png',
+            }
+          : { url: item.url }
+      ),
+    };
+  }
+
+  return normalizeGoogleImageResult(
+    response.choices[0]?.message?.content || ''
+  );
 }
 
 /**
@@ -295,9 +317,7 @@ async function generateImageDirect(
       );
 
       const duration = Date.now() - startTime;
-      const normalizedResult = normalizeGoogleImageResult(
-        response.choices[0]?.message?.content || ''
-      );
+      const normalizedResult = normalizeStructuredGoogleImageResult(response);
 
       completeLLMApiLog(logId, {
         httpStatus: 200,
