@@ -5,6 +5,7 @@
 import type { Folder, BoardMetadata, Board } from '../../types/workspace.types';
 import type { PromptHistoryItem, VideoPromptHistoryItem, ImagePromptHistoryItem } from '../prompt-storage-service';
 import type { Task, TaskInvocationRouteSnapshot } from '../../types/task.types';
+import type { ImageArtifact } from '../../types/image-artifact.types';
 import type { KBExportData } from '../kb-import-export-service';
 
 // ====================================
@@ -347,6 +348,8 @@ export interface CompactTaskResult {
   url?: string;
   /** 多结果 URL */
   urls?: string[];
+  /** Canonical ordered image artifacts; absent in legacy compact pages. */
+  imageArtifacts?: ImageArtifact[];
   /** 格式 */
   format?: string;
   /** 大小 */

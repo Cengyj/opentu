@@ -1,84 +1,56 @@
 # Netlify 部署配置 - iframe嵌入和缓存策略
+#
+# 容器的权威策略位于 docker/nginx.conf。此文件只是为会读取
+# _headers 的托管平台镜像同一合同。发布门禁会确保 /assets 中不存在
+# 非内容哈希文件，因此只有该目录可以设置 immutable。
 
-# 首页和HTML文件 - 允许iframe嵌入，禁用缓存
+# 所有未哈希资源默认必须重验证
+/*
+  Cache-Control: no-cache, max-age=0, must-revalidate
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: origin-when-cross-origin
+
+# 首页和 HTML 文件 - 允许 iframe 嵌入，强制重验证
 /
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: no-cache, max-age=0, must-revalidate
   Content-Security-Policy: upgrade-insecure-requests; default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://us.i.posthog.com https://us-assets.i.posthog.com https://foropencode.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https: wss: data:; frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com;
   X-Content-Type-Options: nosniff
   Referrer-Policy: origin-when-cross-origin
 
 /*.html
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: no-cache, max-age=0, must-revalidate
   Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com
   X-Content-Type-Options: nosniff
   Referrer-Policy: origin-when-cross-origin
 
 # 测试页面特殊配置
 /iframe-test.html
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: no-cache, max-age=0, must-revalidate
   Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com; frame-src 'self' localhost:* https://foropencode.com data:
 
-# 静态资源 - 长期缓存
-/*.js
-  Cache-Control: public, max-age=31536000, immutable
-  Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com
-
-/*.css
-  Cache-Control: public, max-age=31536000, immutable
-  Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com
-
-# 图片资源
-/*.png
-  Cache-Control: public, max-age=31536000, immutable
-
-/*.jpg
-  Cache-Control: public, max-age=31536000, immutable
-
-/*.jpeg
-  Cache-Control: public, max-age=31536000, immutable
-
-/*.webp
-  Cache-Control: public, max-age=31536000, immutable
-
-/*.svg
-  Cache-Control: public, max-age=31536000, immutable
-
-/*.ico
-  Cache-Control: public, max-age=31536000, immutable
-
-# 字体资源 - 长期缓存 + CORS
-/*.woff
-  Cache-Control: public, max-age=31536000, immutable
-  Access-Control-Allow-Origin: *
-
-/*.woff2
-  Cache-Control: public, max-age=31536000, immutable
-  Access-Control-Allow-Origin: *
-
-/*.ttf
-  Cache-Control: public, max-age=31536000, immutable
-  Access-Control-Allow-Origin: *
-
-/*.otf
-  Cache-Control: public, max-age=31536000, immutable
-  Access-Control-Allow-Origin: *
-
-/*.eot
+# 仅构建期验证过的内容哈希资源可长期缓存
+/assets/*
   Cache-Control: public, max-age=31536000, immutable
   Access-Control-Allow-Origin: *
 
 # Service Worker - 不缓存，确保总是获取最新版本
 /sw.js
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: no-store
   Content-Security-Policy: frame-ancestors 'self' localhost:* 127.0.0.1:* *.localhost:* https://foropencode.com
 
-# Manifest 文件 - 短缓存
+# Manifest 文件 - 每次重验证
 /manifest.json
-  Cache-Control: public, max-age=3600, must-revalidate
+  Cache-Control: no-cache
 
-# 版本信息 - 不缓存
+# 版本信息与发布控制清单 - 不存储
 /version.json
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: no-store
+
+/precache-manifest.json
+  Cache-Control: no-store
+
+/idle-prefetch-manifest.json
+  Cache-Control: no-store
 
 /changelog.json
-  Cache-Control: public, max-age=0, must-revalidate
+  Cache-Control: no-store

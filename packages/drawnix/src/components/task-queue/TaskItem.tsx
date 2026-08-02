@@ -41,6 +41,7 @@ import { VideoPosterPreview } from '../shared/VideoPosterPreview';
 import './task-queue.scss';
 import './task-progress-overlay.scss';
 import { HoverTip } from '../shared';
+import { getTaskResultArtifactUrls } from '../../utils/image-generation-anchor-batch';
 
 // 布局切换阈值：容器宽度小于此值时使用紧凑布局（info 在图片下方全宽）
 // 弹窗侧栏宽度约 280px-500px，任务队列面板宽度约 300px-600px
@@ -284,6 +285,8 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
     const isAudioTask = task.type === TaskType.AUDIO;
     const isChatTask = task.type === TaskType.CHAT;
     const isLyricsTask = isAudioTask && isLyricsResult(task.result);
+    const imageResultUrls =
+      task.type === TaskType.IMAGE ? getTaskResultArtifactUrls(task) : [];
     const canRegenerateTask = task.type === TaskType.IMAGE;
     const isPreviewableTask =
       task.type === TaskType.IMAGE ||
@@ -334,6 +337,8 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
     // Unified cache hook (skip for character tasks)
     const rawMediaUrl = isLyricsTask
       ? undefined
+      : task.type === TaskType.IMAGE
+      ? imageResultUrls[0]
       : task.result?.urls?.[0] || task.result?.url;
     const mediaUrl =
       task.type === TaskType.IMAGE && rawMediaUrl
@@ -348,12 +353,16 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
         ? detectedCacheWarning || task.result?.cacheWarning
         : undefined;
     const cacheWarningTip = cacheWarning
-      ? `${cacheWarning.message}${cacheWarning.expiresHint ? `\n${cacheWarning.expiresHint}` : ''}`
+      ? `${cacheWarning.message}${
+          cacheWarning.expiresHint ? `\n${cacheWarning.expiresHint}` : ''
+        }`
       : '';
 
     // Use original URL or cached URL (Service Worker handles caching automatically)
     const mediaCount = isLyricsTask
       ? 0
+      : task.type === TaskType.IMAGE
+      ? imageResultUrls.length
       : task.result?.urls?.length || (task.result?.url ? 1 : 0);
     const actionTrackParams = useMemo(
       () =>
@@ -575,11 +584,11 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
                   ) : (
                     /* 处理中状态：只显示进度覆盖层，不显示其他内容 */
                     <TaskProgressOverlay
-                      key={task.startedAt} // 重试时 startedAt 变化，强制重新挂载以重置进度
+                      key={task.startedAt} // 重试时重新挂载任务展示
                       taskType={task.type}
                       taskStatus={task.status}
                       realProgress={task.progress}
-                      startedAt={task.startedAt}
+                      executionPhase={task.executionPhase}
                       mediaUrl={previewMediaUrl}
                     />
                   )
@@ -682,7 +691,9 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
                     )}
                     {cacheWarning && (
                       <HoverTip content={cacheWarningTip} showArrow={false}>
-                        <span className="task-item__cache-warning-badge">需下载</span>
+                        <span className="task-item__cache-warning-badge">
+                          需下载
+                        </span>
                       </HoverTip>
                     )}
                   </>
@@ -700,7 +711,9 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
             </HoverTip>
             {isChatTask && videoAnalyzerSubtitle && (
               <HoverTip content={videoAnalyzerSubtitle} showArrow={false}>
-                <div className="task-item__subtitle">{videoAnalyzerSubtitle}</div>
+                <div className="task-item__subtitle">
+                  {videoAnalyzerSubtitle}
+                </div>
               </HoverTip>
             )}
           </div>
@@ -811,9 +824,9 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
                       {audioDurationLabel}
                     </span>
                   )}
-                  {isCompleted && task.result?.url && !isLyricsTask && (
+                  {isCompleted && rawMediaUrl && !isLyricsTask && (
                     <a
-                      href={task.result.url}
+                      href={rawMediaUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="task-item__link"
@@ -845,7 +858,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
               <div className="task-item__actions">
                 {/* Secondary Actions - Simple icons */}
                 <div className="task-item__secondary-actions">
-                  {isCompleted && task.result?.url && !isCharacterTask && (
+                  {isCompleted && rawMediaUrl && !isCharacterTask && (
                     <HoverTip content="下载">
                       <Button
                         size="small"
@@ -936,7 +949,7 @@ export const TaskItem: React.FC<TaskItemProps> = React.memo(
 
                 {/* Primary Action Button (Insert/Retry) - Moved to far right */}
                 {isCompleted &&
-                  (((task.result?.url || task.result?.chatResponse) &&
+                  (((rawMediaUrl || task.result?.chatResponse) &&
                     !isCharacterTask) ||
                     isLyricsTask) && (
                     <Button

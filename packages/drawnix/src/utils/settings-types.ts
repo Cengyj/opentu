@@ -11,7 +11,11 @@ export interface GeminiSettings {
   textModelName?: string;
 }
 
-export type ProviderType = 'openai-compatible' | 'gemini-compatible' | 'custom';
+export type ProviderType =
+  | 'auto'
+  | 'openai-compatible'
+  | 'gemini-compatible'
+  | 'custom';
 export type ProviderAuthType = 'bearer' | 'header' | 'query' | 'custom';
 export type ImageApiCompatibility =
   | 'auto'
@@ -40,7 +44,6 @@ export interface ProviderProfile {
   apiKey: string;
   authType: ProviderAuthType;
   imageApiCompatibility?: ImageApiCompatibility;
-  preferAsyncImageEndpoint?: boolean;
   extraHeaders?: Record<string, string>;
   enabled: boolean;
   capabilities: ProviderCapabilities;
@@ -51,6 +54,8 @@ export interface ProviderProfile {
 
 export interface ProviderCatalog {
   profileId: string;
+  /** Version of model-discovery evidence used by automatic image routing. */
+  routingEvidenceVersion?: number;
   discoveredAt: number | null;
   discoveredModels: ModelConfig[];
   selectedModelIds: string[];

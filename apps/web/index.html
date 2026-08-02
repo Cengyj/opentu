@@ -160,6 +160,8 @@
       content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"
     />
     <meta name="app-version" content="1.0.2" />
+    <meta name="app-release-id" content="1.0.2-2026-08-01T14-31-42.210Z" />
+    <meta name="app-build-mode" content="%MODE%" />
     <style>
       :root {
         --app-boot-bg: radial-gradient(
@@ -586,7 +588,7 @@
               >
             </li>
             <li>
-              <a href="/user-manual/index.html"
+              <a href="./user-manual/index.html"
                 >用户手册：查看完整功能与操作路径</a
               >
             </li>
@@ -626,14 +628,14 @@
           适合做营销海报、社媒配图、灵感整理、产品方案梳理、业务流程图、项目脑图，以及需要边生成边归档的工作流。
         </p>
         <p class="seo-inline-links">
-          <a href="/user-manual/ai-generation-image-generation.html"
+          <a href="./user-manual/ai-generation-image-generation.html"
             >AI 图片生成指南</a
           >
-          <a href="/user-manual/ai-generation-video-generation.html"
+          <a href="./user-manual/ai-generation-video-generation.html"
             >AI 视频生成指南</a
           >
-          <a href="/user-manual/drawing-flowchart.html">流程图指南</a>
-          <a href="/user-manual/drawing-mindmap.html">思维导图指南</a>
+          <a href="./user-manual/drawing-flowchart.html">流程图指南</a>
+          <a href="./user-manual/drawing-mindmap.html">思维导图指南</a>
           <a href="/versions.html">版本日志</a>
         </p>
       </section>
@@ -685,6 +687,9 @@
         var BOOT_LOCAL_RETRY_STORAGE_KEY = '__OPENTU_BOOT_LOCAL_RETRY_AT__';
         var BOOT_IMPORT_RETRY_STORAGE_KEY = '__OPENTU_BOOT_IMPORT_RETRY_AT__';
         var BOOT_LOCAL_RETRY_TTL_MS = 2 * 60 * 1000;
+        var BOOT_IMPORT_RECOVERY_ACK_TIMEOUT_MS = 4000;
+        var BOOT_IMPORT_RECOVERY_MAX_ATTEMPTS = 3;
+        var BOOT_IMPORT_RECOVERY_RETRY_DELAY_MS = 250;
         var forceLocalBootAssets = false;
         window.__OPENTU_START_MAIN_ENTRY__ = new Promise(function (resolve) {
           resolveMainEntryReady = resolve;
@@ -775,6 +780,7 @@
           return (
             /Failed to fetch dynamically imported module/i.test(message) ||
             /Importing a module script failed/i.test(message) ||
+            /Unable to preload CSS/i.test(message) ||
             /Loading chunk [\w-]+ failed/i.test(message) ||
             /ChunkLoadError/i.test(message)
           );
@@ -797,49 +803,271 @@
           return recoveryUrl.toString();
         }
 
-        function prepareBootImportRecovery() {
-          var tasks = [];
-
+        function getBootImportModuleKey(error) {
+          var message =
+            error && typeof error.message === 'string'
+              ? error.message
+              : String(error || '');
+          var match = message.match(
+            /https?:\/\/[^\s)'\"]+\.(?:js|css)(?:\?[^\s)'\"]*)?/i
+          );
+          if (!match) {
+            return null;
+          }
           try {
-            if (
-              navigator.serviceWorker &&
-              navigator.serviceWorker.controller
-            ) {
-              navigator.serviceWorker.controller.postMessage({
-                type: 'RECOVER_DYNAMIC_IMPORT_FAILURE',
-                appVersion: getBootAppVersion(),
-                moduleKey: 'boot-main-entry',
-              });
-            }
+            var moduleUrl = new URL(match[0], window.location.href);
+            return moduleUrl.pathname + moduleUrl.search;
           } catch (_error) {
-            // ignore best-effort SW notification failures
+            return match[0];
+          }
+        }
+
+        function postBootImportRecoveryAttempt(controller, request) {
+          return new Promise(function (resolve, reject) {
+            var channel = null;
+            if (typeof MessageChannel === 'function') {
+              try {
+                channel = new MessageChannel();
+              } catch (_error) {
+                channel = null;
+              }
+            }
+            var messageTarget = navigator.serviceWorker || null;
+            var fallbackMessageListener = null;
+            var settled = false;
+            var timeout = window.setTimeout(function () {
+              finish(new Error('Boot recovery acknowledgement timed out'));
+            }, BOOT_IMPORT_RECOVERY_ACK_TIMEOUT_MS);
+
+            function cleanup() {
+              window.clearTimeout(timeout);
+              if (channel) {
+                channel.port1.onmessage = null;
+                channel.port1.onmessageerror = null;
+                if (typeof channel.port1.close === 'function') {
+                  channel.port1.close();
+                }
+              }
+              if (
+                fallbackMessageListener &&
+                messageTarget &&
+                typeof messageTarget.removeEventListener === 'function'
+              ) {
+                messageTarget.removeEventListener(
+                  'message',
+                  fallbackMessageListener
+                );
+              }
+            }
+
+            function finish(errorValue, acknowledgement) {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              cleanup();
+              if (errorValue) {
+                reject(errorValue);
+                return;
+              }
+              resolve(acknowledgement);
+            }
+
+            function acceptAcknowledgement(event) {
+              var acknowledgement = event && event.data;
+              if (
+                !acknowledgement ||
+                acknowledgement.type !== 'SW_RELEASE_STATIC_RECOVERY_RESULT' ||
+                acknowledgement.releaseId !== request.releaseId ||
+                acknowledgement.requestId !== request.requestId ||
+                typeof acknowledgement.accepted !== 'boolean' ||
+                typeof acknowledgement.invalidatedEntries !== 'number' ||
+                !isFinite(acknowledgement.invalidatedEntries) ||
+                acknowledgement.invalidatedEntries < 0 ||
+                Math.floor(acknowledgement.invalidatedEntries) !==
+                  acknowledgement.invalidatedEntries
+              ) {
+                return;
+              }
+              finish(null, acknowledgement);
+            }
+
+            if (channel) {
+              channel.port1.onmessage = acceptAcknowledgement;
+              channel.port1.onmessageerror = function () {
+                finish(new Error('Boot recovery acknowledgement failed'));
+              };
+              if (typeof channel.port1.start === 'function') {
+                channel.port1.start();
+              }
+            } else if (
+              messageTarget &&
+              typeof messageTarget.addEventListener === 'function'
+            ) {
+              fallbackMessageListener = acceptAcknowledgement;
+              messageTarget.addEventListener(
+                'message',
+                fallbackMessageListener
+              );
+            } else {
+              finish(new Error('Boot recovery acknowledgement unavailable'));
+              return;
+            }
+
+            try {
+              if (channel) {
+                controller.postMessage(request, [channel.port2]);
+              } else {
+                controller.postMessage(request);
+              }
+            } catch (postError) {
+              finish(postError);
+            }
+          });
+        }
+
+        function resolveBootImportRecoveryWorkers(controller) {
+          var workers = [];
+          var addWorker = function (worker) {
+            if (worker && workers.indexOf(worker) === -1) {
+              workers.push(worker);
+            }
+          };
+          var serviceWorker = navigator.serviceWorker;
+          var registrationPromise =
+            window.__OPENTU_SW_REGISTRATION_PROMISE__ ||
+            (serviceWorker &&
+            typeof serviceWorker.getRegistration === 'function'
+              ? serviceWorker.getRegistration()
+              : Promise.resolve(null));
+
+          function addRegistrationRecoveryWorkers(registration) {
+            if (!registration) {
+              return;
+            }
+            addWorker(registration.waiting);
+            if (registration.active !== controller) {
+              addWorker(registration.active);
+            }
           }
 
-          try {
-            if (window.caches && typeof window.caches.keys === 'function') {
-              tasks.push(
-                window.caches.keys().then(function (cacheNames) {
-                  return Promise.all(
-                    cacheNames
-                      .filter(function (name) {
-                        return name.indexOf('drawnix-static-v') === 0;
-                      })
-                      .map(function (name) {
-                        return window.caches.delete(name);
-                      })
+          return Promise.resolve(registrationPromise)
+            .then(function (registration) {
+              addRegistrationRecoveryWorkers(registration);
+              if (
+                !registration ||
+                registration.waiting ||
+                (registration.active && registration.active !== controller) ||
+                typeof registration.update !== 'function'
+              ) {
+                return registration;
+              }
+              return Promise.resolve(registration.update()).then(function () {
+                addRegistrationRecoveryWorkers(registration);
+                return registration;
+              });
+            })
+            .catch(function (error) {
+              if (window.console && typeof window.console.warn === 'function') {
+                window.console.warn(
+                  '[Boot] Service Worker update check failed during recovery:',
+                  error
+                );
+              }
+            })
+            .then(function () {
+              // Prefer a newly installed or activated worker because the
+              // current page may still be controlled by the legacy worker.
+              addWorker(controller);
+              return workers;
+            });
+        }
+
+        function prepareBootImportRecovery(error) {
+          var controller =
+            navigator.serviceWorker && navigator.serviceWorker.controller;
+          if (!controller) {
+            // An uncontrolled page has no Service Worker-owned release cache
+            // operation to await. Its cache-busted one-time reload is safe.
+            return Promise.resolve({ mode: 'uncontrolled' });
+          }
+
+          var releaseId = getBootAppReleaseId();
+          var moduleKey = getBootImportModuleKey(error);
+          var request = {
+            type: 'SW_RELEASE_STATIC_RECOVERY_REQUEST',
+            releaseId: releaseId,
+            requestId: releaseId + ':boot:' + Date.now() + ':' + Math.random(),
+            target: moduleKey
+              ? { kind: 'module', moduleKey: moduleKey }
+              : { kind: 'reload-only' },
+          };
+
+          function deliver(worker, attempt) {
+            return postBootImportRecoveryAttempt(worker, request).catch(
+              function (errorValue) {
+                if (attempt >= BOOT_IMPORT_RECOVERY_MAX_ATTEMPTS) {
+                  throw errorValue;
+                }
+                return new Promise(function (resolve) {
+                  window.setTimeout(
+                    resolve,
+                    BOOT_IMPORT_RECOVERY_RETRY_DELAY_MS
                   );
-                })
+                }).then(function () {
+                  return deliver(worker, attempt + 1);
+                });
+              }
+            );
+          }
+
+          return resolveBootImportRecoveryWorkers(controller).then(function (
+            workers
+          ) {
+            var workerIndex = 0;
+            var lastError = null;
+
+            function deliverToNextWorker() {
+              if (workerIndex >= workers.length) {
+                throw (
+                  lastError ||
+                  new Error('No Service Worker accepted boot recovery')
+                );
+              }
+              var worker = workers[workerIndex++];
+              return deliver(worker, 1).then(
+                function (acknowledgement) {
+                  if (acknowledgement.accepted) {
+                    return {
+                      mode: 'acknowledged',
+                      acknowledgement: acknowledgement,
+                    };
+                  }
+                  lastError = new Error(
+                    'Boot recovery rejected: ' +
+                      (acknowledgement.reason || 'unknown-reason')
+                  );
+                  if (acknowledgement.reason !== 'release-mismatch') {
+                    throw lastError;
+                  }
+                  return deliverToNextWorker();
+                },
+                function (errorValue) {
+                  lastError = errorValue;
+                  return deliverToNextWorker();
+                }
               );
             }
-          } catch (_error) {
-            // ignore cache cleanup failures
-          }
 
-          return Promise.allSettled(tasks);
+            return deliverToNextWorker();
+          });
         }
 
         window.__OPENTU_BOOT_DYNAMIC_IMPORT_RECOVERY__ = function (error) {
-          if (!isRecoverableBootImportError(error) || isBootLocalDevelopment()) {
+          if (
+            !isRecoverableBootImportError(error) ||
+            isBootLocalDevelopment()
+          ) {
             return false;
           }
 
@@ -875,11 +1103,20 @@
 
           var tip = document.querySelector('[data-app-boot-tip]');
           if (tip) {
-            tip.textContent = '启动资源已更新，正在自动刷新恢复...';
+            tip.textContent = '正在确认并修复启动资源，请稍候...';
           }
 
-          window.setTimeout(reload, 700);
-          prepareBootImportRecovery().then(reload, reload);
+          prepareBootImportRecovery(error).then(reload, function (errorValue) {
+            if (tip) {
+              tip.textContent = '自动恢复未完成，请手动刷新页面重试。';
+            }
+            if (window.console && typeof window.console.warn === 'function') {
+              window.console.warn(
+                '[Boot] Dynamic import recovery did not complete; reload was suppressed:',
+                errorValue
+              );
+            }
+          });
           return true;
         };
 
@@ -909,11 +1146,19 @@
             : '0.0.0';
         }
 
+        function getBootAppReleaseId() {
+          var releaseMeta = document.querySelector(
+            'meta[name="app-release-id"]'
+          );
+          return releaseMeta
+            ? releaseMeta.getAttribute('content') || getBootAppVersion()
+            : getBootAppVersion();
+        }
+
         function isBootLocalDevelopment() {
-          return (
-            window.location.hostname === 'localhost' ||
-            window.location.hostname === '127.0.0.1' ||
-            window.location.hostname.endsWith('.localhost')
+          var modeMeta = document.querySelector('meta[name="app-build-mode"]');
+          return Boolean(
+            modeMeta && modeMeta.getAttribute('content') === 'development'
           );
         }
 
@@ -1351,7 +1596,7 @@
             });
 
             window.__OPENTU_SW_REGISTRATION_PROMISE__ = navigator.serviceWorker
-              .register('./sw.js')
+              .register('./sw.js', { updateViaCache: 'none' })
               .then(function (registration) {
                 syncEarlyCDNPreference(registration);
                 setProgress(54, {

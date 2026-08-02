@@ -11,6 +11,12 @@ import { visualizer } from 'rollup-plugin-visualizer';
 
 const require = createRequire(import.meta.url);
 const workspaceRoot = path.resolve(__dirname, '../..');
+const { resolveReleaseManifest } = require('../../scripts/release-identity.cjs') as {
+  resolveReleaseManifest: (
+    manifest: Record<string, unknown>,
+    env?: NodeJS.ProcessEnv
+  ) => { version: string; releaseId: string };
+};
 
 const shouldRewriteEntryAssetsToCDN =
   process.env.AITU_REWRITE_ENTRY_ASSETS_TO_CDN === '1';
@@ -18,18 +24,51 @@ const shouldRewriteEntryAssetsToCDN =
 // Read version from public/version.json
 const versionPath = path.resolve(__dirname, 'public/version.json');
 let appVersion = '0.0.0';
+let appReleaseId = '0.0.0-local';
 
 try {
   if (fs.existsSync(versionPath)) {
     const versionContent = fs.readFileSync(versionPath, 'utf-8');
     const versionJson = JSON.parse(versionContent);
-    appVersion = versionJson.version || '0.0.0';
-    console.log(`[Vite] Loaded version from version.json: ${appVersion}`);
+    const identity = resolveReleaseManifest(versionJson);
+    appVersion = identity.version;
+    appReleaseId = identity.releaseId;
+    console.log(
+      `[Vite] Loaded release ${appReleaseId} (display version ${appVersion})`
+    );
   } else {
     console.warn('[Vite] version.json not found at', versionPath);
   }
 } catch (e) {
   console.error('[Vite] Failed to read version.json', e);
+}
+
+function releaseIdentityHtmlPlugin(): Plugin {
+  return {
+    name: 'release-identity-html',
+    transformIndexHtml(html) {
+      const replaceOrInsertMeta = (
+        source: string,
+        name: string,
+        content: string
+      ): string => {
+        const pattern = new RegExp(
+          `<meta\\s+name=["']${name}["']\\s+content=["'][^"']*["']\\s*/?>`,
+          'i'
+        );
+        const tag = `<meta name="${name}" content="${content}" />`;
+        return pattern.test(source)
+          ? source.replace(pattern, tag)
+          : source.replace('</head>', `  ${tag}\n  </head>`);
+      };
+
+      return replaceOrInsertMeta(
+        replaceOrInsertMeta(html, 'app-version', appVersion),
+        'app-release-id',
+        appReleaseId
+      );
+    },
+  };
 }
 
 const IDLE_PREFETCH_GROUPS = [
@@ -809,6 +848,7 @@ function precacheManifestPlugin(): Plugin {
         const manifestPath = path.join(outDir, 'precache-manifest.json');
         const manifestContent = {
           version: appVersion,
+          releaseId: appReleaseId,
           timestamp: new Date().toISOString(),
           files: manifest,
         };
@@ -929,6 +969,7 @@ function idlePrefetchManifestPlugin(): Plugin {
           JSON.stringify(
             {
               version: appVersion,
+              releaseId: appReleaseId,
               timestamp: new Date().toISOString(),
               defaults: [...IDLE_PREFETCH_DEFAULTS],
               groups,
@@ -1168,8 +1209,10 @@ export default defineConfig({
 
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
+    'import.meta.env.VITE_APP_RELEASE_ID': JSON.stringify(appReleaseId),
     'process.env.NODE_ENV': JSON.stringify(reactNodeEnv),
     __APP_VERSION__: JSON.stringify(appVersion),
+    __APP_RELEASE_ID__: JSON.stringify(appReleaseId),
     // Vue feature flags - @milkdown/crepe 内部使用了 Vue，需要定义这些编译时标志
     __VUE_OPTIONS_API__: JSON.stringify(false),
     __VUE_PROD_DEVTOOLS__: JSON.stringify(false),
@@ -1199,6 +1242,7 @@ export default defineConfig({
   },
 
   plugins: [
+    releaseIdentityHtmlPlugin(),
     react(),
     nxViteTsPaths(),
     visualizer({

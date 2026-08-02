@@ -12,11 +12,14 @@ import {
   resolveAdapterForInvocation,
   type AudioGenerationRequest,
   type AudioModelAdapter,
-  type ImageGenerationRequest,
-  type ImageModelAdapter,
   type VideoGenerationRequest,
   type VideoModelAdapter,
 } from './model-adapters';
+import {
+  artifactsToLegacyImageResult,
+  executeResolvedImageInvocation,
+  resolveImageInvocation,
+} from './image-invocation';
 import {
   BENCHMARK_PROMPT_PRESETS,
   computeValueScore,
@@ -328,43 +331,35 @@ async function executeImageBenchmark(
 ): Promise<ModelBenchmarkPreview & { firstResponseAt: number | null }> {
   let firstResponseAt: number | null = null;
   const modelRef = createModelRef(entry.profileId, entry.modelId);
-  const adapter = resolveAdapterForInvocation(
-    'image',
-    entry.modelId,
-    modelRef
-  ) as ImageModelAdapter | undefined;
-  if (!adapter || adapter.kind !== 'image') {
-    throw new Error(`未找到图片适配器：${entry.modelId}`);
-  }
-  const request: ImageGenerationRequest = {
+  const invocation = resolveImageInvocation({
     prompt,
     model: entry.modelId,
     modelRef,
     size: preset.size,
-    params: {
-      n: 1,
-      onSubmitted: () => {
-        if (!firstResponseAt) {
-          firstResponseAt = Date.now();
-        }
-      },
-      onProgress: () => {
-        if (!firstResponseAt) {
-          firstResponseAt = Date.now();
-        }
-      },
-    },
+    count: 1,
+  });
+  const adapter = invocation.adapter;
+  if (!adapter || adapter.kind !== 'image') {
+    throw new Error(`未找到图片适配器：${entry.modelId}`);
+  }
+  const markFirstResponse = () => {
+    if (!firstResponseAt) {
+      firstResponseAt = Date.now();
+    }
   };
-  const result = await adapter.generateImage(
-    getAdapterContextFromSettings('image', modelRef),
-    request
-  );
+  const result = await executeResolvedImageInvocation(invocation, {
+      generationMode: 'text_to_image',
+      onSubmitted: markFirstResponse,
+      onProgress: markFirstResponse,
+    });
+  const projected = artifactsToLegacyImageResult(result.artifacts, {
+    fallbackFormat: 'png',
+  });
   return {
     firstResponseAt,
-    url: result.url,
-    urls: result.urls,
-    format: result.format,
-    rawData: result.raw,
+    url: projected.url,
+    urls: projected.urls,
+    format: projected.format,
   };
 }
 
@@ -799,13 +794,12 @@ class ModelBenchmarkService {
       currentSession.promptPresetId,
       currentSession.modality
     );
-    const knowledgeContextResult =
-      currentSession.knowledgeContextRefs?.length
-        ? await buildPromptWithKnowledgeContext(
-            currentSession.prompt,
-            currentSession.knowledgeContextRefs
-          )
-        : null;
+    const knowledgeContextResult = currentSession.knowledgeContextRefs?.length
+      ? await buildPromptWithKnowledgeContext(
+          currentSession.prompt,
+          currentSession.knowledgeContextRefs
+        )
+      : null;
     const executionPrompt =
       knowledgeContextResult?.prompt || currentSession.prompt;
     const queue = [...currentSession.entries];

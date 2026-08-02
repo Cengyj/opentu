@@ -1,0 +1,99 @@
+name: release static post-deploy gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Published drawnix image tag to verify
+        required: true
+        type: string
+      release_id:
+        description: Exact version.json releaseId (normally the publishing commit SHA)
+        required: true
+        type: string
+      display_version:
+        description: Exact immutable package/display semver
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify-public-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image owner
+        run: echo "IMAGE_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      - name: Verify container and both public origins against exact bytes
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          RELEASE_ID: ${{ inputs.release_id }}
+          DISPLAY_VERSION: ${{ inputs.display_version }}
+          RELEASE_CONTRACT: ${{ runner.temp }}/release-static-contract.json
+          RELEASE_ROOT: ${{ runner.temp }}/release-static-root
+        run: |
+          set -euo pipefail
+          if [[ "${IMAGE_TAG}" != "v${DISPLAY_VERSION}" ]]; then
+            echo "image_tag must be exactly v${DISPLAY_VERSION}" >&2
+            exit 1
+          fi
+          image="ghcr.io/${IMAGE_OWNER}/drawnix:${IMAGE_TAG}"
+          files_container="release-static-files-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          server_container="release-static-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm --force "${server_container}" >/dev/null 2>&1 || true
+            docker rm --force "${files_container}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker pull "${image}"
+          docker image inspect --format '{{json .Config.Labels}}' \
+            "${image}" > "${RUNNER_TEMP}/published-image-labels.json"
+          node scripts/verify-release-static.mjs verify-image-metadata \
+            --labels-json "${RUNNER_TEMP}/published-image-labels.json" \
+            --expected-release-id "${RELEASE_ID}" \
+            --expected-version "${DISPLAY_VERSION}"
+          mkdir -p "${RELEASE_ROOT}"
+          docker create --name "${files_container}" "${image}" >/dev/null
+          docker cp "${files_container}:/usr/share/nginx/html/." "${RELEASE_ROOT}/"
+          node scripts/verify-release-static.mjs create \
+            --dist "${RELEASE_ROOT}" \
+            --output "${RELEASE_CONTRACT}" \
+            --expected-release-id "${RELEASE_ID}" \
+            --expected-version "${DISPLAY_VERSION}"
+
+          docker run --detach --name "${server_container}" \
+            --publish 127.0.0.1::80 "${image}" >/dev/null
+          server_port="$(docker port "${server_container}" 80/tcp | sed 's/.*://')"
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+              "http://127.0.0.1:${server_port}/version.json" >/dev/null; then
+              break
+            fi
+            if [[ "${attempt}" == "30" ]]; then
+              echo "candidate server did not become ready" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          node scripts/verify-release-static.mjs verify \
+            --contract "${RELEASE_CONTRACT}" \
+            --expected-release-id "${RELEASE_ID}" \
+            --expected-version "${DISPLAY_VERSION}" \
+            --origin "http://127.0.0.1:${server_port}" \
+            --origin "https://image.forcodeai.xyz" \
+            --origin "https://image.foropencode.com"

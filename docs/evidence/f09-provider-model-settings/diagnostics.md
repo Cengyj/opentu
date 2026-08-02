@@ -2,9 +2,11 @@
 
 ## Feature Loop
 
-**Feature / user scenario**: a user opens Settings, selects or creates a provider profile, edits its connection and pricing fields, enables or disables it, fetches a provider-scoped model catalog, filters/selects models, saves the profile/preset state, and later uses the same profile/model binding in generation or Chat. The user must be able to understand and operate the existing controls in Chinese or English without exposing credentials or changing routing behavior.
+**Feature / user scenario**: a user opens Settings, selects or creates a provider profile, edits its connection fields, enables or disables it, fetches a provider-scoped model catalog, filters/selects models, saves the profile/preset state, and later uses the same profile/model binding in generation or Chat. The user must be able to understand and operate the existing controls in Chinese or English without exposing credentials or changing routing behavior.
 
-**Scope**: the provider-page content in `SettingsDialog`; `PricingFieldGroup`; provider profile selection and switches; provider form fields and feedback; model summary/search/type groups; `ModelDiscoveryDialog`; empty/loading/failure states; application-owned F-09 copy; existing settings/discovery/persistence/routing call-chain boundaries; desktop production DOM and one before screenshot.
+**Scope**: the provider-page content in `SettingsDialog`; provider profile selection and switches; provider form fields and feedback; model summary/search/type groups; `ModelDiscoveryDialog`; empty/loading/failure states; application-owned F-09 copy; existing settings/discovery/persistence/routing call-chain boundaries; desktop production DOM and one before screenshot.
+
+**Status update (2026-08-02)**: `remove-provider-async-image-preference` removes the experimental asynchronous-image switch and its profile field. `remove-provider-pricing-controls` removes the manual pricing URL, currency rate, group selector, and fetch action while retaining shared cached pricing consumers. References to those removed controls below describe the original audit only and are not implementation scope for F-09; provider connection and enabled-switch findings remain applicable.
 
 **Out of scope**: the shared four-view settings navigation, outer WinBox titlebar/dialog/focus lifecycle, compact/touch sizing, global theme policy, discovery request ownership/fallback, runtime registry identity, model sorting/routing, health semantics, settings durability, credential encryption, price/health network correctness, benchmark lifecycle/content, and any new provider/model capability.
 
@@ -25,7 +27,7 @@
 1. Application menu/settings action sets `appState.openSettings`; `drawnix.tsx` mounts `SettingsDialog` inside the shared `WinBoxWindow`.
 2. `settings-dialog.tsx:863-958` loads cloned provider profiles/presets and legacy model defaults into component draft state. `selectedProfileId`, `profilesDraft`, runtime discovery subscription, compact mode, model search, collapsed groups, and API-key reveal are local UI owners.
 3. Provider row activation at `:789-805,1885-1958` changes the selected profile. The existing selector button exposes `aria-pressed`; its sibling TDesign switch calls `handleProviderEnabledChange()` and persists existing profiles only through the current settings boundary.
-4. Provider fields at `:2072-2475` update only the selected draft. The async-image switch additionally calls the existing `providerProfilesSettings.update`; pricing fields call `PricingFieldGroup` and the current price service only on explicit fetch/group actions.
+4. The remaining provider fields update only the selected draft; the provider-enabled switches retain their existing settings writer.
 5. Explicit model fetch at `:1445-1507` first persists pending drafts, trims/normalizes Base URL and key, then calls `runtimeModelDiscovery.discover(profileId, baseUrl, apiKey)`. That store owns loading/error/ready state, `/models` fetch, adapted models, profile catalog persistence, and observable updates.
 6. On success, `ModelDiscoveryDialog` receives `discoveredModels` and selected IDs at `:3217-3236`. Its local state owns search, type filter, draft selection, and expanded vendor. Confirm calls `handleApplySelectedModels()` at `:1509-1591`, which updates only the current profile catalog and reconciles presets through existing services.
 7. The model summary at `:2511-2808` renders profile-scoped selected models, search, group collapse, benchmark shortcuts, remove actions, and current empty/error text. It does not own provider execution.
@@ -36,16 +38,16 @@
 - Final provider field values originate in `profilesDraft`; the only durable writers remain `providerProfilesSettings` and `settingsManager.updateSettings` on existing switch/save paths.
 - Final selected model rows originate in one profile catalog's selected IDs. Their writer is `runtimeModelDiscovery.applySelection()` through the discovery confirmation or current remove action.
 - Final discovery filter/vendor/group visual state has one component-local writer each: `setActiveType`, `setExpandedVendors`, and `setCollapsedGroups`. No storage writer exists for those transient states.
-- Final switch visual state comes from `profile.enabled` or `preferAsyncImageEndpoint`, but production TDesign output encodes it only in `t-is-checked` class and omits `aria-checked`.
+- Final switch visual state comes from `profile.enabled`, but production TDesign output encodes it only in `t-is-checked` class and omits `aria-checked`.
 - Final accessible field names have no writer: all eight rendered input/select elements lack `id`, `aria-label`, and `aria-labelledby`; their nine nearby labels have no `for`, and the fields are siblings rather than label descendants.
-- Final F-09 application copy comes from fixed literals/constants in the three content modules. The mounted `I18nProvider` owns `zh`/`en`, but those modules do not consume its context, so provider/model content has no language-dependent branch.
+- Final F-09 application copy comes from fixed literals/constants in the remaining content modules. The mounted `I18nProvider` owns `zh`/`en`, but those modules do not consume its context, so provider/model content has no language-dependent branch.
 
 ## Inputs, State, Side Effects, And Recovery
 
 - **Inputs/outputs**: `ProviderProfile` drafts include IDs, name, URL/key/auth/provider type, compatibility, capabilities, pricing and enabled values. Discovery maps provider data to `RuntimeModelDiscoveryState`, then persists a profile-scoped catalog and produces `ModelConfig` selectors.
 - **Defaults/transforms**: the first existing profile is selected on open; missing Base URL uses the configured default only at fetch/save normalization; names/URLs/keys are trimmed at save; the discovery dialog resets query/type/draft/expanded vendor every open.
 - **State owners**: React owns drafts and transient content state; settings manager owns durable settings/localStorage and its existing IndexedDB mirror; runtime discovery owns catalog state/events; i18n context owns only language; WinBox owns the outer window.
-- **Side effects**: settings/localStorage/IndexedDB writes, `/models` fetch, pricing fetch, benchmark launch, analytics, and UI messages occur only on existing explicit callbacks. No such callback was invoked in this audit.
+- **Side effects**: settings/localStorage/IndexedDB writes, `/models` fetch, benchmark launch, analytics, and UI messages occur only on existing explicit callbacks. Shared eligible-cache pricing warmup remains outside the settings content. No such callback was invoked in this audit.
 - **Concurrency/races**: stale discovery and fallback are already confirmed under separate approval changes. This interface change cannot alter request ownership or catalog acceptance.
 - **Timeout/cancel/retry**: discovery has no content-owned cancel action; retry is the existing fetch button. This change does not add lifecycle controls.
 - **Persistence/migration/cache**: no schema, key, migration, encryption, cache, or recovery behavior belongs to the interface change. Drafts reload from current settings when Settings opens.
@@ -58,7 +60,7 @@
 
 **Status**: 已证实事实，待审批. **Evidence strength**: production DOM/accessibility state plus exact JSX relationship trace.
 
-**User impact**: keyboard and assistive-technology users encounter six provider/pricing inputs, two selects, and three switches without persistent purpose. The switches also do not expose whether they are on or off, even though the visual state is present.
+**User impact**: keyboard and assistive-technology users encounter the remaining provider inputs, selects, and enabled switches without persistent purpose. The switches also do not expose whether they are on or off, even though the visual state is present. The larger counts below describe the original audit before the two control removals recorded above.
 
 **Reproduction**: open Settings → provider page in the production build at 1280×720. Query the six content inputs and two selects: each has `id=null`, `aria-label=null`, and `aria-labelledby=null`. Query nine nearby `label` elements: every `for` is null and the controls are sibling nodes. Query the three `role=switch` buttons: every name relationship and `aria-checked` is null; two enabled-provider switches use `t-is-checked`, while the async switch does not. Select `codex`, observe the same result, and restore `default` without saving.
 
@@ -66,7 +68,7 @@
 
 **Call chain/root cause**: Settings entry → draft/profile selection → JSX visible `label` sibling → input/select or TDesign switch → DOM. The content renders label-shaped elements but supplies neither native containment/`for`/ID nor ARIA relationships. TDesign receives `value`, renders checked classes, and the current call sites supply no name/state contract.
 
-**Affected range**: provider name/type/image compatibility/async preference/icon URL/Base URL/API key/pricing URL/rate/group; default and custom provider enabled switches. The API-key reveal button already has a name and is a non-problem.
+**Affected range**: provider name/type/image compatibility/icon URL/Base URL/API key and default/custom provider-enabled switches. The API-key reveal button already has a name and is a non-problem.
 
 **Candidate/alternative**: `improve-provider-model-settings-accessibility` proposes stable native/ARIA relationships and tests the actual switch node. Placeholder-only naming was rejected because it disappears as an instruction and does not label fields with no placeholder. Adding hidden duplicate controls was rejected because it would fork focus/state/callback ownership.
 
@@ -102,7 +104,7 @@
 
 **Call chain/root cause**: language menu → `I18nProvider` context state → only consumers receive language-dependent output → F-09 modules have no consumer/prop → fixed Chinese DOM. Outer WinBox/tool title localization and shared settings navigation remain separate.
 
-**Affected range**: F-09 provider form, pricing, model summary, discovery dialog, existing safe feedback and accessible names. Provider/profile names, model IDs, URLs, API keys, numeric prices, raw errors, catalogs, presets, routes, and analytics metadata are data and must not be translated.
+**Affected range**: F-09 provider form, model summary, discovery dialog, existing safe feedback and accessible names. Provider/profile names, model IDs, URLs, API keys, numeric prices, raw errors, catalogs, presets, routes, and analytics metadata are data and must not be translated.
 
 **Candidate/alternative**: add typed F-09 zh/en strings to the current provider and consume them at content owners. A second localization store or browser-locale inference was rejected because it would fork the established owner. Translating provider/error/private data was rejected.
 

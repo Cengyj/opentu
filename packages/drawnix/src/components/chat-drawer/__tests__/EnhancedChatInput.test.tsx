@@ -14,6 +14,13 @@ import { EnhancedChatInput } from '../EnhancedChatInput';
 const submitGenerationFromDrawerMock = vi.fn(async () => true);
 type GenerationType = 'image' | 'video' | 'audio' | 'text' | 'agent';
 let generationTypeMock: GenerationType = 'agent';
+let selectedParamsMock: Record<string, string> = {};
+const imageOperationCalls: Array<'generation' | 'edit'> = [];
+const selectionResolutionCalls: Array<{
+  modelId: string;
+  modelRef: { profileId: string | null; modelId: string | null } | null;
+  operation: 'generation' | 'edit';
+}> = [];
 
 vi.mock('../../../contexts/ChatDrawerContext', () => ({
   useChatDrawerControl: () => ({
@@ -39,22 +46,62 @@ vi.mock('../../../contexts/AssetContext', () => ({
   }),
 }));
 
+vi.mock('../../../services/image-binding-parameter-capabilities', () => {
+  const compatibleParams = [
+    {
+      id: 'size',
+      valueType: 'enum',
+      options: [{ value: '1x1', label: '1:1' }],
+    },
+  ];
+  return {
+    getImageBindingCapabilityRevision: () => '0:0',
+    subscribeImageBindingCapabilityRevision: () => () => undefined,
+    resolveImageParametersForSelection: (
+      modelId: string,
+      modelRef: {
+        profileId: string | null;
+        modelId: string | null;
+      } | null,
+      operation: 'generation' | 'edit'
+    ) => {
+      selectionResolutionCalls.push({ modelId, modelRef, operation });
+      return { compatibleParams };
+    },
+    pruneSelectedImageParams: (
+      selectedParams: Record<string, string>,
+      params: Array<{ id: string }>
+    ) => {
+      const supportedIds = new Set(params.map((param) => param.id));
+      return Object.fromEntries(
+        Object.entries(selectedParams).filter(([id]) => supportedIds.has(id))
+      );
+    },
+  };
+});
+
 vi.mock('../useChatDrawerGenerationControls', () => ({
-  useChatDrawerGenerationControls: () => ({
-    generationType: generationTypeMock,
-    setGenerationType: () => undefined,
-    selectedModel: 'gpt-5.4',
-    selectedModelRef: null,
-    selectedSelectionKey: 'gpt-5.4',
-    selectedParams: {},
-    compatibleParams: [],
-    selectedCount: 1,
-    setSelectedCount: () => undefined,
-    currentModels: [],
-    handleModelSelect: () => undefined,
-    handleModelConfigSelect: () => undefined,
-    handleParamSelect: () => undefined,
-  }),
+  useChatDrawerGenerationControls: (imageOperation: 'generation' | 'edit') => {
+    imageOperationCalls.push(imageOperation);
+    return {
+      generationType: generationTypeMock,
+      setGenerationType: () => undefined,
+      selectedModel: 'gpt-image-2',
+      selectedModelRef: {
+        profileId: 'profile-default',
+        modelId: 'gpt-image-2',
+      },
+      selectedSelectionKey: 'profile-default::gpt-image-2',
+      selectedParams: selectedParamsMock,
+      compatibleParams: [],
+      selectedCount: 1,
+      setSelectedCount: () => undefined,
+      currentModels: [],
+      handleModelSelect: () => undefined,
+      handleModelConfigSelect: () => undefined,
+      handleParamSelect: () => undefined,
+    };
+  },
 }));
 
 vi.mock('../../shared/SelectedContentPreview', () => ({
@@ -90,6 +137,9 @@ vi.mock('../../icons', () => ({
 
 beforeEach(() => {
   generationTypeMock = 'agent';
+  selectedParamsMock = {};
+  imageOperationCalls.length = 0;
+  selectionResolutionCalls.length = 0;
   submitGenerationFromDrawerMock.mockClear();
 });
 
@@ -141,6 +191,7 @@ describe('EnhancedChatInput placeholder', () => {
     );
 
     expect(screen.getByPlaceholderText('描述你想要的效果...')).toBeTruthy();
+    expect(imageOperationCalls.at(-1)).toBe('edit');
   });
 });
 
@@ -167,6 +218,7 @@ describe('EnhancedChatInput implicit workflow references', () => {
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: '把上面的人改成小李子' },
     });
+    expect(imageOperationCalls.at(-1)).toBe('edit');
     fireEvent.click(screen.getByTestId('drawer-ai-send-btn'));
 
     expect(submitGenerationFromDrawerMock).toHaveBeenCalledTimes(1);
@@ -193,6 +245,7 @@ describe('EnhancedChatInput implicit workflow references', () => {
     fireEvent.change(screen.getByRole('textbox'), {
       target: { value: '生成一只猫' },
     });
+    expect(imageOperationCalls.at(-1)).toBe('generation');
     fireEvent.click(screen.getByTestId('drawer-ai-send-btn'));
 
     expect(submitGenerationFromDrawerMock).toHaveBeenCalledWith(
@@ -200,6 +253,40 @@ describe('EnhancedChatInput implicit workflow references', () => {
         selectedContent: [],
       })
     );
+  });
+
+  it('prunes image parameters again at the final reference boundary', () => {
+    generationTypeMock = 'image';
+    selectedParamsMock = {
+      size: '1x1',
+      unsupported_parameter: 'must-not-submit',
+    };
+
+    render(
+      <EnhancedChatInput
+        selectedContent={implicitReferenceContent}
+        onSend={() => undefined}
+      />
+    );
+
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: '修改图片' },
+    });
+    fireEvent.click(screen.getByTestId('drawer-ai-send-btn'));
+
+    expect(submitGenerationFromDrawerMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedParams: { size: '1x1' },
+      })
+    );
+    expect(selectionResolutionCalls.at(-1)).toEqual({
+      modelId: 'gpt-image-2',
+      modelRef: {
+        profileId: 'profile-default',
+        modelId: 'gpt-image-2',
+      },
+      operation: 'edit',
+    });
   });
 
   it('uses pinned reply references and consumes them after submit', async () => {

@@ -4,9 +4,16 @@ import type {
   ImageModelAdapter,
 } from './types';
 import { registerModelAdapter } from './registry';
-import { sendAdapterRequest } from './context';
+import {
+  buildProviderContextFromAdapterContext,
+  requireImageBinding,
+  sendAdapterRequest,
+} from './context';
 import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
 import { ModelVendor } from '../../constants/model-config';
+import type { ProviderModelBinding } from '../provider-routing';
+import { pollImageInvocationBinding } from '../image-invocation/resume-polling';
+import { createImageProviderRejectionError } from '../image-invocation/errors';
 
 type MJSubmitResponse = {
   code: number;
@@ -14,25 +21,29 @@ type MJSubmitResponse = {
   result: number | string;
 };
 
-type MJQueryResponse = {
-  status?: string;
-  imageUrl?: string;
-  imageUrls?: Array<{ url: string }>;
-  failReason?: string;
-  progress?: string;
-};
-
 const DEFAULT_POLL_INTERVAL_MS = 5000;
 const DEFAULT_POLL_MAX_ATTEMPTS = Math.ceil(
   IMAGE_GENERATION_TIMEOUT_MS / DEFAULT_POLL_INTERVAL_MS
 );
+const MJ_BINDING_CONTRACTS = [
+  {
+    protocol: 'mj.imagine',
+    requestSchema: 'mj.imagine.base64-array',
+  },
+] as const;
 
-const normalizeBaseUrl = (context: AdapterContext): string => {
-  if (!context.baseUrl) {
-    throw new Error('Missing baseUrl for MJ adapter');
-  }
-  const trimmed = context.baseUrl.replace(/\/$/, '');
-  return trimmed.endsWith('/v1') ? trimmed.slice(0, -3) : trimmed;
+const MJ_PROMPT_PARAMETER_TOKENS = Object.freeze({
+  mj_ar: '--ar',
+  mj_v: '--v',
+  mj_style: '--style',
+  mj_s: '--s',
+  mj_q: '--q',
+  mj_seed: '--seed',
+} as const);
+
+type MJBinding = ProviderModelBinding & {
+  readonly submitPath: string;
+  readonly pollPathTemplate: string;
 };
 
 const stripDataUrlPrefix = (value: string): string => {
@@ -40,64 +51,72 @@ const stripDataUrlPrefix = (value: string): string => {
   return match ? match[1] : value;
 };
 
-const isSuccessStatus = (status?: string): boolean => {
-  if (!status) return false;
-  const normalized = status.toLowerCase();
-  return ['success', 'succeed', 'completed', 'done'].includes(normalized);
-};
+/** Serialize MJ-only prompt switches at the binding-owned adapter boundary. */
+function serializeMJPrompt(
+  prompt: string,
+  params: Readonly<Record<string, unknown>> | undefined
+): string {
+  if (!params) {
+    return prompt;
+  }
 
-const isFailureStatus = (status?: string): boolean => {
-  if (!status) return false;
-  const normalized = status.toLowerCase();
-  return ['fail', 'failed', 'failure', 'error'].includes(normalized);
-};
+  const suffix = Object.entries(MJ_PROMPT_PARAMETER_TOKENS)
+    .flatMap(([key, token]) => {
+      const rawValue = params[key];
+      const value =
+        typeof rawValue === 'string'
+          ? rawValue.trim()
+          : typeof rawValue === 'number' && Number.isFinite(rawValue)
+          ? String(rawValue)
+          : '';
+      return !value || value === 'default' ? [] : [`${token} ${value}`];
+    })
+    .join(' ');
+
+  if (!suffix || prompt.trimEnd().endsWith(suffix)) {
+    return prompt;
+  }
+  return [prompt.trim(), suffix].filter(Boolean).join(' ');
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return;
+  }
+
+  if (signal.reason instanceof Error) {
+    throw signal.reason;
+  }
+
+  throw new DOMException('Aborted', 'AbortError');
+}
 
 const submitMJImagine = async (
   context: AdapterContext,
-  body: Record<string, unknown>
-): Promise<MJSubmitResponse> => {
-  const baseUrl = normalizeBaseUrl(context);
-  const response = await sendAdapterRequest(
-    context,
-    {
-      path: '/mj/submit/imagine',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+  binding: MJBinding,
+  body: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<Response> => {
+  throwIfAborted(signal);
+  const response = await sendAdapterRequest(context, {
+    path: binding.submitPath,
+    baseUrlStrategy: binding.baseUrlStrategy,
+    method: binding.submitMethod,
+    headers: {
+      'Content-Type': 'application/json',
     },
-    baseUrl
-  );
+    body: JSON.stringify(body),
+    signal,
+  });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`MJ submit failed: ${response.status} - ${errorText}`);
+    throw await createImageProviderRejectionError(response, {
+      bindingId: binding.id,
+      label: 'MJ 提交失败',
+    });
   }
 
-  return response.json();
-};
-
-const queryMJTask = async (
-  context: AdapterContext,
-  taskId: string
-): Promise<MJQueryResponse> => {
-  const baseUrl = normalizeBaseUrl(context);
-  const response = await sendAdapterRequest(
-    context,
-    {
-      path: `/mj/task/${taskId}/fetch`,
-      method: 'GET',
-    },
-    baseUrl
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`MJ query failed: ${response.status} - ${errorText}`);
-  }
-
-  return response.json();
+  return response;
 };
 
 export const mjImageAdapter: ImageModelAdapter = {
@@ -112,45 +131,73 @@ export const mjImageAdapter: ImageModelAdapter = {
   supportedModels: ['mj-imagine'],
   defaultModel: 'mj-imagine',
   async generateImage(context, request: ImageGenerationRequest) {
+    throwIfAborted(request.signal);
+    const binding = requireImageBinding(context, request, {
+      adapterLabel: 'MJ adapter',
+      requirePollPath: true,
+      supportedBindings: MJ_BINDING_CONTRACTS,
+    });
+
     const base64Array = (request.referenceImages || []).map((img) =>
       stripDataUrlPrefix(img)
     );
 
-    const submitResponse = await submitMJImagine(context, {
-      botType: 'MID_JOURNEY',
-      prompt: request.prompt,
-      base64Array,
-    });
+    const onProgress = request.onProgress;
+    const onSubmitted = request.onSubmitted;
+
+    onProgress?.(5, 'submitting');
+
+    request.telemetry?.increment('submitRequests');
+    const submit = () =>
+      submitMJImagine(
+        context,
+        binding,
+        {
+          botType: 'MID_JOURNEY',
+          prompt: serializeMJPrompt(request.prompt, request.params),
+          base64Array,
+        },
+        request.signal
+      );
+    const submitHttpResponse = request.telemetry
+      ? await request.telemetry.measure('submit', submit)
+      : await submit();
+    request.telemetry?.increment('responseParses');
+    const parseSubmitResponse = () =>
+      submitHttpResponse.json() as Promise<MJSubmitResponse>;
+    const submitResponse = request.telemetry
+      ? await request.telemetry.measure(
+          'responseParsing',
+          parseSubmitResponse
+        )
+      : await parseSubmitResponse();
 
     const taskId = submitResponse.result?.toString();
     if (!taskId) {
       throw new Error('MJ submit missing task id');
     }
 
-    for (let attempt = 0; attempt < DEFAULT_POLL_MAX_ATTEMPTS; attempt += 1) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, DEFAULT_POLL_INTERVAL_MS)
-      );
-      const statusResponse = await queryMJTask(context, taskId);
+    await onSubmitted?.(taskId);
+    throwIfAborted(request.signal);
+    onProgress?.(10, 'processing');
 
-      if (isSuccessStatus(statusResponse.status) && statusResponse.imageUrl) {
-        const urls = statusResponse.imageUrls
-          ?.map(item => item.url)
-          .filter(Boolean);
-        return {
-          url: statusResponse.imageUrl,
-          urls: urls?.length ? urls : undefined,
-          format: 'jpg',
-          raw: statusResponse,
-        };
+    const artifacts = await pollImageInvocationBinding(
+      {
+        provider: buildProviderContextFromAdapterContext(context),
+        binding,
+      },
+      taskId,
+      {
+        interval: request.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
+        maxAttempts:
+          request.pollMaxAttempts ?? DEFAULT_POLL_MAX_ATTEMPTS,
+        signal: request.signal,
+        fetcher: context.fetcher,
+        telemetry: request.telemetry,
+        onProgress,
       }
-
-      if (isFailureStatus(statusResponse.status)) {
-        throw new Error(statusResponse.failReason || 'MJ generation failed');
-      }
-    }
-
-    throw new Error('MJ generation timeout');
+    );
+    return { artifacts };
   },
 };
 

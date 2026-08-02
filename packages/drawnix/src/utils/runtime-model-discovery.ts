@@ -13,7 +13,6 @@ import {
   getStaticModelConfig,
   setRuntimeModelConfigs,
 } from '../constants/model-config';
-import { normalizeApiBase } from '../services/media-api/utils';
 import {
   LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
   providerCatalogsSettings,
@@ -29,6 +28,12 @@ import {
   isSunoLikeModelId,
 } from './suno-model-aliases';
 import { sortModelsByDisplayPriority } from './model-sort';
+import {
+  buildProviderCatalogDiscoverySignature,
+  IMAGE_ROUTING_EVIDENCE_VERSION,
+  isProviderCatalogImageRoutingEvidenceCurrent,
+  normalizeProviderModelApiBaseUrl,
+} from './image-routing-evidence';
 
 const LEGACY_CACHE_KEY = 'drawnix-runtime-model-discovery';
 
@@ -43,6 +48,14 @@ export interface RemoteModelListItem {
 
 export interface RuntimeModelDiscoveryState {
   profileId: string;
+  routingEvidenceVersion?: number;
+  /** Original persisted catalog retained while stale image evidence is gated. */
+  staleImageCatalogSnapshot?: {
+    discoveredAt: number | null;
+    discoveredModels: ModelConfig[];
+    sourceBaseUrl: string;
+    signature: string;
+  };
   status: 'idle' | 'loading' | 'ready' | 'error';
   sourceBaseUrl: string;
   signature: string;
@@ -59,6 +72,11 @@ export interface RuntimeModelSelectionChange {
   removedModelIds: string[];
 }
 
+export interface RuntimeModelDiscoveryInvalidationOptions {
+  force?: boolean;
+  targetProviderType: ProviderProfile['providerType'];
+}
+
 interface LegacyPersistedRuntimeModelDiscoveryState {
   sourceBaseUrl: string;
   signature: string;
@@ -67,9 +85,17 @@ interface LegacyPersistedRuntimeModelDiscoveryState {
   selectedModelIds: string[];
 }
 
+interface RuntimeModelDiscoveryRequest {
+  controller: AbortController;
+  sequence: number;
+  signature: string;
+  promise: Promise<ModelConfig[]>;
+}
+
 function createDefaultState(profileId: string): RuntimeModelDiscoveryState {
   return {
     profileId,
+    routingEvidenceVersion: IMAGE_ROUTING_EVIDENCE_VERSION,
     status: 'idle',
     sourceBaseUrl: '',
     signature: '',
@@ -92,29 +118,25 @@ function hasAuthoritativeModelCatalog(
   );
 }
 
-function hashString(input: string): string {
-  let hash = 5381;
-  for (let i = 0; i < input.length; i += 1) {
-    hash = ((hash << 5) + hash) ^ input.charCodeAt(i);
-  }
-  return Math.abs(hash >>> 0).toString(16);
+function hasPersistedCatalogEvidence(
+  state?: RuntimeModelDiscoveryState
+): boolean {
+  const staleSnapshot = state?.staleImageCatalogSnapshot;
+  return Boolean(
+    state &&
+      (state.discoveredModels.length > 0 ||
+        state.selectedModelIds.length > 0 ||
+        state.signature ||
+        (staleSnapshot &&
+          (staleSnapshot.discoveredModels.length > 0 ||
+            staleSnapshot.sourceBaseUrl ||
+            staleSnapshot.signature ||
+            staleSnapshot.discoveredAt !== null)))
+  );
 }
 
 export function normalizeModelApiBaseUrl(baseUrl: string): string {
-  const trimmed = (baseUrl || '').trim();
-  const fallback = 'https://foropencode.com/v1';
-  if (!trimmed) return fallback;
-
-  let normalized = trimmed.replace(/\/+$/, '');
-  normalized = normalized.replace(/\/models$/i, '');
-  if (!/\/v1$/i.test(normalized)) {
-    normalized = `${normalizeApiBase(normalized)}/v1`;
-  }
-  return normalized;
-}
-
-function buildDiscoverySignature(baseUrl: string, apiKey: string): string {
-  return `${normalizeModelApiBaseUrl(baseUrl)}::${hashString(apiKey.trim())}`;
+  return normalizeProviderModelApiBaseUrl(baseUrl);
 }
 
 function extractDiscoveryErrorMessage(
@@ -929,6 +951,17 @@ function buildSelectedModels(
   );
 }
 
+function preserveSelectedModelIds(modelIds: string[]): string[] {
+  return Array.from(
+    new Set(
+      modelIds.filter(
+        (modelId): modelId is string =>
+          typeof modelId === 'string' && modelId.trim().length > 0
+      )
+    )
+  );
+}
+
 function mergeModels(
   staticModels: ModelConfig[],
   runtimeModels: ModelConfig[]
@@ -1045,18 +1078,39 @@ function createPinnedRuntimeModel(
 function createStateFromCatalog(
   catalog: ProviderCatalog
 ): RuntimeModelDiscoveryState {
-  const discoveredModels = decorateRuntimeModels(
+  const persistedModels = decorateRuntimeModels(
     catalog.profileId,
     Array.isArray(catalog.discoveredModels) ? catalog.discoveredModels : []
   );
-  const selectedModelIds = normalizeSelectedModelIds(
-    discoveredModels,
-    Array.isArray(catalog.selectedModelIds) ? catalog.selectedModelIds : []
+  const profile = getProfileById(catalog.profileId);
+  const hasStaleAutomaticImageEvidence = Boolean(
+    profile?.providerType === 'auto' &&
+      !isProviderCatalogImageRoutingEvidenceCurrent(catalog, profile)
   );
+  const discoveredModels = hasStaleAutomaticImageEvidence
+    ? persistedModels.filter((model) => model.type !== 'image')
+    : persistedModels;
+  const persistedSelectedModelIds = Array.isArray(catalog.selectedModelIds)
+    ? catalog.selectedModelIds
+    : [];
+  const selectedModelIds = hasStaleAutomaticImageEvidence
+    ? preserveSelectedModelIds(persistedSelectedModelIds)
+    : normalizeSelectedModelIds(discoveredModels, persistedSelectedModelIds);
   const models = buildSelectedModels(discoveredModels, selectedModelIds);
 
   return {
     profileId: catalog.profileId,
+    routingEvidenceVersion: catalog.routingEvidenceVersion,
+    staleImageCatalogSnapshot: hasStaleAutomaticImageEvidence
+      ? {
+          discoveredAt: Number.isFinite(catalog.discoveredAt)
+            ? catalog.discoveredAt
+            : null,
+          discoveredModels: persistedModels,
+          sourceBaseUrl: catalog.sourceBaseUrl || '',
+          signature: catalog.signature || '',
+        }
+      : undefined,
     status: catalog.error
       ? 'error'
       : discoveredModels.length > 0
@@ -1075,13 +1129,21 @@ function createStateFromCatalog(
 }
 
 function toCatalog(state: RuntimeModelDiscoveryState): ProviderCatalog {
+  const staleSnapshot = state.staleImageCatalogSnapshot;
   return {
     profileId: state.profileId,
-    discoveredAt: state.discoveredAt,
-    discoveredModels: state.discoveredModels,
+    routingEvidenceVersion: state.routingEvidenceVersion,
+    discoveredAt: staleSnapshot
+      ? staleSnapshot.discoveredAt
+      : state.discoveredAt,
+    discoveredModels: staleSnapshot?.discoveredModels ?? state.discoveredModels,
     selectedModelIds: state.selectedModelIds,
-    sourceBaseUrl: state.sourceBaseUrl || undefined,
-    signature: state.signature || undefined,
+    sourceBaseUrl: staleSnapshot
+      ? staleSnapshot.sourceBaseUrl || undefined
+      : state.sourceBaseUrl || undefined,
+    signature: staleSnapshot
+      ? staleSnapshot.signature || undefined
+      : state.signature || undefined,
     error: state.error,
   };
 }
@@ -1103,9 +1165,9 @@ function loadLegacyPersistedState(): RuntimeModelDiscoveryState | null {
       Array.isArray(parsed.selectedModelIds) ? parsed.selectedModelIds : []
     );
 
-    return {
+    return createStateFromCatalog({
       profileId: LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
-      status: 'ready',
+      routingEvidenceVersion: undefined,
       sourceBaseUrl: parsed.sourceBaseUrl || '',
       signature: parsed.signature || '',
       discoveredAt: Number.isFinite(parsed.discoveredAt)
@@ -1113,9 +1175,8 @@ function loadLegacyPersistedState(): RuntimeModelDiscoveryState | null {
         : Date.now(),
       discoveredModels,
       selectedModelIds,
-      models: buildSelectedModels(discoveredModels, selectedModelIds),
       error: null,
-    };
+    });
   } catch {
     return null;
   }
@@ -1135,6 +1196,8 @@ class RuntimeModelDiscoveryStore {
   private listeners = new Set<() => void>();
   private revision = 0;
   private catalogPersistenceQueue: Promise<void> = Promise.resolve();
+  private discoverySequenceByProfile = new Map<string, number>();
+  private inFlightDiscoveries = new Map<string, RuntimeModelDiscoveryRequest>();
 
   constructor() {
     this.catalogStates = this.loadCatalogStatesFromSettings();
@@ -1148,6 +1211,14 @@ class RuntimeModelDiscoveryStore {
       'activePresetId',
       this.handleActivePresetIdChange
     );
+
+    if (typeof window !== 'undefined') {
+      queueMicrotask(() => {
+        void Promise.resolve(settingsManager.waitForInitialization?.()).then(
+          () => this.refreshStaleImageRoutingEvidence()
+        );
+      });
+    }
   }
 
   private loadCatalogStatesFromSettings(): Map<
@@ -1220,8 +1291,46 @@ class RuntimeModelDiscoveryStore {
   };
 
   private handleProfileSettingsChange = (): void => {
+    const profiles = providerProfilesSettings.get();
+    const profilesById = new Map(
+      profiles.map((profile) => [profile.id, profile] as const)
+    );
+
+    for (const [profileId, request] of this.inFlightDiscoveries) {
+      const profile = profilesById.get(profileId);
+      const expectedSignature = profile?.apiKey.trim()
+        ? buildProviderCatalogDiscoverySignature(
+            profile.baseUrl,
+            profile.apiKey
+          )
+        : '';
+      if (request.signature !== expectedSignature) {
+        this.supersedeDiscovery(profileId);
+      }
+    }
+
+    for (const [profileId, state] of this.catalogStates) {
+      const profile = profilesById.get(profileId);
+      if (
+        profile?.providerType !== 'auto' ||
+        !hasPersistedCatalogEvidence(state) ||
+        isProviderCatalogImageRoutingEvidenceCurrent(toCatalog(state), profile)
+      ) {
+        continue;
+      }
+
+      // Rebuild against the current Profile before refreshing. This gates old
+      // image endpoint evidence immediately while retaining the user's model
+      // selections for reconciliation with the new catalog response.
+      this.catalogStates.set(
+        profileId,
+        createStateFromCatalog(toCatalog(state))
+      );
+    }
+
     this.syncRuntimeModelConfigs();
     this.emit();
+    void this.refreshStaleImageRoutingEvidence();
   };
 
   private handleActivePresetIdChange = (): void => {
@@ -1230,9 +1339,10 @@ class RuntimeModelDiscoveryStore {
   };
 
   private async persistCatalogs(): Promise<void> {
-    const catalogs = Array.from(this.catalogStates.values()).map(toCatalog);
     const persistence = this.catalogPersistenceQueue.then(() =>
-      providerCatalogsSettings.update(catalogs)
+      providerCatalogsSettings.update(
+        Array.from(this.catalogStates.values()).map(toCatalog)
+      )
     );
     this.catalogPersistenceQueue = persistence.catch((error) => {
       console.warn(
@@ -1248,20 +1358,20 @@ class RuntimeModelDiscoveryStore {
     state: RuntimeModelDiscoveryState,
     persist = true
   ): Promise<void> {
+    const shouldPreserveStaleSelections = Boolean(
+      state.staleImageCatalogSnapshot
+    );
+    const selectedModelIds = shouldPreserveStaleSelections
+      ? preserveSelectedModelIds(state.selectedModelIds)
+      : normalizeSelectedModelIds(
+          state.discoveredModels,
+          state.selectedModelIds
+        );
     this.catalogStates.set(profileId, {
       ...state,
       profileId,
-      selectedModelIds: normalizeSelectedModelIds(
-        state.discoveredModels,
-        state.selectedModelIds
-      ),
-      models: buildSelectedModels(
-        state.discoveredModels,
-        normalizeSelectedModelIds(
-          state.discoveredModels,
-          state.selectedModelIds
-        )
-      ),
+      selectedModelIds,
+      models: buildSelectedModels(state.discoveredModels, selectedModelIds),
     });
 
     this.syncRuntimeModelConfigs();
@@ -1272,6 +1382,36 @@ class RuntimeModelDiscoveryStore {
 
   private getCatalogState(profileId: string): RuntimeModelDiscoveryState {
     return this.catalogStates.get(profileId) || createDefaultState(profileId);
+  }
+
+  private supersedeDiscovery(profileId: string): void {
+    this.inFlightDiscoveries.get(profileId)?.controller.abort();
+    const nextSequence =
+      (this.discoverySequenceByProfile.get(profileId) || 0) + 1;
+    this.discoverySequenceByProfile.set(profileId, nextSequence);
+    this.inFlightDiscoveries.delete(profileId);
+  }
+
+  private beginDiscovery(profileId: string): number {
+    this.inFlightDiscoveries.get(profileId)?.controller.abort();
+    const sequence = (this.discoverySequenceByProfile.get(profileId) || 0) + 1;
+    this.discoverySequenceByProfile.set(profileId, sequence);
+    return sequence;
+  }
+
+  private isDiscoveryCurrent(profileId: string, sequence: number): boolean {
+    return this.discoverySequenceByProfile.get(profileId) === sequence;
+  }
+
+  private async resolveSupersededDiscovery(
+    profileId: string,
+    sequence: number
+  ): Promise<ModelConfig[]> {
+    const currentRequest = this.inFlightDiscoveries.get(profileId);
+    if (currentRequest && currentRequest.sequence !== sequence) {
+      return currentRequest.promise;
+    }
+    return [...this.getCatalogState(profileId).discoveredModels];
   }
 
   private resolveRuntimeModels(): ModelConfig[] {
@@ -1314,6 +1454,59 @@ class RuntimeModelDiscoveryStore {
     return Array.from(this.catalogStates.values())
       .filter((state) => !profileIdSet || profileIdSet.has(state.profileId))
       .map((state) => toCatalog(state));
+  }
+
+  async refreshStaleImageRoutingEvidence(): Promise<void> {
+    const profiles = providerProfilesSettings
+      .get()
+      .filter(
+        (profile) =>
+          profile.enabled !== false &&
+          profile.providerType === 'auto' &&
+          profile.apiKey.trim().length > 0
+      );
+
+    await Promise.all(
+      profiles.map(async (profile) => {
+        const state = this.catalogStates.get(profile.id);
+        if (
+          !state ||
+          !hasPersistedCatalogEvidence(state) ||
+          isProviderCatalogImageRoutingEvidenceCurrent(
+            toCatalog(state),
+            profile
+          )
+        ) {
+          return;
+        }
+
+        try {
+          await this.discover(profile.id, profile.baseUrl, profile.apiKey);
+        } catch (error) {
+          const currentProfile = getProfileById(profile.id);
+          const expectedSignature = buildProviderCatalogDiscoverySignature(
+            profile.baseUrl,
+            profile.apiKey
+          );
+          if (
+            !currentProfile ||
+            currentProfile.providerType !== 'auto' ||
+            currentProfile.enabled === false ||
+            !currentProfile.apiKey.trim() ||
+            buildProviderCatalogDiscoverySignature(
+              currentProfile.baseUrl,
+              currentProfile.apiKey
+            ) !== expectedSignature
+          ) {
+            return;
+          }
+          await this.setCatalogError(
+            profile.id,
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      })
+    );
   }
 
   getDiscoveredModels(
@@ -1476,20 +1669,48 @@ class RuntimeModelDiscoveryStore {
     profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
     baseUrl: string,
     apiKey: string,
-    force = false
+    options: RuntimeModelDiscoveryInvalidationOptions
   ): void {
     const state = this.getCatalogState(profileId);
     const signature = apiKey.trim()
-      ? buildDiscoverySignature(baseUrl, apiKey)
+      ? buildProviderCatalogDiscoverySignature(baseUrl, apiKey)
       : '';
-    if (!force && (!state.signature || state.signature === signature)) {
+    if (!options.force && (!state.signature || state.signature === signature)) {
       return;
     }
-    void this.setCatalogState(profileId, {
-      ...createDefaultState(profileId),
-      sourceBaseUrl: normalizeModelApiBaseUrl(baseUrl),
-      signature,
-    });
+    this.supersedeDiscovery(profileId);
+    const persistedCatalog = toCatalog(state);
+    const shouldPreserveAutomaticImageSelection = Boolean(
+      options.targetProviderType === 'auto' &&
+        hasPersistedCatalogEvidence(state)
+    );
+    void this.setCatalogState(
+      profileId,
+      shouldPreserveAutomaticImageSelection
+        ? {
+            ...createDefaultState(profileId),
+            routingEvidenceVersion: state.routingEvidenceVersion,
+            staleImageCatalogSnapshot: {
+              discoveredAt: Number.isFinite(persistedCatalog.discoveredAt)
+                ? persistedCatalog.discoveredAt
+                : null,
+              discoveredModels: persistedCatalog.discoveredModels,
+              sourceBaseUrl: persistedCatalog.sourceBaseUrl || '',
+              signature: persistedCatalog.signature || '',
+            },
+            sourceBaseUrl: normalizeModelApiBaseUrl(baseUrl),
+            signature,
+            discoveredModels: state.discoveredModels.filter(
+              (model) => model.type !== 'image'
+            ),
+            selectedModelIds: preserveSelectedModelIds(state.selectedModelIds),
+          }
+        : {
+            ...createDefaultState(profileId),
+            sourceBaseUrl: normalizeModelApiBaseUrl(baseUrl),
+            signature,
+          }
+    );
     if (profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID) {
       removeLegacyPersistedState();
     }
@@ -1500,14 +1721,25 @@ class RuntimeModelDiscoveryStore {
     modelIds: string[]
   ): Promise<RuntimeModelSelectionChange> {
     const state = this.getCatalogState(profileId);
-    const previousSelectedModelIds = normalizeSelectedModelIds(
-      state.discoveredModels,
-      state.selectedModelIds
+    const hasStaleImageCatalogSnapshot = Boolean(
+      state.staleImageCatalogSnapshot
     );
-    const selectedModelIds = normalizeSelectedModelIds(
-      state.discoveredModels,
-      modelIds
-    );
+    const previousSelectedModelIds = hasStaleImageCatalogSnapshot
+      ? preserveSelectedModelIds(state.selectedModelIds)
+      : normalizeSelectedModelIds(
+          state.discoveredModels,
+          state.selectedModelIds
+        );
+    const hiddenSelectedModelIds = hasStaleImageCatalogSnapshot
+      ? state.selectedModelIds.filter(
+          (modelId) =>
+            !state.discoveredModels.some((model) => model.id === modelId)
+        )
+      : [];
+    const selectedModelIds = preserveSelectedModelIds([
+      ...normalizeSelectedModelIds(state.discoveredModels, modelIds),
+      ...hiddenSelectedModelIds,
+    ]);
     const previousSelectedSet = new Set(previousSelectedModelIds);
     const nextSelectedSet = new Set(selectedModelIds);
     const models = buildSelectedModels(
@@ -1537,6 +1769,7 @@ class RuntimeModelDiscoveryStore {
   }
 
   clear(profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID): void {
+    this.supersedeDiscovery(profileId);
     void this.setCatalogState(profileId, createDefaultState(profileId));
     if (profileId === LEGACY_DEFAULT_PROVIDER_PROFILE_ID) {
       removeLegacyPersistedState();
@@ -1553,10 +1786,55 @@ class RuntimeModelDiscoveryStore {
       throw new Error('缺少 API Key');
     }
 
-    const state = this.getCatalogState(profileId);
     const normalizedBaseUrl = normalizeModelApiBaseUrl(baseUrl);
-    const signature = buildDiscoverySignature(normalizedBaseUrl, trimmedApiKey);
+    const signature = buildProviderCatalogDiscoverySignature(
+      normalizedBaseUrl,
+      trimmedApiKey
+    );
+    const existingRequest = this.inFlightDiscoveries.get(profileId);
+    if (existingRequest?.signature === signature) {
+      return existingRequest.promise;
+    }
+
+    const sequence = this.beginDiscovery(profileId);
+    const controller = new AbortController();
+    const promise = this.performDiscovery(
+      profileId,
+      normalizedBaseUrl,
+      trimmedApiKey,
+      signature,
+      sequence,
+      controller.signal
+    );
+    this.inFlightDiscoveries.set(profileId, {
+      controller,
+      sequence,
+      signature,
+      promise,
+    });
+
+    try {
+      return await promise;
+    } finally {
+      const currentRequest = this.inFlightDiscoveries.get(profileId);
+      if (currentRequest?.sequence === sequence) {
+        this.inFlightDiscoveries.delete(profileId);
+      }
+    }
+  }
+
+  private async performDiscovery(
+    profileId: string,
+    normalizedBaseUrl: string,
+    trimmedApiKey: string,
+    signature: string,
+    sequence: number,
+    signal: AbortSignal
+  ): Promise<ModelConfig[]> {
+    const state = this.getCatalogState(profileId);
     const isSameCredential = state.signature === signature;
+    const shouldPreserveSelectedModelIds =
+      isSameCredential || Boolean(state.staleImageCatalogSnapshot);
 
     void this.setCatalogState(
       profileId,
@@ -1567,86 +1845,106 @@ class RuntimeModelDiscoveryStore {
         signature,
         discoveredAt: isSameCredential ? state.discoveredAt : null,
         discoveredModels: isSameCredential ? state.discoveredModels : [],
-        selectedModelIds: isSameCredential ? state.selectedModelIds : [],
+        selectedModelIds: shouldPreserveSelectedModelIds
+          ? state.selectedModelIds
+          : [],
         models: isSameCredential ? state.models : [],
         error: null,
       },
       false
     );
 
-    const response = await fetch(`${normalizedBaseUrl}/models`, {
-      headers: {
-        Authorization: `Bearer ${trimmedApiKey}`,
-      },
-    });
-
-    const rawText = await response.text();
-    if (!response.ok) {
-      throw new Error(
-        extractDiscoveryErrorMessage(
-          rawText,
-          `获取模型列表失败: HTTP ${response.status}`
-        )
-      );
-    }
-
-    let parsed: unknown;
     try {
-      parsed = JSON.parse(rawText);
-    } catch {
-      throw new Error('模型列表接口未返回有效 JSON');
-    }
+      const response = await fetch(`${normalizedBaseUrl}/models`, {
+        headers: {
+          Authorization: `Bearer ${trimmedApiKey}`,
+        },
+        signal,
+      });
 
-    const data = (parsed as { data?: unknown }).data;
-    if (!Array.isArray(data)) {
-      throw new Error('模型列表接口缺少 data 数组');
-    }
-
-    const adaptedModels: ModelConfig[] = [];
-    const seen = new Set<string>();
-    for (const item of data) {
-      const adapted = adaptRuntimeModel(item as RemoteModelListItem);
-      if (!adapted || seen.has(adapted.id)) {
-        continue;
+      const rawText = await response.text();
+      if (!response.ok) {
+        throw new Error(
+          extractDiscoveryErrorMessage(
+            rawText,
+            `获取模型列表失败: HTTP ${response.status}`
+          )
+        );
       }
-      seen.add(adapted.id);
-      adaptedModels.push(attachRuntimeSource(profileId, adapted));
+
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawText);
+      } catch {
+        throw new Error('模型列表接口未返回有效 JSON');
+      }
+
+      const data = (parsed as { data?: unknown }).data;
+      if (!Array.isArray(data)) {
+        throw new Error('模型列表接口缺少 data 数组');
+      }
+
+      const adaptedModels: ModelConfig[] = [];
+      const seen = new Set<string>();
+      for (const item of data) {
+        const adapted = adaptRuntimeModel(item as RemoteModelListItem);
+        if (!adapted || seen.has(adapted.id)) {
+          continue;
+        }
+        seen.add(adapted.id);
+        adaptedModels.push(attachRuntimeSource(profileId, adapted));
+      }
+
+      if (adaptedModels.length === 0) {
+        throw new Error('模型列表为空');
+      }
+
+      if (!this.isDiscoveryCurrent(profileId, sequence)) {
+        return this.resolveSupersededDiscovery(profileId, sequence);
+      }
+
+      const latestState = this.getCatalogState(profileId);
+      const selectedModelIds = shouldPreserveSelectedModelIds
+        ? normalizeSelectedModelIds(adaptedModels, latestState.selectedModelIds)
+        : [];
+      const models = buildSelectedModels(adaptedModels, selectedModelIds);
+
+      await this.setCatalogState(profileId, {
+        profileId,
+        routingEvidenceVersion: IMAGE_ROUTING_EVIDENCE_VERSION,
+        status: 'ready',
+        sourceBaseUrl: normalizedBaseUrl,
+        signature,
+        discoveredAt: Date.now(),
+        discoveredModels: adaptedModels,
+        selectedModelIds,
+        models,
+        error: null,
+      });
+
+      return adaptedModels;
+    } catch (error) {
+      if (!this.isDiscoveryCurrent(profileId, sequence)) {
+        return this.resolveSupersededDiscovery(profileId, sequence);
+      }
+      throw error;
     }
+  }
 
-    if (adaptedModels.length === 0) {
-      throw new Error('模型列表为空');
-    }
-
-    const selectedModelIds = isSameCredential
-      ? normalizeSelectedModelIds(adaptedModels, state.selectedModelIds)
-      : [];
-    const models = buildSelectedModels(adaptedModels, selectedModelIds);
-
-    await this.setCatalogState(profileId, {
-      profileId,
-      status: 'ready',
-      sourceBaseUrl: normalizedBaseUrl,
-      signature,
-      discoveredAt: Date.now(),
-      discoveredModels: adaptedModels,
-      selectedModelIds,
-      models,
-      error: null,
+  private setCatalogError(profileId: string, error: string): Promise<void> {
+    const state = this.getCatalogState(profileId);
+    return this.setCatalogState(profileId, {
+      ...state,
+      status: 'error',
+      error,
     });
-
-    return adaptedModels;
   }
 
   setError(
     profileId = LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
     error: string
   ): void {
-    const state = this.getCatalogState(profileId);
-    void this.setCatalogState(profileId, {
-      ...state,
-      status: 'error',
-      error,
-    });
+    void this.setCatalogError(profileId, error);
   }
 }
 

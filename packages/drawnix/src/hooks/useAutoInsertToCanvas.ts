@@ -64,6 +64,7 @@ import {
 } from '../utils/lyrics-task-utils';
 import { getImageGenerationTaskInsertGroupKey } from '../utils/image-generation-anchor-task';
 import { findImageGenerationAnchorForTaskOnBoard } from '../utils/image-generation-anchor-lookup';
+import { getTaskResultArtifactUrls } from '../utils/image-generation-anchor-batch';
 
 /**
  * 配置项
@@ -197,10 +198,7 @@ function getTaskImageGeneratedAt(task: Task): number {
 }
 
 function getImageResultUrls(task: Task): string[] {
-  if (task.result?.urls?.length) {
-    return task.result.urls.filter((url): url is string => !!url);
-  }
-  return task.result?.url ? [task.result.url] : [];
+  return getTaskResultArtifactUrls(task);
 }
 
 function getTaskBatchIndex(task: Task): number {
@@ -596,9 +594,17 @@ export function useAutoInsertToCanvas(
             const { task } = inserts[0];
             const isLyricsAudioTask = isLyricsTask(task);
             const url = task.result?.url;
-            const hasResultUrl = typeof url === 'string' && url.length > 0;
+            const imageResultUrls =
+              task.type === TaskType.IMAGE ? getImageResultUrls(task) : [];
+            const hasResultUrl =
+              task.type === TaskType.IMAGE
+                ? imageResultUrls.length > 0
+                : typeof url === 'string' && url.length > 0;
             const hasResultUrls =
-              Array.isArray(task.result?.urls) && task.result.urls.length > 0;
+              task.type === TaskType.IMAGE
+                ? imageResultUrls.length > 0
+                : Array.isArray(task.result?.urls) &&
+                  task.result.urls.length > 0;
 
             if (!hasResultUrl && !hasResultUrls && !isLyricsAudioTask) {
               // console.log(`[AutoInsert] Task ${task.id} has no result URL, skipping`);
@@ -661,6 +667,8 @@ export function useAutoInsertToCanvas(
                 ? [formatLyricsForCanvas(task)]
                 : type === 'audio'
                 ? resolveAudioResultUrls(task.result)
+                : type === 'image'
+                ? imageResultUrls
                 : task.result?.urls?.length
                 ? task.result.urls
                 : [url as string];
@@ -971,6 +979,8 @@ export function useAutoInsertToCanvas(
                   .flatMap(({ task }) =>
                     firstInsertTask.type === TaskType.AUDIO
                       ? resolveAudioResultUrls(task.result)
+                      : firstInsertTask.type === TaskType.IMAGE
+                      ? getImageResultUrls(task)
                       : task.result?.urls?.length
                       ? task.result.urls
                       : [task.result?.url]
@@ -1290,7 +1300,7 @@ export function useAutoInsertToCanvas(
      * 处理宫格图/灵感图任务：使用统一的媒体结果处理服务
      */
     const handleSplitTask = async (task: Task) => {
-      const url = task.result?.url;
+      const url = getImageResultUrls(task)[0];
       if (!url) {
         console.error('[AutoInsert] Split task has no result URL');
         releaseTaskInsertion(task.id);
@@ -1386,7 +1396,10 @@ export function useAutoInsertToCanvas(
       }
 
       // 检查是否有结果 URL
+      const hasImageResult =
+        task.type === TaskType.IMAGE && getImageResultUrls(task).length > 0;
       if (
+        !hasImageResult &&
         !task.result?.url &&
         !task.result?.urls?.length &&
         !isLyricsTask(task) &&

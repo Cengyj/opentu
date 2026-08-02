@@ -180,6 +180,20 @@ export interface GetImageForAIOptions {
   maxSize?: number;
   /** 压缩质量 0-1 */
   quality?: number;
+  /** Cancel cache lookup, remote fetch, image decode, and base64 conversion. */
+  signal?: AbortSignal;
+}
+
+function resolveImageAbortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException('Aborted', 'AbortError');
+}
+
+function throwIfImageAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw resolveImageAbortReason(signal);
+  }
 }
 
 /** Service Worker 消息类型 */
@@ -663,9 +677,11 @@ class UnifiedCacheService {
       maxAge = CACHE_CONSTANTS.DEFAULT_MAX_AGE,
       maxSize = CACHE_CONSTANTS.MAX_IMAGE_SIZE,
       quality = CACHE_CONSTANTS.DEFAULT_QUALITY,
+      signal,
     } = options;
 
     try {
+      throwIfImageAborted(signal);
       const normalizedUrl = normalizeImageDataUrl(url);
       if (isDataURL(normalizedUrl)) {
         return { type: 'base64', value: normalizedUrl };
@@ -679,6 +695,7 @@ class UnifiedCacheService {
 
       // 1. 查询缓存信息
       const info = await this.getCacheInfo(url);
+      throwIfImageAborted(signal);
 
       // 2. 如果未缓存或年龄未知
       if (!info.isCached || !info.cachedAt) {
@@ -718,30 +735,36 @@ class UnifiedCacheService {
       if (isVirtualUrl) {
         // 虚拟路径：直接从 Cache API 读取，不依赖 SW 拦截
         blob = await this.getCachedBlob(url);
+        throwIfImageAborted(signal);
         if (!blob) {
           throw new Error(`Virtual URL not found in cache: ${url}`);
         }
       } else {
         // 普通 URL：通过 fetch 获取
-        const response = await fetch(url);
+        const response = await fetch(url, signal ? { signal } : undefined);
         if (!response.ok) {
           throw new Error(`Failed to fetch image: ${response.status}`);
         }
         blob = await response.blob();
+        throwIfImageAborted(signal);
       }
 
       // 7. 如果图片过大，进行压缩
       if (blob.size > maxSize && blob.type.startsWith('image/')) {
         // console.log(`[UnifiedCache] Image too large (${(blob.size / 1024 / 1024).toFixed(2)}MB), compressing...`);
-        blob = await this.compressImage(blob, quality);
+        blob = await this.compressImage(blob, quality, signal);
         // console.log(`[UnifiedCache] Compressed to ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
       }
 
       // 8. 转换为 base64
       const base64 = await blobToDataURL(blob);
+      throwIfImageAborted(signal);
 
       return { type: 'base64', value: base64 };
     } catch (error) {
+      if (signal?.aborted) {
+        throw resolveImageAbortReason(signal);
+      }
       console.error('[UnifiedCache] Failed to get image for AI:', error);
       // 降级：返回原始 URL
       return { type: 'url', value: url };
@@ -751,23 +774,50 @@ class UnifiedCacheService {
   /**
    * 压缩图片
    */
-  private async compressImage(blob: Blob, quality: number): Promise<Blob> {
+  private async compressImage(
+    blob: Blob,
+    quality: number,
+    signal?: AbortSignal
+  ): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const img = new Image();
       const objectUrl = URL.createObjectURL(blob);
-      img.onload = () => {
+      const cleanup = () => {
         URL.revokeObjectURL(objectUrl);
+        signal?.removeEventListener('abort', onAbort);
+      };
+      const onAbort = () => {
+        img.src = '';
+        cleanup();
+        reject(resolveImageAbortReason(signal!));
+      };
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      signal?.addEventListener('abort', onAbort, { once: true });
+      img.onload = () => {
+        if (signal?.aborted) {
+          onAbort();
+          return;
+        }
         const canvas = document.createElement('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
+          cleanup();
           reject(new Error('Failed to get canvas context'));
           return;
         }
         ctx.drawImage(img, 0, 0);
         canvas.toBlob(
           (compressedBlob) => {
+            cleanup();
+            if (signal?.aborted) {
+              reject(resolveImageAbortReason(signal));
+              return;
+            }
             if (compressedBlob) {
               resolve(compressedBlob);
             } else {
@@ -779,7 +829,7 @@ class UnifiedCacheService {
         );
       };
       img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
+        cleanup();
         reject(new Error('Failed to load image'));
       };
       img.src = objectUrl;

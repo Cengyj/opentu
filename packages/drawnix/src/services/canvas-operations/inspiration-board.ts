@@ -11,9 +11,8 @@ import {
 } from '../../types/photo-wall.types';
 import { taskQueueService } from '../task-queue';
 import { TaskType } from '../../types/task.types';
-import { geminiSettings } from '../../utils/settings-manager';
-import { getDefaultImageModel } from '../../constants/model-config';
-import { getPreferredModels } from '../../utils/runtime-model-discovery';
+import type { ModelRef } from '../../utils/settings-manager';
+import { resolveImageTaskModelSelection } from '../image-task-model-selection';
 
 /**
  * 灵感图参数
@@ -31,18 +30,8 @@ export interface InspirationBoardParams {
   referenceImages?: string[];
   /** AI 模型 */
   model?: string;
-}
-
-/**
- * 获取当前图片模型
- */
-function getCurrentImageModel(): string {
-  const settings = geminiSettings.get();
-  return (
-    settings.imageModelName ||
-    getPreferredModels('image')[0]?.id ||
-    getDefaultImageModel()
-  );
+  /** 模型来源引用（同名模型跨供应商隔离） */
+  modelRef?: ModelRef | null;
 }
 
 /**
@@ -69,6 +58,7 @@ export function createInspirationBoardTask(
     imageSize = '16x9',
     referenceImages,
     model,
+    modelRef,
   } = params;
 
   if (!theme || typeof theme !== 'string') {
@@ -85,8 +75,7 @@ export function createInspirationBoardTask(
   // 构建生图提示词
   const prompt = buildInspirationBoardPrompt(theme, validImageCount);
 
-  // 确定使用的模型
-  const actualModel = model || getCurrentImageModel();
+  const modelSelection = resolveImageTaskModelSelection(model, modelRef);
 
   // 将参考图片转换为 uploadedImages 格式
   const uploadedImages = referenceImages?.map((url, index) => ({
@@ -111,7 +100,8 @@ export function createInspirationBoardTask(
         {
           prompt,
           size: imageSize,
-          model: actualModel,
+          model: modelSelection.model,
+          modelRef: modelSelection.modelRef,
           uploadedImages:
             uploadedImages && uploadedImages.length > 0
               ? uploadedImages

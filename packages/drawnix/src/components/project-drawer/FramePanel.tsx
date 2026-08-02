@@ -101,6 +101,7 @@ import { taskQueueService } from '../../services/task-queue';
 import { useSharedTaskState } from '../../hooks/useTaskQueue';
 import { usePromptHistory } from '../../hooks/usePromptHistory';
 import { TaskStatus, TaskType, type Task } from '../../types/task.types';
+import { getTaskResultArtifactUrls } from '../../utils/image-generation-anchor-batch';
 import { AI_GENERATION_CONCURRENCY_LIMIT } from '../../constants/TASK_CONSTANTS';
 import { duplicateFrame, focusFrame } from '../../utils/frame-duplicate';
 import {
@@ -615,15 +616,8 @@ function getPPTCommonPromptFromFrameInfos(frameInfos: FrameInfo[]): string {
   return formatPPTCommonPrompt(frameWithStyle?.pptMeta?.styleSpec);
 }
 
-function getTaskResultImageUrl(task: any): string | undefined {
-  const result = task?.result;
-  if (typeof result?.url === 'string' && result.url) {
-    return result.url;
-  }
-  if (Array.isArray(result?.urls) && typeof result.urls[0] === 'string') {
-    return result.urls[0];
-  }
-  return undefined;
+function getTaskResultImageUrl(task?: Task): string | undefined {
+  return task ? getTaskResultArtifactUrls(task)[0] : undefined;
 }
 
 function getOrderedPPTFrameInfos(frameInfos: FrameInfo[]): FrameInfo[] {

@@ -20,6 +20,11 @@ import { BaseStorageReader } from './base-storage-reader';
 import { normalizeImageDataUrl } from '@aitu/utils';
 import { STORAGE_LIMITS } from '../constants/TASK_CONSTANTS';
 import type { CacheWarning } from '../types/cache-warning.types';
+import {
+  resolveImageArtifactsFromTaskResult,
+  type ImageArtifact,
+} from '../types/image-artifact.types';
+import { normalizeImageTaskResultArtifactProjection } from './image-invocation/task-result-artifacts';
 
 import { APP_DB_NAME, APP_DB_STORES, getAppDB } from './app-database';
 import { normalizeTerminalTaskExecutionPhase } from './task-lifecycle-invariants';
@@ -41,6 +46,7 @@ interface SWTask {
   result?: {
     url: string;
     urls?: string[];
+    imageArtifacts?: ImageArtifact[];
     thumbnailUrls?: string[];
     format: string;
     size: number;
@@ -113,6 +119,7 @@ export interface AssetTaskRecord {
   result?: {
     url: string;
     urls?: string[];
+    imageArtifacts?: ImageArtifact[];
     format: string;
     size: number;
     duration?: number;
@@ -161,6 +168,7 @@ export interface PromptHistoryTaskSummary {
     NonNullable<SWTask['result']>,
     | 'url'
     | 'urls'
+    | 'imageArtifacts'
     | 'thumbnailUrl'
     | 'thumbnailUrls'
     | 'previewImageUrl'
@@ -189,9 +197,10 @@ function convertSWTaskToTask(swTask: SWTask): Task {
   const normalizedResult =
     swTask.type === TaskType.IMAGE && swTask.result
       ? {
-          ...swTask.result,
-          url: normalizeImageDataUrl(swTask.result.url),
-          urls: swTask.result.urls?.map((url) => normalizeImageDataUrl(url)),
+          ...normalizeImageTaskResultArtifactProjection(
+            swTask.result,
+            normalizeImageDataUrl
+          ),
           thumbnailUrl: swTask.result.thumbnailUrl
             ? normalizeImageDataUrl(swTask.result.thumbnailUrl)
             : swTask.result.thumbnailUrl,
@@ -245,16 +254,9 @@ function normalizeComparableImageTaskUrl(value: string): string {
 }
 
 function getSWTaskResultUrls(swTask: SWTask): string[] {
-  const urls = new Set<string>();
-  if (swTask.result?.url) {
-    urls.add(swTask.result.url);
-  }
-  swTask.result?.urls?.forEach((url) => {
-    if (url) {
-      urls.add(url);
-    }
-  });
-  return Array.from(urls);
+  return resolveImageArtifactsFromTaskResult(swTask.result).map(
+    (artifact) => artifact.url
+  );
 }
 
 function swImageTaskMatchesUrl(swTask: SWTask, targetUrl: string): boolean {
@@ -272,22 +274,32 @@ function convertSWTaskToAssetTask(swTask: SWTask): AssetTaskRecord | null {
     (swTask.type !== TaskType.IMAGE &&
       swTask.type !== TaskType.VIDEO &&
       swTask.type !== TaskType.AUDIO) ||
-    !swTask.result?.url
+    !swTask.result
   ) {
+    return null;
+  }
+  const sourceResult = swTask.result;
+  const hasImageArtifact =
+    swTask.type === TaskType.IMAGE &&
+    sourceResult.imageArtifacts?.some(
+      (artifact) => typeof artifact.url === 'string' && artifact.url.length > 0
+    );
+  if (!sourceResult.url && !hasImageArtifact) {
     return null;
   }
 
   const normalizedResult =
     swTask.type === TaskType.IMAGE
       ? {
-          ...swTask.result,
-          url: normalizeImageDataUrl(swTask.result.url),
-          urls: swTask.result.urls?.map((url) => normalizeImageDataUrl(url)),
-          previewImageUrl: swTask.result.previewImageUrl
-            ? normalizeImageDataUrl(swTask.result.previewImageUrl)
-            : swTask.result.previewImageUrl,
+          ...normalizeImageTaskResultArtifactProjection(
+            sourceResult,
+            normalizeImageDataUrl
+          ),
+          previewImageUrl: sourceResult.previewImageUrl
+            ? normalizeImageDataUrl(sourceResult.previewImageUrl)
+            : sourceResult.previewImageUrl,
         }
-      : swTask.result;
+      : sourceResult;
 
   return {
     id: swTask.id,
@@ -309,6 +321,7 @@ function convertSWTaskToAssetTask(swTask: SWTask): AssetTaskRecord | null {
       ? {
           url: normalizedResult.url,
           urls: normalizedResult.urls,
+          imageArtifacts: normalizedResult.imageArtifacts,
           format: normalizedResult.format,
           size: normalizedResult.size,
           duration: normalizedResult.duration,
@@ -351,25 +364,33 @@ function convertSWTaskToPromptHistorySummary(
     return null;
   }
 
-  const result = swTask.result
+  const sourceResult =
+    swTask.type === TaskType.IMAGE && swTask.result
+      ? normalizeImageTaskResultArtifactProjection(
+          swTask.result,
+          normalizeImageDataUrl
+        )
+      : swTask.result;
+  const result = sourceResult
     ? {
-        url: swTask.result.url,
-        urls: swTask.result.urls,
-        thumbnailUrl: swTask.result.thumbnailUrl,
-        thumbnailUrls: swTask.result.thumbnailUrls,
-        previewImageUrl: swTask.result.previewImageUrl,
-        title: swTask.result.title,
-        resultKind: swTask.result.resultKind,
-        duration: swTask.result.duration,
-        chatResponse: swTask.result.chatResponse
-          ? swTask.result.chatResponse.slice(0, 500)
+        url: sourceResult.url,
+        urls: sourceResult.urls,
+        imageArtifacts: sourceResult.imageArtifacts,
+        thumbnailUrl: sourceResult.thumbnailUrl,
+        thumbnailUrls: sourceResult.thumbnailUrls,
+        previewImageUrl: sourceResult.previewImageUrl,
+        title: sourceResult.title,
+        resultKind: sourceResult.resultKind,
+        duration: sourceResult.duration,
+        chatResponse: sourceResult.chatResponse
+          ? sourceResult.chatResponse.slice(0, 500)
           : undefined,
-        lyricsText: swTask.result.lyricsText
-          ? swTask.result.lyricsText.slice(0, 500)
+        lyricsText: sourceResult.lyricsText
+          ? sourceResult.lyricsText.slice(0, 500)
           : undefined,
-        lyricsTitle: swTask.result.lyricsTitle,
-        lyricsTags: swTask.result.lyricsTags,
-        clips: swTask.result.clips?.slice(0, 3).map((clip) => ({
+        lyricsTitle: sourceResult.lyricsTitle,
+        lyricsTags: sourceResult.lyricsTags,
+        clips: sourceResult.clips?.slice(0, 3).map((clip) => ({
           id: clip.id,
           clipId: clip.clipId,
           title: clip.title,

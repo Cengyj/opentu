@@ -3,21 +3,40 @@
  * 纯函数，将 endpoint path 映射到已有的 protocol/requestSchema 体系。
  */
 import type { PricingEndpointInfo } from '../../utils/model-pricing-types';
-import type { ProviderModelBinding } from './types';
+import { normalizeProviderHttpMethod } from './binding-http-method';
+import type { ProviderModelBinding, ProviderOperation } from './types';
 
 export interface EndpointBindingHint {
+  /** Modalities proven compatible by the matched endpoint contract. */
+  supportedOperations: readonly ProviderOperation[];
   protocol: ProviderModelBinding['protocol'];
   requestSchema: string;
   responseSchema: string;
   submitPath: string;
+  submitMethod: ProviderModelBinding['submitMethod'];
   pollPathTemplate?: string;
+  pollMethod?: ProviderModelBinding['pollMethod'];
   baseUrlStrategy?: ProviderModelBinding['baseUrlStrategy'];
   metadata?: ProviderModelBinding['metadata'];
 }
 
 interface PathPattern {
   test: (path: string, endpoint: PricingEndpointInfo) => boolean;
-  hint: (path: string, endpoint: PricingEndpointInfo) => EndpointBindingHint;
+  hint: (
+    path: string,
+    endpoint: PricingEndpointInfo
+  ) => Omit<EndpointBindingHint, 'submitMethod' | 'pollMethod'>;
+}
+
+function completeEndpointBindingHint(
+  hint: Omit<EndpointBindingHint, 'submitMethod' | 'pollMethod'>,
+  endpoint: PricingEndpointInfo
+): EndpointBindingHint {
+  return {
+    ...hint,
+    submitMethod: normalizeProviderHttpMethod(endpoint.method, 'POST'),
+    ...(hint.pollPathTemplate ? { pollMethod: 'GET' as const } : {}),
+  };
 }
 
 function normalizeEndpointPath(path: string): string {
@@ -40,6 +59,7 @@ const PATH_PATTERNS: PathPattern[] = [
   {
     test: (p) => /:generateContent$/i.test(p),
     hint: (p) => ({
+      supportedOperations: ['text', 'image'],
       protocol: 'google.generateContent',
       requestSchema: 'google.generate-content.image-inline',
       responseSchema: 'google.generate-content.parts',
@@ -50,11 +70,12 @@ const PATH_PATTERNS: PathPattern[] = [
   // Midjourney
   {
     test: (p) => p.includes('/mj/submit/imagine'),
-    hint: () => ({
+    hint: (p) => ({
+      supportedOperations: ['image'],
       protocol: 'mj.imagine',
       requestSchema: 'mj.imagine.base64-array',
       responseSchema: 'mj.task.status',
-      submitPath: '/mj/submit/imagine',
+      submitPath: p,
       pollPathTemplate: '/mj/task/{taskId}/fetch',
     }),
   },
@@ -62,6 +83,7 @@ const PATH_PATTERNS: PathPattern[] = [
   {
     test: (p) => /\/flux\/v\d+\//i.test(p),
     hint: (p) => ({
+      supportedOperations: ['image'],
       protocol: 'flux.task',
       requestSchema: 'flux.image.polling-json',
       responseSchema: 'flux.task.status',
@@ -73,6 +95,7 @@ const PATH_PATTERNS: PathPattern[] = [
   {
     test: (p) => /\/kling\/.*\/videos\//i.test(p),
     hint: () => ({
+      supportedOperations: ['video'],
       protocol: 'kling.video',
       requestSchema: 'kling.video.auto-action-json',
       responseSchema: 'kling.video.task',
@@ -84,6 +107,7 @@ const PATH_PATTERNS: PathPattern[] = [
   {
     test: (p) => /\/suno\//i.test(p),
     hint: () => ({
+      supportedOperations: ['audio'],
       protocol: 'for.suno.music',
       requestSchema: 'for.suno.music.submit',
       responseSchema: 'for.suno.task',
@@ -105,21 +129,23 @@ const PATH_PATTERNS: PathPattern[] = [
   // OpenAI images/edits
   {
     test: (p) => /\/images\/edits/i.test(p),
-    hint: () => ({
+    hint: (p) => ({
+      supportedOperations: ['image'],
       protocol: 'openai.images.edits',
       requestSchema: 'openai.image.gpt-edit-form',
       responseSchema: 'openai.image.data',
-      submitPath: '/images/edits',
+      submitPath: p,
     }),
   },
   // OpenAI images/generations
   {
     test: (p) => /\/images\/generations/i.test(p),
-    hint: () => ({
+    hint: (p) => ({
+      supportedOperations: ['image'],
       protocol: 'openai.images.generations',
       requestSchema: 'openai.image.basic-json',
       responseSchema: 'openai.image.data',
-      submitPath: '/images/generations',
+      submitPath: p,
     }),
   },
   // OpenAI async image task via unified /v1/videos endpoint
@@ -129,6 +155,7 @@ const PATH_PATTERNS: PathPattern[] = [
       isPostEndpoint(ep) &&
       ep.scenario === 'async-image',
     hint: () => ({
+      supportedOperations: ['image'],
       protocol: 'openai.async.media',
       requestSchema: 'openai.async.image.form',
       responseSchema: 'openai.async.task',
@@ -145,6 +172,7 @@ const PATH_PATTERNS: PathPattern[] = [
   {
     test: (p) => /\/videos/i.test(p) && !/\/kling\//i.test(p),
     hint: () => ({
+      supportedOperations: ['video'],
       protocol: 'openai.async.video',
       requestSchema: 'openai.video.form-input-reference',
       responseSchema: 'openai.async.task',
@@ -156,6 +184,7 @@ const PATH_PATTERNS: PathPattern[] = [
   {
     test: (p) => /\/chat\/completions/i.test(p),
     hint: () => ({
+      supportedOperations: ['text'],
       protocol: 'openai.chat.completions',
       requestSchema: 'openai.chat.messages',
       responseSchema: 'openai.chat.choices',
@@ -176,7 +205,7 @@ export function inferBindingHintFromEndpoints(
     const path = ep.path.trim();
     for (const pattern of PATH_PATTERNS) {
       if (pattern.test(path, ep)) {
-        return pattern.hint(path, ep);
+        return completeEndpointBindingHint(pattern.hint(path, ep), ep);
       }
     }
   }
@@ -184,7 +213,10 @@ export function inferBindingHintFromEndpoints(
 }
 
 /**
- * 从 pricing endpoints 数据中推断所有匹配的 binding hints（去重 protocol）。
+ * 从 pricing endpoints 数据中推断所有匹配的 binding hints。
+ *
+ * 同一协议可能由供应商暴露在多个实际路径上。仅按 protocol 去重会在
+ * InvocationPlanner 检查歧义前静默丢失候选，因此按完整执行身份去重。
  */
 export function inferAllBindingHintsFromEndpoints(
   endpoints: Record<string, PricingEndpointInfo>
@@ -196,9 +228,19 @@ export function inferAllBindingHintsFromEndpoints(
     const path = ep.path.trim();
     for (const pattern of PATH_PATTERNS) {
       if (pattern.test(path, ep)) {
-        const hint = pattern.hint(path, ep);
-        if (!seen.has(hint.protocol)) {
-          seen.add(hint.protocol);
+        const hint = completeEndpointBindingHint(pattern.hint(path, ep), ep);
+        const identity = JSON.stringify([
+          hint.protocol,
+          hint.requestSchema,
+          hint.responseSchema,
+          hint.submitPath,
+          hint.submitMethod,
+          hint.pollPathTemplate || null,
+          hint.pollMethod || null,
+          hint.baseUrlStrategy || 'preserve',
+        ]);
+        if (!seen.has(identity)) {
+          seen.add(identity);
           hints.push(hint);
         }
         break;

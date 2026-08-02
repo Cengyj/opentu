@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   buildImageGenerationAnchorViewModel,
   deriveImageGenerationAnchorPhase,
@@ -78,7 +78,6 @@ function createWorkflow(
 
 describe('image-generation-anchor-view-model', () => {
   afterEach(() => {
-    vi.useRealTimers();
     workflowCompletionService.clear();
   });
 
@@ -94,22 +93,18 @@ describe('image-generation-anchor-view-model', () => {
     expect(phase).toBe('queued');
   });
 
-  it('uses simulated image progress during queued processing', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-15T08:00:00.000Z'));
-
+  it('uses indeterminate progress when the provider reports no progress', () => {
     const viewModel = buildImageGenerationAnchorViewModel({
       anchor: createAnchor({ phase: 'submitted' }),
       task: createTask({
         status: TaskStatus.PROCESSING,
         executionPhase: TaskExecutionPhase.SUBMITTING,
-        startedAt: Date.now() - 90_000,
       }),
     });
 
     expect(viewModel.phase).toBe('queued');
-    expect(viewModel.progressMode).toBe('determinate');
-    expect(viewModel.progress).toBeGreaterThan(0);
+    expect(viewModel.progressMode).toBe('indeterminate');
+    expect(viewModel.progress).toBeNull();
   });
 
   it('maps processing task without submitting phase to generating', () => {

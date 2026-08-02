@@ -20,6 +20,7 @@ import { AssetType } from '../types/asset.types';
 import type { Task } from '../types/task.types';
 import { TaskType } from '../types/task.types';
 import { applyAudioMetadataToBlob, type AudioDownloadMetadata } from './audio-id3';
+import { getTaskResultImageArtifacts } from './image-generation-anchor-batch';
 
 export interface SmartDownloadResult {
   openedCount: number;
@@ -284,7 +285,17 @@ export function buildAssetDownloadItems(
 export function buildTaskDownloadItems(
   task: Pick<Task, 'type' | 'params' | 'result'>
 ): BatchDownloadItem[] {
-  if (!task.result?.url && !task.result?.urls?.length) {
+  const result = task.result;
+  if (!result) {
+    return [];
+  }
+  const imageArtifacts =
+    task.type === TaskType.IMAGE ? getTaskResultImageArtifacts(task) : [];
+  if (
+    imageArtifacts.length === 0 &&
+    !result.url &&
+    !result.urls?.length
+  ) {
     return [];
   }
 
@@ -294,7 +305,11 @@ export function buildTaskDownloadItems(
       : task.type === TaskType.VIDEO
       ? 'video'
       : 'audio';
-  const urls = task.result.urls?.length ? task.result.urls : [task.result.url];
+  const urls = imageArtifacts.length
+    ? imageArtifacts.map((artifact) => artifact.url)
+    : result.urls?.length
+    ? result.urls
+    : [result.url];
 
   return urls.map((url, index) => {
     const clip = task.result?.clips?.[index];
@@ -304,7 +319,7 @@ export function buildTaskDownloadItems(
       task.params.title ||
       task.params.prompt;
     const extension = resolveDownloadExtension(
-      task.result?.format,
+      imageArtifacts[index]?.format || task.result?.format,
       getTypeFallbackExtension(type),
       url
     );

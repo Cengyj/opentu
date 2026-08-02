@@ -9,6 +9,12 @@ permissions:
   contents: read
   packages: write
 
+# `latest` is shared by every tag. Serialize the complete promotion chain so an
+# older release cannot finish after a newer one and move `latest` back.
+concurrency:
+  group: publish-container-release
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -16,13 +22,19 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Set TAG
         run: |
+          package_version="$(node -p "require('./package.json').version")"
           echo "TAG=${GITHUB_REF#refs/tags/}" >> "$GITHUB_ENV"
           echo "IMAGE_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+          echo "PACKAGE_VERSION=${package_version}" >> "$GITHUB_ENV"
+
+      - name: Reject display-version reuse
+        run: |
+          node scripts/verify-release-static.mjs preflight \
+            --tag "${TAG}" \
+            --package-json package.json \
+            --version-json apps/web/public/version.json
 
       - name: Detect Docker Hub credentials
         id: dockerhub
@@ -50,14 +62,374 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish container image
-        uses: docker/build-push-action@v3
+      - name: Resolve immutable version image for build or recovery
+        id: release_image
+        env:
+          DOCKERHUB_ENABLED: ${{ steps.dockerhub.outputs.enabled }}
+        run: |
+          set -euo pipefail
+          ghcr_image="ghcr.io/${IMAGE_OWNER}/drawnix:${TAG}"
+          dockerhub_image="pubuzhixing/drawnix:${TAG}"
+          approved_image="opentu-release-approved:${GITHUB_SHA}"
+          promotion_plan="${RUNNER_TEMP}/container-promotion-plan.json"
+
+          inspect_version_image() {
+            remote_image="$1"
+            manifest_error="${RUNNER_TEMP}/manifest-error.txt"
+            if ! docker manifest inspect "${remote_image}" \
+              >/dev/null 2>"${manifest_error}"; then
+              if grep --ignore-case --extended-regexp \
+                'manifest unknown|no such manifest|not found' \
+                "${manifest_error}" >/dev/null; then
+                echo "version tag is unused: ${remote_image}" >&2
+                printf '%s\n' missing
+                return
+              fi
+              echo "could not prove version tag availability for ${remote_image}" >&2
+              exit 1
+            fi
+
+            docker pull "${remote_image}" >/dev/null
+            docker image inspect --format '{{.Id}}' "${remote_image}"
+          }
+
+          ghcr_id="$(inspect_version_image "${ghcr_image}")"
+          plan_args=(
+            node scripts/verify-release-static.mjs plan-promotion
+            --ghcr-image "${ghcr_image}"
+            --ghcr-image-id "${ghcr_id}"
+            --output "${promotion_plan}"
+          )
+          if [[ "${DOCKERHUB_ENABLED}" == "true" ]]; then
+            dockerhub_id="$(inspect_version_image "${dockerhub_image}")"
+            plan_args+=(
+              --dockerhub-image "${dockerhub_image}"
+              --dockerhub-image-id "${dockerhub_id}"
+            )
+          fi
+          "${plan_args[@]}"
+
+          mode="$(node -e 'const p=require(process.argv[1]);process.stdout.write(p.mode)' "${promotion_plan}")"
+          source_image="$(node -e 'const p=require(process.argv[1]);process.stdout.write(p.source || "")' "${promotion_plan}")"
+          if [[ "${mode}" == "recover" ]]; then
+            docker tag "${source_image}" "${approved_image}"
+          fi
+
+          echo "mode=${mode}" >> "${GITHUB_OUTPUT}"
+          echo "source=${source_image}" >> "${GITHUB_OUTPUT}"
+          echo "approved=${approved_image}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build exact candidate image
+        if: steps.release_image.outputs.mode == 'build'
+        env:
+          APPROVED_IMAGE: ${{ steps.release_image.outputs.approved }}
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            --build-arg OPENTU_RELEASE_ID="${GITHUB_SHA}" \
+            --build-arg OPENTU_DISPLAY_VERSION="${PACKAGE_VERSION}" \
+            --build-arg GITHUB_SHA="${GITHUB_SHA}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --tag "${APPROVED_IMAGE}" \
+            --file Dockerfile \
+            .
+
+      - name: Verify approved release image and create byte contract
+        env:
+          APPROVED_IMAGE: ${{ steps.release_image.outputs.approved }}
+          RELEASE_CONTRACT: ${{ runner.temp }}/release-static-contract.json
+          RELEASE_ROOT: ${{ runner.temp }}/release-static-root
+        run: |
+          set -euo pipefail
+          files_container="release-static-files-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          server_container="release-static-server-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          cleanup() {
+            docker rm --force "${server_container}" >/dev/null 2>&1 || true
+            docker rm --force "${files_container}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          mkdir -p "${RELEASE_ROOT}"
+          docker create --name "${files_container}" "${APPROVED_IMAGE}" >/dev/null
+          docker image inspect --format '{{json .Config.Labels}}' \
+            "${APPROVED_IMAGE}" > "${RUNNER_TEMP}/approved-image-labels.json"
+          node scripts/verify-release-static.mjs verify-image-metadata \
+            --labels-json "${RUNNER_TEMP}/approved-image-labels.json" \
+            --expected-release-id "${GITHUB_SHA}" \
+            --expected-version "${PACKAGE_VERSION}" \
+            --expected-revision "${GITHUB_SHA}"
+          docker cp "${files_container}:/usr/share/nginx/html/." "${RELEASE_ROOT}/"
+
+          node scripts/verify-release-static.mjs create \
+            --dist "${RELEASE_ROOT}" \
+            --output "${RELEASE_CONTRACT}" \
+            --expected-release-id "${GITHUB_SHA}" \
+            --expected-version "${PACKAGE_VERSION}"
+
+          docker run --detach --name "${server_container}" \
+            --publish 127.0.0.1::80 "${APPROVED_IMAGE}" >/dev/null
+          server_port="$(docker port "${server_container}" 80/tcp | sed 's/.*://')"
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error \
+              "http://127.0.0.1:${server_port}/version.json" >/dev/null; then
+              break
+            fi
+            if [[ "${attempt}" == "30" ]]; then
+              echo "approved release server did not become ready" >&2
+              exit 1
+            fi
+            sleep 1
+          done
+
+          node scripts/verify-release-static.mjs verify \
+            --contract "${RELEASE_CONTRACT}" \
+            --expected-release-id "${GITHUB_SHA}" \
+            --expected-version "${PACKAGE_VERSION}" \
+            --origin "http://127.0.0.1:${server_port}"
+
+      - name: Upload approved release byte contract
+        uses: actions/upload-artifact@v6
         with:
-          file: Dockerfile
-          outputs: 'type=registry,push=true'
-          platforms: linux/amd64
-          tags: |
-            ghcr.io/${{ env.IMAGE_OWNER }}/drawnix:latest
-            ghcr.io/${{ env.IMAGE_OWNER }}/drawnix:${{ env.TAG }}
-            ${{ steps.dockerhub.outputs.enabled == 'true' && format('pubuzhixing/drawnix:{0}', env.TAG) || '' }}
-            ${{ steps.dockerhub.outputs.enabled == 'true' && 'pubuzhixing/drawnix:latest' || '' }}
+          name: release-static-contract-${{ github.sha }}
+          path: ${{ runner.temp }}/release-static-contract.json
+          if-no-files-found: error
+
+      - name: Publish immutable version tags
+        env:
+          APPROVED_IMAGE: ${{ steps.release_image.outputs.approved }}
+          DOCKERHUB_ENABLED: ${{ steps.dockerhub.outputs.enabled }}
+        run: |
+          set -euo pipefail
+          approved_id="$(docker image inspect --format '{{.Id}}' "${APPROVED_IMAGE}")"
+
+          inspect_version_image() {
+            remote_image="$1"
+            manifest_error="${RUNNER_TEMP}/manifest-error.txt"
+            if ! docker manifest inspect "${remote_image}" \
+              >/dev/null 2>"${manifest_error}"; then
+              if grep --ignore-case --extended-regexp \
+                'manifest unknown|no such manifest|not found' \
+                "${manifest_error}" >/dev/null; then
+                printf '%s\n' missing
+                return
+              fi
+              echo "could not prove version tag availability for ${remote_image}" >&2
+              exit 1
+            fi
+            docker pull "${remote_image}" >/dev/null
+            docker image inspect --format '{{.Id}}' "${remote_image}"
+          }
+
+          publish_immutable_version() {
+            remote_image="$1"
+            remote_id="$(inspect_version_image "${remote_image}")"
+            if [[ "${remote_id}" != "missing" ]]; then
+              node scripts/verify-release-static.mjs compare-image \
+                --tag "${remote_image}" \
+                --candidate-image-id "${approved_id}" \
+                --published-image-id "${remote_id}"
+              return
+            fi
+
+            docker tag "${APPROVED_IMAGE}" "${remote_image}"
+            docker push "${remote_image}"
+            published_id="$(inspect_version_image "${remote_image}")"
+            node scripts/verify-release-static.mjs compare-image \
+              --tag "${remote_image}" \
+              --candidate-image-id "${approved_id}" \
+              --published-image-id "${published_id}"
+          }
+
+          publish_immutable_version "ghcr.io/${IMAGE_OWNER}/drawnix:${TAG}"
+          if [[ "${DOCKERHUB_ENABLED}" == "true" ]]; then
+            publish_immutable_version "pubuzhixing/drawnix:${TAG}"
+          fi
+
+      - name: Authorize and converge mutable latest aliases
+        env:
+          APPROVED_IMAGE: ${{ steps.release_image.outputs.approved }}
+          DOCKERHUB_ENABLED: ${{ steps.dockerhub.outputs.enabled }}
+        run: |
+          set -euo pipefail
+          approved_id="$(docker image inspect --format '{{.Id}}' "${APPROVED_IMAGE}")"
+          ghcr_latest="ghcr.io/${IMAGE_OWNER}/drawnix:latest"
+          dockerhub_latest="pubuzhixing/drawnix:latest"
+          latest_plan="${RUNNER_TEMP}/latest-promotion-plan.json"
+          declare -A latest_ids latest_versions latest_release_ids previous_tags
+          declare -A latest_names
+          latest_names["${ghcr_latest}"]="ghcr"
+          latest_names["${dockerhub_latest}"]="dockerhub"
+
+          inspect_latest() {
+            name="$1"
+            remote_image="$2"
+            manifest_error="${RUNNER_TEMP}/${name}-latest-manifest-error.txt"
+            if ! docker manifest inspect "${remote_image}" \
+              >/dev/null 2>"${manifest_error}"; then
+              if grep --ignore-case --extended-regexp \
+                'manifest unknown|no such manifest|not found' \
+                "${manifest_error}" >/dev/null; then
+                latest_ids["${name}"]="missing"
+                latest_versions["${name}"]="missing"
+                latest_release_ids["${name}"]="missing"
+                previous_tags["${name}"]=""
+                return
+              fi
+              echo "could not inspect mutable latest image ${remote_image}" >&2
+              return 1
+            fi
+
+            docker pull "${remote_image}" >/dev/null
+            latest_ids["${name}"]="$(docker image inspect --format '{{.Id}}' "${remote_image}")"
+            labels_file="${RUNNER_TEMP}/${name}-latest-labels.json"
+            docker image inspect --format '{{json .Config.Labels}}' \
+              "${remote_image}" > "${labels_file}"
+            label_version="$(node -e 'const l=require(process.argv[1]);process.stdout.write(typeof l?.["org.opencontainers.image.version"] === "string" ? l["org.opencontainers.image.version"] : "")' "${labels_file}")"
+            label_release_id="$(node -e 'const l=require(process.argv[1]);process.stdout.write(typeof l?.["io.opentu.release-id"] === "string" ? l["io.opentu.release-id"] : "")' "${labels_file}")"
+            if [[ -n "${label_version}" && -n "${label_release_id}" ]]; then
+              latest_versions["${name}"]="${label_version}"
+              latest_release_ids["${name}"]="${label_release_id}"
+            elif [[ -n "${label_version}" || -n "${label_release_id}" ]]; then
+              echo "latest image has incomplete release labels: ${remote_image}" >&2
+              return 1
+            else
+              # One centralized migration boundary for images published before
+              # release labels existed. Only their embedded display version is
+              # accepted, and the pure plan still requires a strict forward
+              # SemVer move before changing latest.
+              evidence_container="latest-evidence-${name}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+              evidence_file="${RUNNER_TEMP}/${name}-legacy-version.json"
+              docker create --name "${evidence_container}" "${remote_image}" >/dev/null
+              copied=false
+              for source_path in \
+                /usr/share/nginx/html/version.json \
+                /home/static/version.json \
+                /app/version.json; do
+                if docker cp "${evidence_container}:${source_path}" \
+                  "${evidence_file}" >/dev/null 2>&1; then
+                  copied=true
+                  break
+                fi
+              done
+              docker rm "${evidence_container}" >/dev/null
+              if [[ "${copied}" != "true" ]]; then
+                echo "legacy latest image has no readable version.json: ${remote_image}" >&2
+                return 1
+              fi
+              latest_versions["${name}"]="$(node -e 'const v=require(process.argv[1]);process.stdout.write(typeof v.version === "string" ? v.version : "missing")' "${evidence_file}")"
+              embedded_release_id="$(node -e 'const v=require(process.argv[1]);process.stdout.write(typeof v.releaseId === "string" ? v.releaseId : "")' "${evidence_file}")"
+              latest_release_ids["${name}"]="${embedded_release_id:-legacy}"
+            fi
+            previous_tags["${name}"]="opentu-latest-before-${name}:${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            docker tag "${remote_image}" "${previous_tags[${name}]}"
+          }
+
+          inspect_remote_id() {
+            remote_image="$1"
+            manifest_error="${RUNNER_TEMP}/latest-verify-manifest-error.txt"
+            if ! docker manifest inspect "${remote_image}" \
+              >/dev/null 2>"${manifest_error}"; then
+              if grep --ignore-case --extended-regexp \
+                'manifest unknown|no such manifest|not found' \
+                "${manifest_error}" >/dev/null; then
+                printf '%s\n' missing
+                return
+              fi
+              return 1
+            fi
+            docker pull "${remote_image}" >/dev/null
+            docker image inspect --format '{{.Id}}' "${remote_image}"
+          }
+
+          verify_latest_candidate() {
+            remote_image="$1"
+            published_id="$(inspect_remote_id "${remote_image}")" || return 1
+            if [[ "${published_id}" == "missing" ]]; then
+              echo "latest image disappeared after promotion: ${remote_image}" >&2
+              return 1
+            fi
+            node scripts/verify-release-static.mjs compare-image \
+              --tag "${remote_image}" \
+              --candidate-image-id "${approved_id}" \
+              --published-image-id "${published_id}" || return 1
+            labels_file="${RUNNER_TEMP}/latest-labels-$(printf '%s' "${remote_image}" | tr '/:' '__').json"
+            docker image inspect --format '{{json .Config.Labels}}' \
+              "${remote_image}" > "${labels_file}"
+            node scripts/verify-release-static.mjs verify-image-metadata \
+              --labels-json "${labels_file}" \
+              --expected-release-id "${GITHUB_SHA}" \
+              --expected-version "${PACKAGE_VERSION}" \
+              --expected-revision "${GITHUB_SHA}"
+          }
+
+          inspect_latest ghcr "${ghcr_latest}"
+          latest_plan_args=(
+            node scripts/verify-release-static.mjs plan-latest-promotion
+            --candidate-version "${PACKAGE_VERSION}"
+            --candidate-image-id "${approved_id}"
+            --candidate-release-id "${GITHUB_SHA}"
+            --ghcr-image "${ghcr_latest}"
+            --ghcr-image-id "${latest_ids[ghcr]}"
+            --ghcr-version "${latest_versions[ghcr]}"
+            --ghcr-release-id "${latest_release_ids[ghcr]}"
+            --output "${latest_plan}"
+          )
+          if [[ "${DOCKERHUB_ENABLED}" == "true" ]]; then
+            inspect_latest dockerhub "${dockerhub_latest}"
+            latest_plan_args+=(
+              --dockerhub-image "${dockerhub_latest}"
+              --dockerhub-image-id "${latest_ids[dockerhub]}"
+              --dockerhub-version "${latest_versions[dockerhub]}"
+              --dockerhub-release-id "${latest_release_ids[dockerhub]}"
+            )
+          fi
+          "${latest_plan_args[@]}"
+
+          mapfile -t promotion_targets < <(
+            node -e 'for (const image of require(process.argv[1]).promotionTargets) console.log(image)' "${latest_plan}"
+          )
+          attempted_names=()
+          promotion_failed=false
+          for remote_image in "${promotion_targets[@]}"; do
+            name="${latest_names[${remote_image}]}"
+            attempted_names+=("${name}")
+            if ! docker tag "${APPROVED_IMAGE}" "${remote_image}" ||
+              ! docker push "${remote_image}" ||
+              ! verify_latest_candidate "${remote_image}"; then
+              promotion_failed=true
+              break
+            fi
+          done
+
+          if [[ "${promotion_failed}" == "true" ]]; then
+            echo "latest promotion failed; attempting guarded rollback" >&2
+            for ((index=${#attempted_names[@]} - 1; index >= 0; index--)); do
+              name="${attempted_names[index]}"
+              remote_image="$([[ "${name}" == "ghcr" ]] && printf '%s' "${ghcr_latest}" || printf '%s' "${dockerhub_latest}")"
+              previous_id="${latest_ids[${name}]}"
+              previous_tag="${previous_tags[${name}]}"
+              if [[ "${previous_id}" == "missing" || -z "${previous_tag}" ]]; then
+                echo "cannot restore an alias that did not previously exist: ${remote_image}" >&2
+                continue
+              fi
+              current_id="$(inspect_remote_id "${remote_image}")" || continue
+              if [[ "${current_id}" != "${approved_id}" ]]; then
+                echo "not rolling back ${remote_image}; it no longer points at this candidate" >&2
+                continue
+              fi
+              docker tag "${previous_tag}" "${remote_image}" || continue
+              docker push "${remote_image}" || continue
+              restored_id="$(inspect_remote_id "${remote_image}")" || continue
+              node scripts/verify-release-static.mjs compare-image \
+                --tag "${remote_image}" \
+                --candidate-image-id "${previous_id}" \
+                --published-image-id "${restored_id}" || true
+            done
+            exit 1
+          fi
+
+          verify_latest_candidate "${ghcr_latest}"
+          if [[ "${DOCKERHUB_ENABLED}" == "true" ]]; then
+            verify_latest_candidate "${dockerhub_latest}"
+          fi

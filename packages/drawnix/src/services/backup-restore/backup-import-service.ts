@@ -689,7 +689,9 @@ class BackupImportService {
           tasks as unknown as SWTask[],
           { replaceExisting: true }
         );
-        taskQueueService.restoreTasks(tasks);
+        taskQueueService.restoreTasks(tasks, {
+          allowTerminalStatusReconciliation: true,
+        });
         return writeResult;
       }
 

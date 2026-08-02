@@ -1,6 +1,6 @@
 /**
  * MCP (Model Context Protocol) 类型定义
- * 
+ *
  * 基于 JSON-RPC 2.0 协议，定义 MCP 工具的标准接口
  */
 
@@ -57,7 +57,13 @@ export interface MCPExecuteCallbacks {
   /** 动态添加工作流步骤回调 */
   onAddSteps?: (steps: WorkflowStepInfo[]) => void;
   /** 更新步骤状态回调 */
-  onUpdateStep?: (stepId: string, status: WorkflowStepInfo['status'], result?: unknown, error?: string, duration?: number) => void;
+  onUpdateStep?: (
+    stepId: string,
+    status: WorkflowStepInfo['status'],
+    result?: unknown,
+    error?: string,
+    duration?: number
+  ) => void;
 }
 
 /**
@@ -66,6 +72,8 @@ export interface MCPExecuteCallbacks {
 export interface MCPExecuteOptions extends MCPExecuteCallbacks {
   /** 执行模式：async（等待API返回）或 queue（加入任务队列） */
   mode?: MCPExecuteMode;
+  /** 取消当前 direct 执行；支持该信号的工具会将其贯穿到网络与后处理。 */
+  signal?: AbortSignal;
   /** 批次 ID（用于批量任务去重） */
   batchId?: string;
   /** 批次索引（1-based） */
@@ -128,7 +136,10 @@ export interface MCPTool {
   /** 输入参数 Schema */
   inputSchema: JSONSchema;
   /** 工具执行函数（默认 async 模式） */
-  execute: (params: Record<string, unknown>, options?: MCPExecuteOptions) => Promise<MCPResult>;
+  execute: (
+    params: Record<string, unknown>,
+    options?: MCPExecuteOptions
+  ) => Promise<MCPResult>;
   /** 支持的执行模式（默认只支持 async） */
   supportedModes?: MCPExecuteMode[];
   /** Prompt 指导信息，帮助文本模型更好地生成参数 */

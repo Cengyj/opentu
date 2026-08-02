@@ -40,6 +40,15 @@ import { ImageUploadIcon, MediaLibraryIcon } from '../icons';
 import { HoverTip } from '../shared';
 import { useChatDrawerGenerationControls } from './useChatDrawerGenerationControls';
 import { shouldUseImplicitWorkflowReferences } from './workflow-media-results';
+import {
+  pruneSelectedImageParams,
+  resolveImageParametersForSelection,
+} from '../../services/image-binding-parameter-capabilities';
+import {
+  normalizeImageRequest,
+  resolveImageOperationIntent,
+  type ImageOperationIntent,
+} from '../../services/image-invocation';
 import '../ai-input-bar/ai-input-bar.scss';
 
 interface EnhancedChatInputProps {
@@ -52,6 +61,29 @@ interface EnhancedChatInputProps {
   onSend: (message: Message) => void | Promise<void>;
   disabled?: boolean;
   placeholder?: string;
+}
+
+function resolveContentImageOperation(
+  content: readonly SelectedContentItem[]
+): ImageOperationIntent {
+  const imageItems = content.filter(
+    (item): item is SelectedContentItem & { url: string } =>
+      item.type === 'image' && typeof item.url === 'string'
+  );
+  const graphicItems = content.filter(
+    (item): item is SelectedContentItem & { url: string } =>
+      item.type === 'graphics' && typeof item.url === 'string'
+  );
+  return resolveImageOperationIntent(
+    normalizeImageRequest({
+      prompt: 'capability-preview',
+      referenceImages: [...imageItems, ...graphicItems].map((item) => item.url),
+      maskImage:
+        imageItems.length === 1 && graphicItems.length === 0
+          ? imageItems[0].maskImage
+          : undefined,
+    })
+  );
 }
 
 /**
@@ -102,7 +134,17 @@ export const EnhancedChatInput = forwardRef<
     const { language } = useI18n();
     const { addAsset } = useAssets();
     const chatDrawerControl = useChatDrawerControl();
-    const generationControls = useChatDrawerGenerationControls();
+    const imageOperation = useMemo(() => {
+      const referenceContent =
+        allContent.length > 0
+          ? allContent
+          : implicitReferencePinned ||
+            shouldUseImplicitWorkflowReferences(input.trim())
+          ? implicitReferenceContent
+          : [];
+      return resolveContentImageOperation(referenceContent);
+    }, [allContent, implicitReferenceContent, implicitReferencePinned, input]);
+    const generationControls = useChatDrawerGenerationControls(imageOperation);
 
     const appendUploadedContent = useCallback(
       (items: SelectedContentItem[]) => {
@@ -266,13 +308,24 @@ export const EnhancedChatInput = forwardRef<
         const generationContent = shouldUseImplicitReferences
           ? implicitReferenceContent
           : allContent;
+        const submittedParams =
+          generationControls.generationType === 'image'
+            ? pruneSelectedImageParams(
+                generationControls.selectedParams,
+                resolveImageParametersForSelection(
+                  generationControls.selectedModel,
+                  generationControls.selectedModelRef,
+                  resolveContentImageOperation(generationContent)
+                ).compatibleParams
+              )
+            : generationControls.selectedParams;
         const submitted = await chatDrawerControl.submitGenerationFromDrawer({
           prompt: trimmedInput,
           selectedContent: generationContent,
           generationType: generationControls.generationType,
           selectedModel: generationControls.selectedModel,
           selectedModelRef: generationControls.selectedModelRef,
-          selectedParams: generationControls.selectedParams,
+          selectedParams: submittedParams,
           selectedCount: generationControls.selectedCount,
         });
 
@@ -429,8 +482,7 @@ export const EnhancedChatInput = forwardRef<
       const shouldShowImplicitReferences =
         !hasExplicitContent &&
         implicitReferenceContent.length > 0 &&
-        (implicitReferencePinned ||
-          shouldUseImplicitWorkflowReferences(input));
+        (implicitReferencePinned || shouldUseImplicitWorkflowReferences(input));
 
       if (!shouldShowImplicitReferences) {
         return null;

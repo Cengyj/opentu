@@ -48,10 +48,7 @@ import {
 import { promptForApiKey } from '../../utils/gemini-api';
 import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
 import { ParametersDropdown } from '../ai-input-bar/ParametersDropdown';
-import {
-  getCompatibleParams,
-  type ParamConfig,
-} from '../../constants/model-config';
+import type { ParamConfig } from '../../constants/model-config';
 import { useAssets } from '../../contexts/AssetContext';
 import { AssetType, AssetSource, SelectionMode } from '../../types/asset.types';
 import type { Asset } from '../../types/asset.types';
@@ -60,6 +57,7 @@ import { LS_KEYS_TO_MIGRATE } from '../../constants/storage-keys';
 import { kvStorageService } from '../../services/kv-storage-service';
 import { useDeviceType } from '../../hooks/useDeviceType';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
+import { useImageBindingCapabilityRevision } from '../../hooks/use-image-binding-capability-revision';
 import { getPinnedSelectableModel } from '../../utils/runtime-model-discovery';
 import {
   findMatchingSelectableModel,
@@ -71,11 +69,12 @@ import './batch-image-generation.scss';
 import { trackMemory } from '../../utils/common';
 import { HoverTip } from '../shared/hover';
 import { KnowledgeNoteContextSelector, RetryImage } from '../shared';
+import { loadScopedAIImageToolPreferences } from '../../services/ai-generation-preferences-service';
 import {
-  loadScopedAIImageToolPreferences,
-  sanitizeImageToolExtraParams,
-} from '../../services/ai-generation-preferences-service';
-import { buildMJPromptSuffix } from '../../utils/mj-params';
+  pruneSelectedImageParams,
+  resolveImageParametersForSelection,
+} from '../../services/image-binding-parameter-capabilities';
+import { getCompletedImageTaskResults } from '../../utils/image-generation-anchor-batch';
 
 // 本地缓存 key
 const BATCH_IMAGE_CACHE_KEY = LS_KEYS_TO_MIGRATE.BATCH_IMAGE_CACHE;
@@ -163,7 +162,7 @@ function normalizeEnumValue(
 }
 
 function findParamConfigByKey(
-  compatibleParams: ParamConfig[],
+  compatibleParams: readonly ParamConfig[],
   key: string
 ): ParamConfig | undefined {
   const lookupKey = getParamLookupKey(key);
@@ -209,10 +208,9 @@ function parseParamInputValue(
 
 function normalizeRowParamsForModel(
   row: Partial<TaskRow>,
-  modelId: string,
-  defaultParams: Record<string, string>
+  defaultParams: Record<string, string>,
+  compatibleParams: readonly ParamConfig[]
 ): Record<string, string> {
-  const compatibleParams = getCompatibleParams(modelId);
   const sizeParam = compatibleParams.find((param) => param.id === 'size');
   const rawParams = isStringRecord(row.params) ? row.params : {};
   const normalizedParams: Record<string, string> = {
@@ -228,27 +226,28 @@ function normalizeRowParamsForModel(
     normalizedParams.size = normalizedSize;
   }
 
-  return sanitizeImageToolExtraParams(modelId, normalizedParams);
+  return pruneSelectedImageParams(normalizedParams, compatibleParams);
 }
 
 function parseParamsText(
   text: string,
-  modelId: string,
-  defaultParams: Record<string, string>
+  defaultParams: Record<string, string>,
+  compatibleParams: readonly ParamConfig[]
 ): Record<string, string> {
   const trimmed = text.trim();
-  if (!trimmed) return { ...defaultParams };
+  if (!trimmed) {
+    return pruneSelectedImageParams(defaultParams, compatibleParams);
+  }
 
-  const compatibleParams = getCompatibleParams(modelId);
   const parsedParams: Record<string, string> = {};
 
   try {
     const parsed = JSON.parse(trimmed);
     if (isStringRecord(parsed)) {
-      return sanitizeImageToolExtraParams(modelId, {
-        ...defaultParams,
-        ...parsed,
-      });
+      return pruneSelectedImageParams(
+        { ...defaultParams, ...parsed },
+        compatibleParams
+      );
     }
   } catch {
     // 非 JSON 文本继续走宽松解析。
@@ -259,10 +258,10 @@ function parseParamsText(
     ? parseParamInputValue(sizeParam, trimmed)
     : undefined;
   if (directSize) {
-    return sanitizeImageToolExtraParams(modelId, {
-      ...defaultParams,
-      size: directSize,
-    });
+    return pruneSelectedImageParams(
+      { ...defaultParams, size: directSize },
+      compatibleParams
+    );
   }
 
   trimmed
@@ -282,10 +281,10 @@ function parseParamsText(
       }
     });
 
-  return sanitizeImageToolExtraParams(modelId, {
-    ...defaultParams,
-    ...parsedParams,
-  });
+  return pruneSelectedImageParams(
+    { ...defaultParams, ...parsedParams },
+    compatibleParams
+  );
 }
 
 function serializeParamsForExcel(params: Record<string, string>): string {
@@ -544,24 +543,42 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     () => getSelectionKey(selectedModel, selectedModelRef),
     [selectedModel, selectedModelRef]
   );
-  const compatibleParams = useMemo(
-    () => getCompatibleParams(selectedModel),
-    [selectedModel]
-  );
   const defaultModelParams = useMemo(() => {
     return loadScopedAIImageToolPreferences(selectedModel, selectedSelectionKey)
       .extraParams;
   }, [selectedModel, selectedSelectionKey]);
+  const imageBindingCapabilityRevision =
+    useImageBindingCapabilityRevision();
+  const getCompatibleParamsForRow = useCallback(
+    (row: Partial<TaskRow>) =>
+      resolveImageParametersForSelection(
+        selectedModel,
+        selectedModelRef,
+        row.images && row.images.length > 0 ? 'edit' : 'generation',
+        imageBindingCapabilityRevision
+      ).compatibleParams,
+    [imageBindingCapabilityRevision, selectedModel, selectedModelRef]
+  );
+  const normalizeRowParams = useCallback(
+    (row: Partial<TaskRow>) =>
+      normalizeRowParamsForModel(
+        row,
+        defaultModelParams,
+        getCompatibleParamsForRow(row)
+      ),
+    [defaultModelParams, getCompatibleParamsForRow]
+  );
+  const parseRowParams = useCallback(
+    (text: string, row: Partial<TaskRow>) =>
+      parseParamsText(text, defaultModelParams, getCompatibleParamsForRow(row)),
+    [defaultModelParams, getCompatibleParamsForRow]
+  );
 
   useEffect(() => {
     setTasks((prev) => {
       let changed = false;
       const nextTasks = prev.map((task) => {
-        const nextParams = normalizeRowParamsForModel(
-          task,
-          selectedModel,
-          defaultModelParams
-        );
+        const nextParams = normalizeRowParams(task);
         const hasLegacySize = typeof task.size === 'string';
         const currentParams = isStringRecord(task.params) ? task.params : {};
         if (
@@ -579,7 +596,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       });
       return changed ? nextTasks : prev;
     });
-  }, [cacheLoaded, defaultModelParams, selectedModel]);
+  }, [cacheLoaded, normalizeRowParams]);
 
   useEffect(() => {
     if (visibleImageModels.length === 0) return;
@@ -803,20 +820,24 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       setTasks((prev) => {
         const newTasks = [...prev];
         for (let i = 0; i < count; i++) {
-          newTasks.push({
+          const row: TaskRow = {
             id: taskIdCounter + i,
             prompt: '',
-            params: { ...defaultModelParams },
+            params: {},
             images: [],
             count: 1,
             taskIds: [],
+          };
+          newTasks.push({
+            ...row,
+            params: normalizeRowParams(row),
           });
         }
         return newTasks;
       });
       setTaskIdCounter((prev) => prev + count);
     },
-    [defaultModelParams, taskIdCounter]
+    [normalizeRowParams, taskIdCounter]
   );
 
   // 删除选中行（基于 checkbox 选中状态）
@@ -863,40 +884,53 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
 
   // 更新单元格值
   const updateCellValue = useCallback(
-    (row: number, col: string, value: any) => {
+    (row: number, col: string, value: unknown) => {
       setTasks((prev) => {
         if (!prev[row]) return prev;
         const newTasks = [...prev];
         if (col === 'params') {
           newTasks[row] = {
             ...newTasks[row],
-            params: normalizeRowParamsForModel(
-              { ...newTasks[row], params: isStringRecord(value) ? value : {} },
-              selectedModel,
-              defaultModelParams
-            ),
+            params: normalizeRowParams({
+              ...newTasks[row],
+              params: isStringRecord(value) ? value : {},
+            }),
           };
           return newTasks;
         }
         if (col === 'size') {
           newTasks[row] = {
             ...newTasks[row],
-            params: normalizeRowParamsForModel(
-              { ...newTasks[row], size: String(value || '') },
-              selectedModel,
-              defaultModelParams
-            ),
+            params: normalizeRowParams({
+              ...newTasks[row],
+              size: String(value || ''),
+            }),
           };
           return newTasks;
         }
-        newTasks[row] = {
-          ...newTasks[row],
-          [col]: value,
-        };
+        if (col === 'images') {
+          const images = Array.isArray(value)
+            ? value.filter((item): item is string => typeof item === 'string')
+            : [];
+          newTasks[row] = {
+            ...newTasks[row],
+            images,
+            params: normalizeRowParams({ ...newTasks[row], images }),
+          };
+          return newTasks;
+        }
+        if (col === 'prompt' && typeof value === 'string') {
+          newTasks[row] = { ...newTasks[row], prompt: value };
+          return newTasks;
+        }
+        if (col === 'count' && typeof value === 'number') {
+          newTasks[row] = { ...newTasks[row], count: value };
+          return newTasks;
+        }
         return newTasks;
       });
     },
-    [defaultModelParams, selectedModel]
+    [normalizeRowParams]
   );
 
   const applyPastedTextToCells = useCallback(
@@ -915,11 +949,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             updateCellValue(row, col, num);
           }
         } else if (col === 'params' || col === 'size') {
-          updateCellValue(
-            row,
-            'params',
-            parseParamsText(value, selectedModel, defaultModelParams)
-          );
+          updateCellValue(row, 'params', parseRowParams(value, tasks[row]));
         }
       };
 
@@ -935,7 +965,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         updatePastedValue(originCell.row + index, originCell.col, line);
       });
     },
-    [defaultModelParams, selectedModel, tasks.length, updateCellValue]
+    [parseRowParams, tasks, updateCellValue]
   );
 
   const pasteCopiedCells = useCallback(
@@ -1238,31 +1268,47 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             newTasks[rowIndex] &&
             !newTasks[rowIndex].images.includes(imageUrl)
           ) {
+            const images = [...newTasks[rowIndex].images, imageUrl];
             newTasks[rowIndex] = {
               ...newTasks[rowIndex],
-              images: [...newTasks[rowIndex].images, imageUrl],
+              images,
+              params: normalizeRowParams({
+                ...newTasks[rowIndex],
+                images,
+              }),
             };
           }
         });
         return newTasks;
       });
     },
-    [selectedRows, selectedCells, activeCell, language]
+    [selectedRows, selectedCells, activeCell, language, normalizeRowParams]
   );
 
   // 添加图片到指定行
-  const addImageToRow = useCallback((rowIndex: number, imageUrl: string) => {
-    setTasks((prev) => {
-      const newTasks = [...prev];
-      if (newTasks[rowIndex] && !newTasks[rowIndex].images.includes(imageUrl)) {
-        newTasks[rowIndex] = {
-          ...newTasks[rowIndex],
-          images: [...newTasks[rowIndex].images, imageUrl],
-        };
-      }
-      return newTasks;
-    });
-  }, []);
+  const addImageToRow = useCallback(
+    (rowIndex: number, imageUrl: string) => {
+      setTasks((prev) => {
+        const newTasks = [...prev];
+        if (
+          newTasks[rowIndex] &&
+          !newTasks[rowIndex].images.includes(imageUrl)
+        ) {
+          const images = [...newTasks[rowIndex].images, imageUrl];
+          newTasks[rowIndex] = {
+            ...newTasks[rowIndex],
+            images,
+            params: normalizeRowParams({
+              ...newTasks[rowIndex],
+              images,
+            }),
+          };
+        }
+        return newTasks;
+      });
+    },
+    [normalizeRowParams]
+  );
 
   // 从行中移除图片
   const removeImageFromRow = useCallback(
@@ -1270,15 +1316,22 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       setTasks((prev) => {
         const newTasks = [...prev];
         if (newTasks[rowIndex]) {
+          const images = newTasks[rowIndex].images.filter(
+            (url) => url !== imageUrl
+          );
           newTasks[rowIndex] = {
             ...newTasks[rowIndex],
-            images: newTasks[rowIndex].images.filter((url) => url !== imageUrl),
+            images,
+            params: normalizeRowParams({
+              ...newTasks[rowIndex],
+              images,
+            }),
           };
         }
         return newTasks;
       });
     },
-    []
+    [normalizeRowParams]
   );
 
   // 处理行内图片上传（点击 + 按钮触发）
@@ -1514,20 +1567,26 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
 
         if (targetRowIndex < newTasks.length) {
           // 插入到已有行：追加图片到现有行
+          const images = [...newTasks[targetRowIndex].images, ...rowImages];
           newTasks[targetRowIndex] = {
             ...newTasks[targetRowIndex],
-            images: [...newTasks[targetRowIndex].images, ...rowImages],
+            images,
+            params: normalizeRowParams({
+              ...newTasks[targetRowIndex],
+              images,
+            }),
           };
         } else {
           // 超出现有行：创建新行
-          newTasks.push({
+          const row: TaskRow = {
             id: taskIdCounter + newRowsCreated,
             prompt: '',
-            params: { ...defaultModelParams },
+            params: {},
             images: rowImages,
             count: 1,
             taskIds: [],
-          });
+          };
+          newTasks.push({ ...row, params: normalizeRowParams(row) });
           newRowsCreated++;
         }
       }
@@ -1560,7 +1619,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     tasks.length,
     language,
     addAsset,
-    defaultModelParams,
+    normalizeRowParams,
   ]);
 
   // 取消批量导入
@@ -1574,35 +1633,42 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     try {
       // 动态导入 xlsx 库
       const XLSX = await import('xlsx');
+      const buildTemplateParams = (size?: string) =>
+        serializeParamsForExcel(
+          normalizeRowParams({
+            params: {
+              ...defaultModelParams,
+              ...(size ? { size } : {}),
+            },
+            images: [],
+          })
+        );
 
       // 预制模板数据（示例行）
       const templateData = [
         {
           提示词: '一只可爱的橘猫在阳光下睡觉',
-          参数: serializeParamsForExcel({ ...defaultModelParams, size: '1x1' }),
+          参数: buildTemplateParams('1x1'),
           数量: 1,
         },
         {
           提示词: '未来城市的夜景，霓虹灯闪烁',
-          参数: serializeParamsForExcel({
-            ...defaultModelParams,
-            size: '16x9',
-          }),
+          参数: buildTemplateParams('16x9'),
           数量: 2,
         },
         {
           提示词: '古风美女，水墨画风格',
-          参数: serializeParamsForExcel({ ...defaultModelParams, size: '3x4' }),
+          参数: buildTemplateParams('3x4'),
           数量: 1,
         },
         {
           提示词: '',
-          参数: serializeParamsForExcel(defaultModelParams),
+          参数: buildTemplateParams(),
           数量: 1,
         },
         {
           提示词: '',
-          参数: serializeParamsForExcel(defaultModelParams),
+          参数: buildTemplateParams(),
           数量: 1,
         },
       ];
@@ -1636,7 +1702,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           : 'Download failed, please try again'
       );
     }
-  }, [defaultModelParams, language]);
+  }, [defaultModelParams, language, normalizeRowParams]);
 
   // 导入 Excel
   const handleExcelImport = useCallback(
@@ -1685,17 +1751,6 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                   row['size'] ||
                   row['Size'] ||
                   '') as string;
-                const params = paramsText
-                  ? parseParamsText(
-                      String(paramsText),
-                      selectedModel,
-                      defaultModelParams
-                    )
-                  : normalizeRowParamsForModel(
-                      { params: defaultModelParams, size: String(legacySize) },
-                      selectedModel,
-                      defaultModelParams
-                    );
                 const count =
                   parseInt(
                     String(row['数量'] || row['count'] || row['Count'] || '1')
@@ -1716,6 +1771,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                           s.length > 0 && !s.startsWith('[') && !s.endsWith(']')
                       )
                   : [];
+                const params = paramsText
+                  ? parseRowParams(String(paramsText), { images })
+                  : normalizeRowParams({
+                      params: defaultModelParams,
+                      size: String(legacySize),
+                      images,
+                    });
 
                 return {
                   id: taskIdCounter + index,
@@ -1762,7 +1824,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         excelImportInputRef.current.value = '';
       }
     },
-    [defaultModelParams, language, selectedModel, taskIdCounter]
+    [
+      defaultModelParams,
+      language,
+      normalizeRowParams,
+      parseRowParams,
+      taskIdCounter,
+    ]
   );
 
   // 获取行的关联任务状态
@@ -1839,15 +1907,13 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       const exportData = tasks.map((task) => {
         const rowInfo = getRowTasksInfo(task);
         // 获取已完成任务的预览图URL
-        const previewUrls = rowInfo.tasks
-          .filter((t) => t.status === TaskStatus.COMPLETED && t.result?.url)
-          .map((t) => t.result!.url);
+        const previewUrls = getCompletedImageTaskResults(rowInfo.tasks).map(
+          ({ url }) => url
+        );
 
         return {
           提示词: task.prompt,
-          参数: serializeParamsForExcel(
-            normalizeRowParamsForModel(task, selectedModel, defaultModelParams)
-          ),
+          参数: serializeParamsForExcel(normalizeRowParams(task)),
           参考图: processImageUrls(task.images),
           数量: task.count,
           预览图: processImageUrls(previewUrls),
@@ -1908,7 +1974,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           : 'Export failed, please try again'
       );
     }
-  }, [defaultModelParams, getRowTasksInfo, language, selectedModel, tasks]);
+  }, [getRowTasksInfo, language, normalizeRowParams, tasks]);
 
   // 选择失败的行
   const selectFailedRows = useCallback(() => {
@@ -2018,17 +2084,22 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       // 找到该行关联的已完成任务
       taskRow.taskIds.forEach((taskId, taskIdx) => {
         const queueTask = queueTasks.find((t) => t.id === taskId);
-        if (
-          queueTask?.status === TaskStatus.COMPLETED &&
-          queueTask.result?.url
-        ) {
-          imageUrls.push({
-            url: queueTask.result.url,
-            filename: `row${rowIndex + 1}_${taskIdx + 1}_${taskRow.prompt
-              .slice(0, 20)
-              .replace(/[^\w\u4e00-\u9fa5]/g, '_')}.png`,
-          });
-        }
+        if (!queueTask) return;
+
+        getCompletedImageTaskResults([queueTask]).forEach(
+          ({ url, resultIndex, resultCount }) => {
+            const resultSuffix =
+              resultCount > 1
+                ? `${taskIdx + 1}_${resultIndex + 1}`
+                : String(taskIdx + 1);
+            imageUrls.push({
+              url,
+              filename: `row${rowIndex + 1}_${resultSuffix}_${taskRow.prompt
+                .slice(0, 20)
+                .replace(/[^\w\u4e00-\u9fa5]/g, '_')}.png`,
+            });
+          }
+        );
       });
     });
 
@@ -2119,13 +2190,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         for (const { task, rowIndex } of validTasks) {
           const generateCount = task.count || 1;
           const batchId = `batch_${task.id}_${globalBatchTimestamp}`;
-          const rowParams = normalizeRowParamsForModel(
-            task,
-            selectedModel,
-            defaultModelParams
-          );
+          const rowParams = normalizeRowParams(task);
           const normalizedAspectRatio =
-            rowParams.size || defaultModelParams.size || 'auto';
+            rowParams.aspectRatio || rowParams.size || 'auto';
           const normalizedSize =
             normalizedAspectRatio === 'auto'
               ? undefined
@@ -2134,15 +2201,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             selectedModel ||
             resolveInvocationRoute('image').modelId ||
             'gemini-2.5-flash-image-vip';
-          const isMJModel = currentImageModel.startsWith('mj');
-          const finalPrompt = isMJModel
-            ? [task.prompt.trim(), buildMJPromptSuffix(rowParams)]
-                .filter(Boolean)
-                .join(' ')
-            : task.prompt.trim();
-          const adapterParams = isMJModel
-            ? undefined
-            : buildTaskAdapterParams(rowParams);
+          const finalPrompt = task.prompt.trim();
+          const adapterParams = buildTaskAdapterParams(rowParams);
 
           const uploadedImages = task.images.map((url, index) => ({
             type: 'url',
@@ -2207,9 +2267,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
     },
     [
       createTask,
-      defaultModelParams,
       knowledgeContextRefs,
       language,
+      normalizeRowParams,
       selectedModel,
       selectedModelRef,
       setTasks,
@@ -2728,11 +2788,8 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
         );
 
       case 'params': {
-        const rowParams = normalizeRowParamsForModel(
-          task,
-          selectedModel,
-          defaultModelParams
-        );
+        const rowCompatibleParams = getCompatibleParamsForRow(task);
+        const rowParams = normalizeRowParams(task);
         const isParamsOpen =
           openParamsCell?.row === rowIndex && openParamsCell?.col === col;
         return (
@@ -2766,7 +2823,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
               }}
               onClick={(e) => e.stopPropagation()}
             >
-              {compatibleParams.length > 0 ? (
+              {rowCompatibleParams.length > 0 ? (
                 <ParametersDropdown
                   key={`${selectedModel}-${task.id}`}
                   selectedParams={rowParams}
@@ -2782,7 +2839,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                       setOpenParamsCell(null);
                     }
                   }}
-                  compatibleParams={compatibleParams}
+                  compatibleParams={rowCompatibleParams}
                   modelId={selectedModel}
                   language={language}
                   disabled={isSubmitting}
@@ -2976,11 +3033,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             {(rowInfo.status === 'generating' ||
               rowInfo.status === 'completed') &&
               (() => {
-                const completedUrls = rowInfo.tasks
-                  .filter(
-                    (t) => t.status === TaskStatus.COMPLETED && t.result?.url
-                  )
-                  .map((t) => t.result!.url);
+                const completedUrls = getCompletedImageTaskResults(
+                  rowInfo.tasks
+                ).map(({ url }) => url);
                 const isGenerating = rowInfo.status === 'generating';
                 const processingCount = rowInfo.tasks.filter(
                   (t) =>
@@ -3045,7 +3100,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                       </HoverTip>
                     )}
                     {/* 完成状态：超过3张显示更多 */}
-                    {!isGenerating && rowInfo.completedCount > 3 && (
+                    {!isGenerating && completedUrls.length > 3 && (
                       <HoverTip
                         content={
                           language === 'zh' ? '查看全部图片' : 'View all images'
@@ -3059,7 +3114,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                             setGalleryRowIndex(rowIndex);
                           }}
                         >
-                          +{rowInfo.completedCount - 3}
+                          +{completedUrls.length - 3}
                         </span>
                       </HoverTip>
                     )}
@@ -3092,11 +3147,9 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             )}
             {rowInfo.status === 'partial' &&
               (() => {
-                const partialUrls = rowInfo.tasks
-                  .filter(
-                    (t) => t.status === TaskStatus.COMPLETED && t.result?.url
-                  )
-                  .map((t) => t.result!.url);
+                const partialUrls = getCompletedImageTaskResults(
+                  rowInfo.tasks
+                ).map(({ url }) => url);
                 return (
                   <div className="preview-partial">
                     <div className="preview-images">
@@ -3829,22 +3882,22 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
             const taskRow = tasks[galleryRowIndex];
             if (!taskRow) return null;
             const rowInfo = getRowTasksInfo(taskRow);
-            const completedTasks = rowInfo.tasks.filter(
-              (t) => t.status === TaskStatus.COMPLETED && t.result?.url
+            const completedResults = getCompletedImageTaskResults(
+              rowInfo.tasks
             );
-            const galleryUrls = completedTasks.map((t) => t.result!.url);
+            const galleryUrls = completedResults.map(({ url }) => url);
 
             return (
               <div className="row-gallery-content">
                 <div className="gallery-grid">
-                  {completedTasks.map((t, idx) => (
+                  {completedResults.map(({ task, resultIndex, url }, idx) => (
                     <div
-                      key={t.id}
+                      key={`${task.id}:${resultIndex}`}
                       className="gallery-item"
                       onClick={() => openImagePreview(galleryUrls, idx)}
                     >
                       <RetryImage
-                        src={t.result!.url}
+                        src={url}
                         alt={`Result ${idx + 1}`}
                         showSkeleton={false}
                         eager
@@ -3853,7 +3906,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
                     </div>
                   ))}
                 </div>
-                {completedTasks.length === 0 && (
+                {completedResults.length === 0 && (
                   <div className="gallery-empty">
                     {language === 'zh' ? '暂无生成结果' : 'No results yet'}
                   </div>

@@ -18,12 +18,19 @@ import {
   providerCatalogsSettings,
   providerProfilesSettings,
   resolveInvocationRoute,
+  type GeminiSettings,
   type ModelRef,
+  type ProviderCatalog,
   type ProviderProfile,
 } from '../../utils/settings-manager';
-import { InvocationPlanner } from './invocation-planner';
+import {
+  InvocationPlanner,
+  InvocationPlanningError,
+} from './invocation-planner';
 import { inferBindingsForProviderCatalog } from './binding-inference';
 import { modelPricingService } from '../../utils/model-pricing-service';
+import type { ProviderPricingCache } from '../../utils/model-pricing-types';
+import { isProviderCatalogImageRoutingEvidenceCurrent } from '../../utils/image-routing-evidence';
 import type {
   InvocationPlan,
   InvocationPlanRequest,
@@ -125,7 +132,6 @@ function toProviderProfileSnapshot(
     | 'apiKey'
     | 'authType'
     | 'imageApiCompatibility'
-    | 'preferAsyncImageEndpoint'
     | 'extraHeaders'
   >
 ): ProviderProfileSnapshot {
@@ -143,7 +149,6 @@ function toProviderProfileSnapshot(
     imageApiCompatibility: normalizeSnapshotImageApiCompatibility(
       profile.imageApiCompatibility
     ),
-    preferAsyncImageEndpoint: profile.preferAsyncImageEndpoint ?? false,
     extraHeaders: profile.extraHeaders,
   };
 }
@@ -196,13 +201,16 @@ function getLegacyModelConfig(modelId: string, type: ModelType): ModelConfig {
   return buildFallbackModelConfig(modelId, type);
 }
 
-function buildLegacyProfileSnapshot(): ProviderProfileSnapshot {
-  const gemini = geminiSettings.get();
-  const existingLegacyProfile = providerProfilesSettings
-    .get()
-    .find((profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID);
+function buildLegacyProfileSnapshot(
+  gemini: GeminiSettings,
+  storedProfiles: readonly ProviderProfile[]
+): ProviderProfileSnapshot {
+  const existingLegacyProfile = storedProfiles.find(
+    (profile) => profile.id === LEGACY_DEFAULT_PROVIDER_PROFILE_ID
+  );
   const baseUrl = gemini.baseUrl?.trim() || FOR_PROVIDER_DEFAULT_BASE_URL;
   const providerType =
+    existingLegacyProfile?.providerType === 'auto' ||
     existingLegacyProfile?.providerType === 'openai-compatible' ||
     existingLegacyProfile?.providerType === 'gemini-compatible' ||
     existingLegacyProfile?.providerType === 'custom'
@@ -223,15 +231,14 @@ function buildLegacyProfileSnapshot(): ProviderProfileSnapshot {
     imageApiCompatibility: normalizeSnapshotImageApiCompatibility(
       existingLegacyProfile?.imageApiCompatibility
     ),
-    preferAsyncImageEndpoint:
-      existingLegacyProfile?.preferAsyncImageEndpoint ?? false,
+    extraHeaders: existingLegacyProfile?.extraHeaders,
   };
 }
 
 function buildLegacyBindings(
-  profile: ProviderProfileSnapshot
+  profile: ProviderProfileSnapshot,
+  gemini: GeminiSettings
 ): ProviderModelBinding[] {
-  const gemini = geminiSettings.get();
   const legacyModels: Array<{ modelId: string; type: ModelType }> = [
     {
       modelId:
@@ -261,7 +268,7 @@ function buildLegacyBindings(
 }
 
 function groupBindingsByModel(
-  bindings: ProviderModelBinding[]
+  bindings: readonly ProviderModelBinding[]
 ): Map<string, ProviderModelBinding[]> {
   const grouped = new Map<string, ProviderModelBinding[]>();
 
@@ -275,48 +282,122 @@ function groupBindingsByModel(
   return grouped;
 }
 
-export function listSettingsProviderProfiles(
-  options: SettingsInvocationPlannerOptions = {}
-): ProviderProfileSnapshot[] {
-  const profiles = providerProfilesSettings
-    .get()
+interface SettingsProviderProfileSnapshot {
+  readonly profiles: readonly ProviderProfileSnapshot[];
+  readonly sourceProfileById: ReadonlyMap<string, ProviderProfile>;
+  readonly legacySettings: GeminiSettings | null;
+}
+
+interface SettingsInvocationRepositorySnapshot {
+  readonly profileById: ReadonlyMap<string, ProviderProfileSnapshot>;
+  readonly bindings: readonly ProviderModelBinding[];
+  readonly bindingsByModel: ReadonlyMap<string, readonly ProviderModelBinding[]>;
+}
+
+function buildSettingsProviderProfileSnapshot(
+  options: SettingsInvocationPlannerOptions
+): SettingsProviderProfileSnapshot {
+  // SettingsManager#get performs a defensive deep clone. Read each source once
+  // so one planning attempt observes a coherent, immutable source snapshot.
+  const storedProfiles = providerProfilesSettings.get();
+  const profiles = storedProfiles
     .filter((profile) => profile.enabled !== false)
     .filter((profile) => profile.id !== LEGACY_DEFAULT_PROVIDER_PROFILE_ID)
     .map((profile) => toProviderProfileSnapshot(profile));
+  const legacySettings =
+    options.includeLegacyProfile === false ? null : geminiSettings.get();
 
-  if (options.includeLegacyProfile !== false) {
-    profiles.unshift(buildLegacyProfileSnapshot());
+  if (legacySettings) {
+    profiles.unshift(
+      buildLegacyProfileSnapshot(legacySettings, storedProfiles)
+    );
   }
 
-  return profiles;
+  return {
+    profiles: Object.freeze(profiles),
+    sourceProfileById: new Map(
+      storedProfiles.map((profile) => [profile.id, profile])
+    ),
+    legacySettings,
+  };
 }
 
-export function listSettingsModelBindings(
-  options: SettingsInvocationPlannerOptions = {}
+function buildCatalogBindings(
+  profiles: readonly ProviderProfileSnapshot[],
+  catalogs: readonly ProviderCatalog[],
+  sourceProfileById: ReadonlyMap<string, ProviderProfile>
 ): ProviderModelBinding[] {
-  const profiles = listSettingsProviderProfiles(options);
   const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
-  const catalogBindings = providerCatalogsSettings.get().flatMap((catalog) => {
+  const pricingEndpointsByProfile = new Map<
+    string,
+    {
+      raw: ProviderPricingCache['modelEndpoints'] | null;
+      fresh: ProviderPricingCache['modelEndpoints'] | null;
+    }
+  >();
+
+  return catalogs.flatMap((catalog) => {
     const profile = profileById.get(catalog.profileId);
     if (!profile) {
       return [];
     }
-    const pricingCache = modelPricingService.getCache(catalog.profileId);
+    const hasCurrentAutomaticImageEvidence =
+      profile.providerType !== 'auto' ||
+      isProviderCatalogImageRoutingEvidenceCurrent(catalog, profile);
+    const models = hasCurrentAutomaticImageEvidence
+      ? catalog.discoveredModels
+      : catalog.discoveredModels.filter((model) => model.type !== 'image');
+    if (!pricingEndpointsByProfile.has(catalog.profileId)) {
+      const sourceProfile = sourceProfileById.get(catalog.profileId);
+      const raw =
+        modelPricingService.getCache(catalog.profileId)?.modelEndpoints ?? null;
+      pricingEndpointsByProfile.set(catalog.profileId, {
+        raw,
+        fresh:
+          profile.providerType === 'auto' && sourceProfile
+            ? modelPricingService.getFreshRoutingModelEndpoints(sourceProfile)
+            : raw,
+      });
+    }
+    const endpointEvidence = pricingEndpointsByProfile.get(catalog.profileId);
+    const modelEndpoints = models.reduce<
+      NonNullable<ProviderPricingCache['modelEndpoints']>
+    >((result, model) => {
+      const endpoints =
+        (profile.providerType === 'auto' && model.type === 'image'
+          ? endpointEvidence?.fresh
+          : endpointEvidence?.raw)?.[model.id] ?? null;
+      if (endpoints) {
+        result[model.id] = endpoints;
+      }
+      return result;
+    }, {});
     return inferBindingsForProviderCatalog(
       profile,
-      catalog.discoveredModels,
-      pricingCache?.modelEndpoints ?? null
+      models,
+      Object.keys(modelEndpoints).length > 0 ? modelEndpoints : null
     );
   });
-  const legacyBindings =
-    options.includeLegacyProfile === false
-      ? []
-      : buildLegacyBindings(
-          profileById.get(LEGACY_DEFAULT_PROVIDER_PROFILE_ID) ||
-            buildLegacyProfileSnapshot()
-        );
+}
 
+function buildSettingsInvocationRepositorySnapshot(
+  options: SettingsInvocationPlannerOptions
+): SettingsInvocationRepositorySnapshot {
+  const { profiles, sourceProfileById, legacySettings } =
+    buildSettingsProviderProfileSnapshot(options);
+  const catalogBindings = buildCatalogBindings(
+    profiles,
+    providerCatalogsSettings.get(),
+    sourceProfileById
+  );
+  const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
+  const legacyProfile = profileById.get(LEGACY_DEFAULT_PROVIDER_PROFILE_ID);
+  const legacyBindings =
+    legacySettings && legacyProfile
+      ? buildLegacyBindings(legacyProfile, legacySettings)
+      : [];
   const deduped = new Map<string, ProviderModelBinding>();
+
   [
     ...catalogBindings,
     ...legacyBindings,
@@ -324,30 +405,43 @@ export function listSettingsModelBindings(
   ].forEach((binding) => {
     deduped.set(binding.id, binding);
   });
+  const bindings = Array.from(deduped.values());
 
-  return Array.from(deduped.values());
+  return {
+    profileById,
+    bindings: Object.freeze(bindings),
+    bindingsByModel: groupBindingsByModel(bindings),
+  };
+}
+
+export function listSettingsProviderProfiles(
+  options: SettingsInvocationPlannerOptions = {}
+): ProviderProfileSnapshot[] {
+  return [...buildSettingsProviderProfileSnapshot(options).profiles];
+}
+
+export function listSettingsModelBindings(
+  options: SettingsInvocationPlannerOptions = {}
+): ProviderModelBinding[] {
+  const snapshot = buildSettingsInvocationRepositorySnapshot(options);
+  return [...snapshot.bindings];
 }
 
 export function createSettingsInvocationPlannerRepositories(
   options: SettingsInvocationPlannerOptions = {}
 ): InvocationPlannerRepositories {
+  const snapshot = buildSettingsInvocationRepositorySnapshot(options);
+
   return {
     getProviderProfile(profileId: string) {
-      return (
-        listSettingsProviderProfiles(options).find(
-          (profile) => profile.id === profileId
-        ) || null
-      );
+      return snapshot.profileById.get(profileId) || null;
     },
     getModelBindings(modelRef: NormalizedModelRef, operation: ModelType) {
-      const groupedBindings = groupBindingsByModel(
-        listSettingsModelBindings(options)
-      );
-      return (
-        groupedBindings.get(
+      return [
+        ...(snapshot.bindingsByModel.get(
           `${modelRef.profileId}:${modelRef.modelId}:${operation}`
-        ) || []
-      );
+        ) || []),
+      ];
     },
   };
 }
@@ -356,8 +450,15 @@ export function planInvocationFromSettings(
   request: InvocationPlanRequest,
   options: SettingsInvocationPlannerOptions = {}
 ): InvocationPlan {
-  const repositories = createSettingsInvocationPlannerRepositories(options);
-  return new InvocationPlanner(repositories).plan(request);
+  const bindingId = request.bindingId ?? options.bindingId;
+  const repositories = createSettingsInvocationPlannerRepositories({
+    ...options,
+    bindingId,
+  });
+  return new InvocationPlanner(repositories).plan({
+    ...request,
+    bindingId,
+  });
 }
 
 export function resolveInvocationPlanFromRoute(
@@ -372,17 +473,26 @@ export function resolveInvocationPlanFromRoute(
     return null;
   }
 
+  const bindingId = options.bindingId;
+
   try {
-    return planInvocationFromSettings(
-      {
-        operation,
-        modelRef,
-        bindingId: options.bindingId,
-        preferredRequestSchema: options.preferredRequestSchema,
-      },
-      options
-    );
-  } catch {
+    const repositories = createSettingsInvocationPlannerRepositories({
+      ...options,
+      bindingId,
+    });
+    return new InvocationPlanner(repositories).plan({
+      operation,
+      modelRef,
+      bindingId,
+      preferredRequestSchema: options.preferredRequestSchema,
+    });
+  } catch (error) {
+    if (
+      route.providerType === 'auto' &&
+      error instanceof InvocationPlanningError
+    ) {
+      throw error;
+    }
     return null;
   }
 }

@@ -10,6 +10,7 @@
 
 import type { CacheWarning } from '../cache-warning.types';
 import type { ModelRef } from '../../utils/settings-manager';
+import type { ImageArtifact } from '../image-artifact.types';
 
 // ============================================================================
 // Chat Tool Call
@@ -87,6 +88,14 @@ export enum TaskExecutionPhase {
 }
 
 export type TaskInvocationOperation = 'image' | 'video' | 'audio' | 'text';
+export type TaskInvocationHttpMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE'
+  | 'HEAD'
+  | 'OPTIONS';
 
 export interface TaskInvocationBindingSnapshot {
   id?: string;
@@ -94,7 +103,9 @@ export interface TaskInvocationBindingSnapshot {
   requestSchema?: string;
   responseSchema?: string;
   submitPath?: string;
+  submitMethod?: TaskInvocationHttpMethod;
   pollPathTemplate?: string;
+  pollMethod?: TaskInvocationHttpMethod;
   baseUrlStrategy?: 'preserve' | 'trim-v1';
   metadata?: Record<string, unknown>;
 }
@@ -104,6 +115,8 @@ export interface TaskInvocationRouteSnapshot {
   modelRef?: ModelRef | null;
   providerProfileId?: string | null;
   providerType?: string | null;
+  /** Immutable endpoint host/base prefix; credentials are never snapshotted. */
+  providerBaseUrl?: string | null;
   modelId?: string | null;
   binding?: TaskInvocationBindingSnapshot | null;
 }
@@ -249,6 +262,8 @@ export interface TaskResult {
   url: string;
   /** Multiple URLs when API returns more than one asset */
   urls?: string[];
+  /** Canonical ordered image artifacts; url/urls remain a compatibility projection. */
+  imageArtifacts?: ImageArtifact[];
   /** Optional thumbnail URLs corresponding to urls */
   thumbnailUrls?: string[];
   /** File format (e.g., 'png', 'jpg', 'mp4') */

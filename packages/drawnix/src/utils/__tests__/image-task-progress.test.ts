@@ -1,44 +1,50 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { TaskExecutionPhase } from '../../types/task.types';
 import {
-  IMAGE_GENERATION_ESTIMATE_MS,
-  IMAGE_GENERATION_MAX_PROGRESS,
-  calculateSimulatedImageProgress,
+  getImageTaskProgressStatusText,
   resolveImageTaskDisplayProgress,
 } from '../image-task-progress';
 
 describe('image-task-progress', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('calculates simulated progress with ease-out curve', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-15T08:00:00.000Z'));
-
-    const startedAt =
-      Date.now() - Math.floor(IMAGE_GENERATION_ESTIMATE_MS * 0.5);
-    const progress = calculateSimulatedImageProgress(startedAt);
-
-    expect(progress).toBeGreaterThan(45);
-    expect(progress).toBeLessThanOrEqual(IMAGE_GENERATION_MAX_PROGRESS);
-  });
-
-  it('prefers image loading tail progress when media is loading', () => {
+  it('uses only factual task/provider progress', () => {
     const progress = resolveImageTaskDisplayProgress({
-      startedAt: Date.now() - 30_000,
-      mediaUrl: 'https://example.com/image.png',
-      isImageLoading: true,
-      imageLoadProgress: 50,
+      fallbackProgress: 42,
     });
 
-    expect(progress).toBe(95);
+    expect(progress).toBe(42);
   });
 
-  it('falls back to existing progress when no startedAt is available', () => {
-    const progress = resolveImageTaskDisplayProgress({
-      fallbackProgress: 37,
-    });
+  it('does not invent progress when no task/provider progress exists', () => {
+    const progress = resolveImageTaskDisplayProgress({});
 
-    expect(progress).toBe(37);
+    expect(progress).toBeNull();
+  });
+
+  it('uses factual execution phases and a neutral indeterminate label', () => {
+    expect(getImageTaskProgressStatusText(null)).toBe('生成中...');
+    expect(
+      getImageTaskProgressStatusText(
+        null,
+        false,
+        false,
+        TaskExecutionPhase.SUBMITTING
+      )
+    ).toBe('提交任务...');
+    expect(
+      getImageTaskProgressStatusText(
+        null,
+        false,
+        false,
+        TaskExecutionPhase.POLLING
+      )
+    ).toBe('等待供应商生成...');
+    expect(
+      getImageTaskProgressStatusText(
+        null,
+        false,
+        false,
+        TaskExecutionPhase.DOWNLOADING
+      )
+    ).toBe('下载并缓存图片...');
   });
 });

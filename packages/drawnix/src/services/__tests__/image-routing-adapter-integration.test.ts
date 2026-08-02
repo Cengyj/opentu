@@ -147,10 +147,10 @@ describe('image routing to default registered adapters', () => {
         imageApiCompatibility: 'openai-gpt-image',
       },
       {
-      id: 'gpt-image-2',
-      label: 'GPT Image 2',
-      type: 'image',
-      vendor: ModelVendor.GPT,
+        id: 'gpt-image-2',
+        label: 'GPT Image 2',
+        type: 'image',
+        vendor: ModelVendor.GPT,
       },
       'openai.image.gpt-edit-form'
     );
@@ -183,12 +183,8 @@ describe('image routing to default registered adapters', () => {
   });
 
   it('routes pricing async-image bindings to the default image adapter', () => {
-    const asyncForProfile = {
-      ...forProfile,
-      preferAsyncImageEndpoint: true,
-    };
     const binding = inferBindingsForProviderModel(
-      asyncForProfile,
+      forProfile,
       {
         id: 'gemini-3-pro-image-preview-async',
         label: 'Gemini Async Image',

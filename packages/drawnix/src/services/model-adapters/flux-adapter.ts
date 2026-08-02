@@ -5,23 +5,19 @@ import type {
 } from './types';
 import { registerModelAdapter } from './registry';
 import { ModelVendor } from '../../constants/model-config';
-import { sendAdapterRequest } from './context';
+import {
+  buildProviderContextFromAdapterContext,
+  requireImageBinding,
+  sendAdapterRequest,
+} from './context';
 import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
+import type { ProviderModelBinding } from '../provider-routing';
+import { pollImageInvocationBinding } from '../image-invocation/resume-polling';
+import { createImageProviderRejectionError } from '../image-invocation/errors';
 
 type FluxSubmitResponse = {
   id: string;
   polling_url?: string;
-};
-
-type FluxResultResponse = {
-  id: string;
-  status: 'Ready' | 'Pending' | 'Error' | string;
-  result?: {
-    sample?: string;
-    seed?: number;
-    prompt?: string;
-    duration?: number;
-  };
 };
 
 const FLUX_MODELS = [
@@ -36,27 +32,57 @@ const DEFAULT_POLL_INTERVAL_MS = 3000;
 const DEFAULT_POLL_MAX_ATTEMPTS = Math.ceil(
   IMAGE_GENERATION_TIMEOUT_MS / DEFAULT_POLL_INTERVAL_MS
 );
+const FLUX_BINDING_CONTRACTS = [
+  {
+    protocol: 'flux.task',
+    requestSchema: 'flux.image.polling-json',
+  },
+] as const;
+
+type FluxBinding = ProviderModelBinding & {
+  readonly submitPath: string;
+  readonly pollPathTemplate: string;
+};
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return;
+  }
+
+  if (signal.reason instanceof Error) {
+    throw signal.reason;
+  }
+
+  throw new DOMException('Aborted', 'AbortError');
+}
+
+function resolveFluxSubmitPath(path: string, model: string): string {
+  return path.replace(/\{model\}/g, encodeURIComponent(model));
+}
 
 /**
  * 宽高比 → Flux 像素尺寸映射（均为 16 的倍数）
  */
-const ASPECT_RATIO_TO_DIMENSIONS: Record<string, { width: number; height: number }> = {
-  '1:1':  { width: 1024, height: 1024 },
-  '1x1':  { width: 1024, height: 1024 },
-  '2:3':  { width: 832,  height: 1248 },
-  '2x3':  { width: 832,  height: 1248 },
-  '3:2':  { width: 1248, height: 832 },
-  '3x2':  { width: 1248, height: 832 },
-  '3:4':  { width: 768,  height: 1024 },
-  '3x4':  { width: 768,  height: 1024 },
-  '4:3':  { width: 1024, height: 768 },
-  '4x3':  { width: 1024, height: 768 },
-  '4:5':  { width: 832,  height: 1040 },
-  '4x5':  { width: 832,  height: 1040 },
-  '5:4':  { width: 1040, height: 832 },
-  '5x4':  { width: 1040, height: 832 },
-  '9:16': { width: 720,  height: 1280 },
-  '9x16': { width: 720,  height: 1280 },
+const ASPECT_RATIO_TO_DIMENSIONS: Record<
+  string,
+  { width: number; height: number }
+> = {
+  '1:1': { width: 1024, height: 1024 },
+  '1x1': { width: 1024, height: 1024 },
+  '2:3': { width: 832, height: 1248 },
+  '2x3': { width: 832, height: 1248 },
+  '3:2': { width: 1248, height: 832 },
+  '3x2': { width: 1248, height: 832 },
+  '3:4': { width: 768, height: 1024 },
+  '3x4': { width: 768, height: 1024 },
+  '4:3': { width: 1024, height: 768 },
+  '4x3': { width: 1024, height: 768 },
+  '4:5': { width: 832, height: 1040 },
+  '4x5': { width: 832, height: 1040 },
+  '5:4': { width: 1040, height: 832 },
+  '5x4': { width: 1040, height: 832 },
+  '9:16': { width: 720, height: 1280 },
+  '9x16': { width: 720, height: 1280 },
   '16:9': { width: 1280, height: 720 },
   '16x9': { width: 1280, height: 720 },
   '21:9': { width: 1344, height: 576 },
@@ -90,78 +116,36 @@ const resolveFluxDimensions = (
   };
 };
 
-const resolveBaseUrl = (context: AdapterContext): string => {
-  if (!context.baseUrl) {
-    throw new Error('Missing baseUrl for Flux adapter');
-  }
-  const normalized = context.baseUrl.replace(/\/$/, '');
-  return normalized.endsWith('/v1') ? normalized.slice(0, -3) : normalized;
-};
-
 /**
  * 提交 Flux 图片生成任务
  */
 const submitFluxImage = async (
   context: AdapterContext,
+  binding: FluxBinding,
   model: string,
-  body: Record<string, unknown>
-): Promise<FluxSubmitResponse> => {
-  const baseUrl = resolveBaseUrl(context);
-  const response = await sendAdapterRequest(
-    context,
-    {
-      path: `/flux/v1/${model}`,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
+  body: Record<string, unknown>,
+  signal?: AbortSignal
+): Promise<Response> => {
+  throwIfAborted(signal);
+  const response = await sendAdapterRequest(context, {
+    path: resolveFluxSubmitPath(binding.submitPath, model),
+    baseUrlStrategy: binding.baseUrlStrategy,
+    method: binding.submitMethod,
+    headers: {
+      'Content-Type': 'application/json',
     },
-    baseUrl
-  );
+    body: JSON.stringify(body),
+    signal,
+  });
 
   if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    const errMsg =
-      typeof data?.error === 'string'
-        ? data.error
-        : data?.error?.message || data?.message || `Flux submit failed: ${response.status}`;
-    throw new Error(errMsg);
+    throw await createImageProviderRejectionError(response, {
+      bindingId: binding.id,
+      label: 'Flux 提交失败',
+    });
   }
 
-  return response.json();
-};
-
-/**
- * 查询 Flux 任务结果
- */
-const queryFluxResult = async (
-  context: AdapterContext,
-  taskId: string
-): Promise<FluxResultResponse> => {
-  const baseUrl = resolveBaseUrl(context);
-  const response = await sendAdapterRequest(
-    context,
-    {
-      path: '/flux/v1/get_result',
-      method: 'GET',
-      query: {
-        id: taskId,
-      },
-    },
-    baseUrl
-  );
-
-  if (!response.ok) {
-    const data = await response.json().catch(() => null);
-    const errMsg =
-      typeof data?.error === 'string'
-        ? data.error
-        : data?.error?.message || data?.message || `Flux query failed: ${response.status}`;
-    throw new Error(errMsg);
-  }
-
-  return response.json();
+  return response;
 };
 
 export const fluxImageAdapter: ImageModelAdapter = {
@@ -176,7 +160,13 @@ export const fluxImageAdapter: ImageModelAdapter = {
   defaultModel: 'bfl-flux-2-flex',
 
   async generateImage(context, request: ImageGenerationRequest) {
-    const model = request.model || 'bfl-flux-2-flex';
+    throwIfAborted(request.signal);
+    const binding = requireImageBinding(context, request, {
+      adapterLabel: 'Flux adapter',
+      requirePollPath: true,
+      supportedBindings: FLUX_BINDING_CONTRACTS,
+    });
+    const model = binding.modelId;
     const dimensions = resolveFluxDimensions(request.size);
 
     // 构建请求体
@@ -202,56 +192,60 @@ export const fluxImageAdapter: ImageModelAdapter = {
     }
 
     // 通知提交中
-    const onProgress = request.params?.onProgress as
-      | ((progress: number, status?: string) => void)
-      | undefined;
-    const onSubmitted = request.params?.onSubmitted as
-      | ((remoteId: string) => void)
-      | undefined;
+    const onProgress = request.onProgress;
+    const onSubmitted = request.onSubmitted;
 
     onProgress?.(5, 'submitting');
 
     // 提交任务
-    const submitResult = await submitFluxImage(context, model, body);
+    request.telemetry?.increment('submitRequests');
+    const submit = () =>
+      submitFluxImage(
+        context,
+        binding,
+        model,
+        body,
+        request.signal
+      );
+    const submitHttpResponse = request.telemetry
+      ? await request.telemetry.measure('submit', submit)
+      : await submit();
+    request.telemetry?.increment('responseParses');
+    const parseSubmitResponse = () =>
+      submitHttpResponse.json() as Promise<FluxSubmitResponse>;
+    const submitResult = request.telemetry
+      ? await request.telemetry.measure(
+          'responseParsing',
+          parseSubmitResponse
+        )
+      : await parseSubmitResponse();
     const remoteId = submitResult.id;
 
     if (!remoteId) {
       throw new Error('Flux API 未返回任务 ID');
     }
 
-    onSubmitted?.(remoteId);
+    await onSubmitted?.(remoteId);
+    throwIfAborted(request.signal);
     onProgress?.(10, 'processing');
 
-    // 轮询结果
-    let attempts = 0;
-    while (attempts < DEFAULT_POLL_MAX_ATTEMPTS) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, DEFAULT_POLL_INTERVAL_MS)
-      );
-      attempts += 1;
-
-      const result = await queryFluxResult(context, remoteId);
-
-      // 更新进度：10-90 范围
-      const progressValue = Math.min(10 + attempts * 2, 90);
-      onProgress?.(progressValue, result.status);
-
-      if (result.status === 'Ready') {
-        const imageUrl = result.result?.sample;
-        if (!imageUrl) {
-          throw new Error('Flux 结果缺少图片 URL');
-        }
-        return { url: imageUrl, format: 'png', raw: result };
+    const artifacts = await pollImageInvocationBinding(
+      {
+        provider: buildProviderContextFromAdapterContext(context),
+        binding,
+      },
+      remoteId,
+      {
+        interval: request.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
+        maxAttempts:
+          request.pollMaxAttempts ?? DEFAULT_POLL_MAX_ATTEMPTS,
+        signal: request.signal,
+        fetcher: context.fetcher,
+        telemetry: request.telemetry,
+        onProgress,
       }
-
-      if (result.status === 'Error') {
-        throw new Error(
-          result.result?.prompt || 'Flux 图片生成失败'
-        );
-      }
-    }
-
-    throw new Error('Flux 图片生成超时');
+    );
+    return { artifacts };
   },
 };
 

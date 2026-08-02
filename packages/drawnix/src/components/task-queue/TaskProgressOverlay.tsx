@@ -5,18 +5,16 @@
  *
  * 进度设计：
  * - 视频/音频任务：显示真实的 API 返回进度（0-100%）
- * - 图片任务：模拟进度，分三个阶段
- *   1. 生成阶段（0-90%）：基于预估时间模拟，默认 5 分钟
- *   2. 获取链接（90%）：任务完成但图片未加载
- *   3. 图片加载（90-100%）：图片正在加载中
+ * - 图片任务：只显示任务或供应商实际报告的进度
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { TaskType, TaskStatus } from '../../types/task.types';
 import {
-  IMAGE_GENERATION_ESTIMATE_MS,
-  getImageTaskProgressStatusText,
-} from '../../utils/image-task-progress';
+  TaskExecutionPhase,
+  TaskType,
+  TaskStatus,
+} from '../../types/task.types';
+import { getImageTaskProgressStatusText } from '../../utils/image-task-progress';
 import { ImageGenerationProgressDisplay } from '../shared/ImageGenerationProgressDisplay';
 import { useImageTaskProgress } from '../../hooks/useImageTaskProgress';
 import './task-progress-overlay.scss';
@@ -28,8 +26,8 @@ interface TaskProgressOverlayProps {
   taskStatus: TaskStatus;
   /** 视频任务的真实进度（0-100） */
   realProgress?: number;
-  /** 任务开始时间戳（用于计算模拟进度） */
-  startedAt?: number;
+  /** 已持久化的真实执行阶段（图片任务） */
+  executionPhase?: TaskExecutionPhase;
   /** 媒体 URL（用于判断是否进入加载阶段） */
   mediaUrl?: string;
   /** 是否正在加载图片 */
@@ -38,31 +36,23 @@ interface TaskProgressOverlayProps {
   onImageLoaded?: () => void;
   /** 图片加载失败回调 */
   onImageError?: () => void;
-  /** 预估生成时间（毫秒），默认 5 分钟 */
-  estimatedDuration?: number;
 }
 
 export const TaskProgressOverlay: React.FC<TaskProgressOverlayProps> = ({
   taskType,
   taskStatus,
   realProgress,
-  startedAt,
+  executionPhase,
   mediaUrl,
   isImageLoading = false,
   onImageLoaded,
   onImageError,
-  estimatedDuration = IMAGE_GENERATION_ESTIMATE_MS,
 }) => {
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
   const { displayProgress } = useImageTaskProgress({
     taskType,
-    taskStatus,
-    startedAt,
     realProgress,
-    mediaUrl,
-    isImageLoading,
-    estimatedDuration,
   });
 
   // 基准尺寸：内容在此尺寸下正常显示（环形 56px + 文字约 20px + 间距）
@@ -83,12 +73,12 @@ export const TaskProgressOverlay: React.FC<TaskProgressOverlayProps> = ({
       // 预留底部进度条空间（3px）和上下边距
       const availableHeight = height - 10;
       const availableWidth = width - 20;
-      
+
       // 根据高度和宽度计算缩放比例，取较小值
       const scaleByHeight = availableHeight / BASE_CONTENT_HEIGHT;
       const scaleByWidth = availableWidth / BASE_CONTENT_WIDTH;
       const newScale = Math.min(scaleByHeight, scaleByWidth, MAX_SCALE);
-      
+
       setScale(Math.max(newScale, MIN_SCALE));
     };
 
@@ -107,10 +97,16 @@ export const TaskProgressOverlay: React.FC<TaskProgressOverlayProps> = ({
     return null;
   }
 
+  const isDeterminate = displayProgress !== null;
   const progress = displayProgress ?? 0;
   const statusText =
     taskType === TaskType.IMAGE
-      ? getImageTaskProgressStatusText(progress, !!mediaUrl, isImageLoading)
+      ? getImageTaskProgressStatusText(
+          displayProgress,
+          !!mediaUrl,
+          isImageLoading,
+          executionPhase
+        )
       : taskType === TaskType.AUDIO
       ? progress < 10
         ? '提交任务...'
@@ -134,7 +130,9 @@ export const TaskProgressOverlay: React.FC<TaskProgressOverlayProps> = ({
       ? 'task-progress-overlay--video'
       : '',
     mediaUrl && isImageLoading ? 'task-progress-overlay--loading' : '',
-  ].filter(Boolean).join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div ref={containerRef} className={overlayClassName}>
@@ -144,13 +142,13 @@ export const TaskProgressOverlay: React.FC<TaskProgressOverlayProps> = ({
       <div className="task-progress-overlay__dots" />
 
       {/* 进度内容（等比缩放） */}
-      <div 
+      <div
         className="task-progress-overlay__content"
         style={{ transform: `scale(${scale})` }}
       >
         <ImageGenerationProgressDisplay
-          progress={progress}
-          progressMode="determinate"
+          progress={displayProgress}
+          progressMode={isDeterminate ? 'determinate' : 'indeterminate'}
           statusText={statusText}
           tone={mediaUrl && isImageLoading ? 'loading' : 'default'}
           className="task-progress-overlay__progress"
@@ -158,12 +156,14 @@ export const TaskProgressOverlay: React.FC<TaskProgressOverlayProps> = ({
       </div>
 
       {/* 底部进度条 */}
-      <div className="task-progress-overlay__bar">
-        <div
-          className="task-progress-overlay__bar-fill"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
+      {isDeterminate && (
+        <div className="task-progress-overlay__bar">
+          <div
+            className="task-progress-overlay__bar-fill"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
     </div>
   );
 };

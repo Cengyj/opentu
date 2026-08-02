@@ -1,5 +1,10 @@
 import type { PlaitImageGenerationAnchor } from '../types/image-generation-anchor.types';
 import { TaskStatus, TaskType, type Task } from '../types/task.types';
+import type {
+  ImageArtifact,
+  ImageArtifactResultLike,
+} from '../types/image-artifact.types';
+import { resolveImageArtifactsFromTaskResult } from '../types/image-artifact.types';
 import { resolveImageTaskDisplayProgress } from './image-task-progress';
 
 function clampProgress(value: number): number {
@@ -10,7 +15,7 @@ function clampProgress(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-export function getTaskResultPreviewUrls(task: Task): string[] {
+export function getTaskResultPreviewUrls(task: Pick<Task, 'result'>): string[] {
   const result = task.result as
     | {
         previewImageUrl?: string;
@@ -31,6 +36,60 @@ export function getTaskResultPreviewUrls(task: Task): string[] {
       )
     )
   );
+}
+
+/**
+ * Returns only generated image artifacts. Preview/cover fields are excluded so
+ * material libraries and downloads cannot mistake auxiliary media for output.
+ */
+export function getTaskResultArtifactUrls(
+  task: { readonly result?: ImageArtifactResultLike }
+): string[] {
+  return getTaskResultImageArtifacts(task).map((artifact) => artifact.url);
+}
+
+/**
+ * Read the canonical task artifact contract. Historical url/urls records are
+ * upgraded once at this read boundary and never reinterpreted by consumers.
+ */
+export function getTaskResultImageArtifacts(
+  task: { readonly result?: ImageArtifactResultLike }
+): ImageArtifact[] {
+  return resolveImageArtifactsFromTaskResult(task.result);
+}
+
+export interface CompletedImageTaskResult {
+  readonly task: Task;
+  readonly taskIndex: number;
+  readonly resultIndex: number;
+  readonly resultCount: number;
+  readonly url: string;
+  readonly artifact: ImageArtifact;
+}
+
+/**
+ * Projects completed image tasks into their ordered, provider-independent
+ * result URLs. A task remains the paid-attempt boundary while every artifact
+ * returned by that attempt remains visible to downstream UI consumers.
+ */
+export function getCompletedImageTaskResults(
+  tasks: readonly Task[]
+): CompletedImageTaskResult[] {
+  return tasks.flatMap((task, taskIndex) => {
+    if (task.type !== TaskType.IMAGE || task.status !== TaskStatus.COMPLETED) {
+      return [];
+    }
+
+    const artifacts = getTaskResultImageArtifacts(task);
+    return artifacts.map((artifact, resultIndex) => ({
+      task,
+      taskIndex,
+      resultIndex,
+      resultCount: artifacts.length,
+      url: artifact.url,
+      artifact,
+    }));
+  });
 }
 
 export function getImageGenerationBatchExpectedCount(
@@ -85,7 +144,6 @@ function resolveTaskDisplayProgress(task: Task): number | null {
 
   if (task.status === TaskStatus.PROCESSING) {
     return resolveImageTaskDisplayProgress({
-      startedAt: task.startedAt,
       fallbackProgress: task.progress,
     });
   }

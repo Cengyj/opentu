@@ -6,7 +6,6 @@
  */
 
 import type { ModelRef } from '../../utils/settings-manager';
-import type { GenerationParams } from '../../types/shared/core.types';
 import type { ExecutionOptions, ImageExecutionOutcome } from './types';
 import {
   taskStorageWriter,
@@ -23,68 +22,25 @@ import {
   classifyApiCredentialError,
   dispatchApiAuthError,
 } from '../../utils/api-auth-error-event';
-import { unifiedCacheService } from '../unified-cache-service';
-import {
-  getAdapterContextFromSettings,
-  GPT_IMAGE_EDIT_REQUEST_SCHEMAS,
-  isGPTImageEditRequestSchema,
-} from '../model-adapters';
-import type { ImageModelAdapter, VideoModelAdapter } from '../model-adapters';
+import { getAdapterContextFromSettings } from '../model-adapters';
+import type { VideoModelAdapter } from '../model-adapters';
 import {
   ensureBase64ForAI,
   cacheRemoteUrl,
-  cacheRemoteUrls,
+  cacheImageArtifacts,
+  ImageCachePersistenceError,
 } from './fallback-utils';
+import { unifiedCacheService } from '../unified-cache-service';
 import {
   completeImageExecution,
   failImageExecution,
 } from './image-execution-outcome';
-
-type ImageGenerationMode = 'text_to_image' | 'image_to_image' | 'image_edit';
-type ImageInputFidelity = 'high' | 'low';
-type ImageBackground = 'transparent' | 'opaque' | 'auto';
-type ImageOutputFormat = 'png' | 'jpeg' | 'webp';
-
-function getStringParam(
-  params: { params?: Record<string, unknown> },
-  keys: string[]
-): string | undefined {
-  const rawParams = params as unknown as Record<string, unknown>;
-  const nestedParams = params.params;
-
-  for (const key of keys) {
-    const value = rawParams[key] ?? nestedParams?.[key];
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-
-  return undefined;
-}
-
-function resolvePreferredRequestSchema(params: {
-  generationMode?: ImageGenerationMode;
-  maskImage?: string;
-  referenceImages?: string[];
-  params?: Record<string, unknown>;
-  preferredRequestSchema?: string | readonly string[];
-}): string | readonly string[] | undefined {
-  const generationMode =
-    params.generationMode ||
-    getStringParam(params, ['generationMode', 'generation_mode']);
-
-  if (
-    params.referenceImages?.length ||
-    generationMode === 'image_to_image' ||
-    generationMode === 'image_edit' ||
-    params.maskImage ||
-    getStringParam(params, ['maskImage', 'mask_image'])
-  ) {
-    return params.preferredRequestSchema || GPT_IMAGE_EDIT_REQUEST_SCHEMAS;
-  }
-
-  return params.preferredRequestSchema;
-}
+import { createTaskInvocationRouteSnapshotFromPlan } from '../task-invocation-route';
+import {
+  executeResolvedImageInvocation,
+  ImageInvocationError,
+  type ResolvedImageInvocation,
+} from '../image-invocation';
 
 /**
  * 通过专用 adapter 生成图片（mj-imagine 等非 gemini 模型）
@@ -92,119 +48,155 @@ function resolvePreferredRequestSchema(params: {
  */
 export async function executeImageViaAdapter(
   taskId: string,
-  adapter: ImageModelAdapter,
   params: {
-    prompt: string;
-    model: string;
-    modelRef?: ModelRef | null;
-    size?: string;
-    resolution?: '1k' | '2k' | '4k';
-    quality?: string;
-    count?: number;
-    referenceImages?: string[];
-    generationMode?: ImageGenerationMode;
-    maskImage?: string;
-    inputFidelity?: ImageInputFidelity;
-    background?: ImageBackground;
-    outputFormat?: ImageOutputFormat;
-    outputCompression?: number;
-    params?: Record<string, unknown>;
-    assetMetadata?: GenerationParams['assetMetadata'];
-    preferredRequestSchema?: string | readonly string[];
+    /** Complete immutable invocation resolved by the caller. */
+    imageInvocation: ResolvedImageInvocation;
   },
   options?: ExecutionOptions,
   startTime?: number
 ): Promise<ImageExecutionOutcome> {
   const logStartTime = startTime || Date.now();
-  const preferredRequestSchema = resolvePreferredRequestSchema(params);
+  const { imageInvocation } = params;
+  const { request } = imageInvocation;
+  const referenceImages = [...request.referenceImages];
 
   const logId = startLLMApiLog({
-    endpoint: `adapter:${adapter.id}`,
-    model: params.model,
+    endpoint: `adapter:${imageInvocation.adapter.id}`,
+    model: imageInvocation.modelId,
     taskType: 'image',
-    prompt: params.prompt,
-    hasReferenceImages:
-      !!params.referenceImages && params.referenceImages.length > 0,
-    referenceImageCount: params.referenceImages?.length,
-    referenceImages: params.referenceImages?.map(
+    prompt: request.prompt,
+    hasReferenceImages: referenceImages.length > 0,
+    referenceImageCount: referenceImages.length || undefined,
+    referenceImages: referenceImages.map(
       (url) => ({ url, size: 0, width: 0, height: 0 } as LLMReferenceImage)
     ),
     taskId,
   });
 
   try {
-    let processedImages: string[] | undefined;
-    if (params.referenceImages && params.referenceImages.length > 0) {
-      processedImages = await Promise.all(
-        params.referenceImages.map(async (imgUrl) => {
-          const imageData = await unifiedCacheService.getImageForAI(imgUrl);
-          return ensureBase64ForAI(imageData, options?.signal);
-        })
-      );
+    options?.onProgress?.({ progress: 10, phase: 'submitting' });
+    options?.signal?.throwIfAborted();
+
+    const result = await executeResolvedImageInvocation(imageInvocation, {
+      signal: options?.signal,
+      onSubmitted: async (remoteId) => {
+        const durableRoute = createTaskInvocationRouteSnapshotFromPlan(
+          'image',
+          imageInvocation.plan
+        );
+        let persisted: boolean;
+        try {
+          persisted =
+            options?.imageAttemptStartedAt === undefined
+              ? await taskStorageWriter.updateRemoteId(
+                  taskId,
+                  remoteId,
+                  durableRoute
+                )
+              : await taskStorageWriter.updateRemoteId(
+                  taskId,
+                  remoteId,
+                  durableRoute,
+                  { expectedStartedAt: options.imageAttemptStartedAt }
+                );
+        } catch (cause) {
+          throw new ImageInvocationError(
+            'IMAGE_RECOVERY_FAILED',
+            '远程图片任务已提交，但任务身份未能持久化；已停止轮询且禁止自动重试',
+            {
+              stage: 'recovery',
+              cause,
+              details: {
+                taskId,
+                bindingId: imageInvocation.plan.binding.id,
+              },
+            }
+          );
+        }
+        if (persisted === false) {
+          throw new ImageInvocationError(
+            'IMAGE_RECOVERY_FAILED',
+            '远程图片任务身份已失效，已停止轮询',
+            {
+              stage: 'recovery',
+              details: {
+                taskId,
+                bindingId: imageInvocation.plan.binding.id,
+              },
+            }
+          );
+        }
+      },
+      onProgress: (progress: number) => {
+        options?.onProgress?.({
+          progress: Math.min(90, Math.max(10, progress)),
+          phase: 'polling',
+        });
+      },
+    });
+
+    if (options?.signal?.aborted) {
+      throw options.signal.reason instanceof Error
+        ? options.signal.reason
+        : new DOMException('Aborted', 'AbortError');
     }
 
-    options?.onProgress?.({ progress: 10, phase: 'submitting' });
-
-    const result = await adapter.generateImage(
-      getAdapterContextFromSettings('image', params.modelRef || params.model, {
-        preferredRequestSchema,
-      }),
-      {
-        prompt: params.prompt,
-        model: params.model,
-        modelRef: params.modelRef || null,
-        size: params.size,
-        generationMode:
-          params.generationMode ||
-          (isGPTImageEditRequestSchema(preferredRequestSchema)
-            ? 'image_to_image'
-            : 'text_to_image'),
-        referenceImages: processedImages,
-        maskImage: params.maskImage,
-        inputFidelity: params.inputFidelity,
-        background: params.background,
-        outputFormat: params.outputFormat,
-        outputCompression: params.outputCompression,
-        params: {
-          resolution: params.resolution,
-          quality: params.quality,
-          n: params.count,
-          ...params.params,
-        },
-      }
-    );
-
     const duration = Date.now() - logStartTime;
+    const artifacts = result.artifacts;
+    const primaryArtifact = artifacts[0];
+    if (!primaryArtifact) {
+      throw new Error('图片适配器未返回可缓存的 artifact');
+    }
 
     completeLLMApiLog(logId, {
       httpStatus: 200,
       duration,
       resultType: 'image',
-      resultCount: 1,
-      resultUrl: result.url,
+      resultCount: artifacts.length,
+      resultUrl: primaryArtifact.url,
     });
 
     options?.onProgress?.({ progress: 95, phase: 'downloading' });
 
     // 缓存远程签名 URL 到本地，避免 Referer 校验导致 403
-    const fmt = result.format || 'png';
-    const allUrls = result.urls?.length ? result.urls : [result.url];
-    const cachedUrls = await cacheRemoteUrls(allUrls, taskId, 'image', fmt, {
-      extraMetadata: params.assetMetadata
-        ? { ...params.assetMetadata }
+    const cachedArtifacts = await cacheImageArtifacts(artifacts, taskId, {
+      signal: options?.signal,
+      telemetry: imageInvocation.telemetry,
+      extraMetadata: request.assetMetadata
+        ? { ...request.assetMetadata }
         : undefined,
     });
-    const cachedPrimary = cachedUrls[0];
+    const cachedPrimary = cachedArtifacts[0];
+    if (!cachedPrimary) {
+      throw new ImageCachePersistenceError('图片 artifact 缓存结果为空');
+    }
+    const cachedUrls = cachedArtifacts.map((artifact) => artifact.url);
+    const fmt = cachedPrimary.format || primaryArtifact.format || 'png';
 
-    return await completeImageExecution(taskId, {
-      url: cachedPrimary,
-      urls: cachedUrls.length > 1 ? cachedUrls : undefined,
-      format: fmt,
-      size: 0,
-    });
-  } catch (error: any) {
+    imageInvocation.telemetry.increment('terminalWrites');
+    return await imageInvocation.telemetry.measure(
+      'terminalPersistence',
+      () =>
+        completeImageExecution(
+          taskId,
+          {
+            url: cachedPrimary.url,
+            urls: cachedUrls.length > 1 ? cachedUrls : undefined,
+            imageArtifacts: cachedArtifacts,
+            format: fmt,
+            size: 0,
+            ...(cachedPrimary.width ? { width: cachedPrimary.width } : {}),
+            ...(cachedPrimary.height ? { height: cachedPrimary.height } : {}),
+          },
+          options?.imageAttemptStartedAt
+        )
+    );
+  } catch (error: unknown) {
     const duration = Date.now() - logStartTime;
-    const errorMessage = error.message || 'Image generation failed (adapter)';
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : 'Image generation failed (adapter)';
 
     const credentialErrorKind = classifyApiCredentialError(error);
     if (credentialErrorKind) {
@@ -216,10 +208,19 @@ export async function executeImageViaAdapter(
     }
 
     failLLMApiLog(logId, { duration, errorMessage });
-    return await failImageExecution(taskId, {
-      code: 'IMAGE_GENERATION_ERROR',
-      message: errorMessage,
-    });
+    return await failImageExecution(
+      taskId,
+      {
+        code:
+          error instanceof ImageCachePersistenceError
+            ? error.code
+            : error instanceof ImageInvocationError
+            ? error.code
+            : 'IMAGE_GENERATION_ERROR',
+        message: errorMessage,
+      },
+      options?.imageAttemptStartedAt
+    );
   }
 }
 

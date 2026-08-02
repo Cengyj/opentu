@@ -13,159 +13,16 @@ import type {
 } from '../types';
 import {
   INSPIRATION_BOARD_DEFAULTS,
-  INSPIRATION_BOARD_PROMPT_TEMPLATE,
 } from '../../types/photo-wall.types';
-import { taskQueueService } from '../../services/task-queue';
-import { TaskType } from '../../types/task.types';
-import { getCurrentImageModel } from './image-generation';
+import {
+  createInspirationBoardTask as createInspirationBoardCanvasTask,
+  type InspirationBoardParams as CanvasInspirationBoardParams,
+} from '../../services/canvas-operations/inspiration-board';
 
 /**
  * 灵感图工具参数
  */
-export interface InspirationBoardParams {
-  /** 主题描述 */
-  theme: string;
-  /** 图片数量（1-16，默认 9） */
-  imageCount?: number;
-  /** 图片尺寸比例（默认 16x9 横向） */
-  imageSize?: string;
-  /** 分辨率档位（默认 2k） */
-  imageQuality?: '1k' | '2k' | '4k';
-  /** 参考图片 URL 列表 */
-  referenceImages?: string[];
-  /** AI 模型 */
-  model?: string;
-}
-
-/**
- * 构建灵感图生图提示词
- */
-function buildInspirationBoardPrompt(
-  theme: string,
-  imageCount: number
-): string {
-  const template = INSPIRATION_BOARD_PROMPT_TEMPLATE.zh;
-  return template(theme, imageCount);
-}
-
-/**
- * 创建灵感图任务（queue 模式）
- * 复用图片生成的任务队列，添加灵感图特有参数
- */
-function executeQueue(
-  params: InspirationBoardParams,
-  options: MCPExecuteOptions
-): MCPTaskResult {
-  const {
-    theme,
-    imageCount = INSPIRATION_BOARD_DEFAULTS.imageCount,
-    imageSize = '16x9', // 灵感图默认横向布局
-    imageQuality = '2k',
-    referenceImages,
-    model,
-  } = params;
-
-  if (!theme || typeof theme !== 'string') {
-    return {
-      success: false,
-      error: '缺少必填参数 theme（主题描述）',
-      type: 'error',
-    };
-  }
-
-  // 验证参数范围
-  const validImageCount = Math.min(Math.max(1, imageCount), 16);
-
-  // 构建生图提示词
-  const prompt = buildInspirationBoardPrompt(theme, validImageCount);
-
-  // 确定使用的模型
-  const actualModel = model || getCurrentImageModel();
-
-  // 将参考图片转换为 uploadedImages 格式
-  const uploadedImages = referenceImages?.map((url, index) => ({
-    type: 'url' as const,
-    url,
-    name: `reference-${index + 1}`,
-  }));
-
-  // console.log('[InspirationBoardTool] Creating inspiration board task with params:', {
-  //   theme,
-  //   imageCount: validImageCount,
-  //   imageSize,
-  //   imageQuality,
-  //   referenceImages: referenceImages?.length || 0,
-  //   model: actualModel,
-  //   modelSource: model ? 'user-specified' : 'settings',
-  // });
-
-  try {
-    let task;
-
-    // 如果是重试，复用原有任务
-    if (options.retryTaskId) {
-      // console.log('[InspirationBoardTool] Retrying existing task:', options.retryTaskId);
-      taskQueueService.retryTask(options.retryTaskId);
-      task = taskQueueService.getTask(options.retryTaskId);
-      if (!task) {
-        throw new Error(`重试任务不存在: ${options.retryTaskId}`);
-      }
-    } else {
-      // 创建灵感图任务
-      // 任务完成后由 useAutoInsertToCanvas 检测并处理
-      task = taskQueueService.createTask(
-        {
-          prompt,
-          size: imageSize,
-          model: actualModel,
-          // 参考图片
-          uploadedImages:
-            uploadedImages && uploadedImages.length > 0
-              ? uploadedImages
-              : undefined,
-          params: {
-            resolution: imageQuality,
-          },
-          // 灵感图特有参数
-          isInspirationBoard: true,
-          inspirationBoardImageCount: validImageCount,
-          inspirationBoardLayoutStyle: 'inspiration-board',
-          // 保存原始主题，用于显示
-          originalTheme: theme,
-          // 批量参数
-          batchId: options.batchId,
-          globalIndex: options.globalIndex || 1,
-          // 自动插入画布
-          autoInsertToCanvas: true,
-        },
-        TaskType.IMAGE
-      );
-    }
-
-    // console.log('[InspirationBoardTool] Created/retried inspiration board task:', task.id);
-
-    return {
-      success: true,
-      data: {
-        taskId: task.id,
-        theme,
-        imageCount: validImageCount,
-        prompt: prompt.substring(0, 100) + '...',
-      },
-      type: 'image',
-      taskId: task.id,
-      task,
-    };
-  } catch (error: any) {
-    console.error('[InspirationBoardTool] Failed to create task:', error);
-
-    return {
-      success: false,
-      error: error.message || '创建灵感图任务失败',
-      type: 'error',
-    };
-  }
-}
+export type InspirationBoardParams = CanvasInspirationBoardParams;
 
 /**
  * 灵感图 MCP 工具定义
@@ -237,6 +94,15 @@ export const inspirationBoardTool: MCPTool = {
         type: 'string',
         description: '图片生成模型，不指定时使用用户设置的模型',
       },
+      modelRef: {
+        type: 'object',
+        description: '图片模型所属供应商与模型的稳定引用',
+        properties: {
+          profileId: { type: 'string' },
+          modelId: { type: 'string' },
+        },
+        required: ['profileId', 'modelId'],
+      },
     },
     required: ['theme'],
   },
@@ -296,9 +162,9 @@ export const inspirationBoardTool: MCPTool = {
     options?: MCPExecuteOptions
   ): Promise<MCPResult> => {
     // taskQueueService 会根据 SW 可用性自动选择正确的服务
-    return executeQueue(
+    return createInspirationBoardCanvasTask(
       params as unknown as InspirationBoardParams,
-      options || {}
+      options
     );
   },
 };
@@ -310,11 +176,5 @@ export function createInspirationBoardTask(
   params: InspirationBoardParams,
   options?: Omit<MCPExecuteOptions, 'mode'>
 ): MCPTaskResult {
-  return inspirationBoardTool.execute(
-    params as unknown as Record<string, unknown>,
-    {
-      ...options,
-      mode: 'queue',
-    }
-  ) as unknown as MCPTaskResult;
+  return createInspirationBoardCanvasTask(params, options);
 }

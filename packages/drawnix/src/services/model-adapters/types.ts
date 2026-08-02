@@ -10,6 +10,12 @@ import type {
   ProviderProtocol,
   ResolvedProviderContext,
 } from '../provider-routing/types';
+import type { ImageArtifact } from '../image-invocation/artifacts';
+import type {
+  ImageOperationIntent,
+  NormalizedImageRequest,
+} from '../image-invocation/types';
+import type { ImageInvocationTelemetry } from '../image-invocation/performance';
 
 export type ModelKind = 'image' | 'video' | 'audio' | 'chat';
 
@@ -43,29 +49,32 @@ export interface AdapterMetadata {
   matchPredicate?: (model: ModelConfig) => boolean;
 }
 
-export interface ImageGenerationRequest {
-  prompt: string;
-  model?: string;
-  modelRef?: ModelRef | null;
-  size?: string;
-  generationMode?: 'text_to_image' | 'image_to_image' | 'image_edit';
-  referenceImages?: string[];
-  maskImage?: string;
-  inputFidelity?: 'high' | 'low';
-  background?: 'transparent' | 'opaque' | 'auto';
-  outputFormat?: 'png' | 'jpeg' | 'webp';
-  outputCompression?: number;
-  params?: Record<string, unknown>;
-}
+export type ImageGenerationRequest = Omit<
+  NormalizedImageRequest,
+  | 'taskId'
+  | 'referenceImages'
+  | 'assetMetadata'
+  | 'promptMeta'
+  | 'params'
+> & {
+  /** Canonical operation resolved once before entering the adapter layer. */
+  readonly operationIntent: ImageOperationIntent;
+  /** Canonical images after any caller-owned preprocessing. */
+  readonly referenceImages?: readonly string[];
+  /** Persist the provider task id before adapter-owned polling begins. */
+  readonly onSubmitted?: (remoteId: string) => void | Promise<void>;
+  readonly onProgress?: (progress: number, status?: string) => void;
+  /** Execution-only polling controls; never serialized into provider payloads. */
+  readonly pollIntervalMs?: number;
+  readonly pollMaxAttempts?: number;
+  /** Numeric observability only; serializers must not include it in payloads. */
+  readonly telemetry?: ImageInvocationTelemetry;
+  /** Provider-specific values only; canonical fields and aliases are excluded. */
+  readonly params?: Readonly<Record<string, unknown>>;
+};
 
 export interface ImageGenerationResult {
-  url: string;
-  urls?: string[];
-  thumbnails?: string[];
-  format?: string;
-  width?: number;
-  height?: number;
-  raw?: unknown;
+  readonly artifacts: readonly ImageArtifact[];
 }
 
 export interface VideoGenerationRequest {

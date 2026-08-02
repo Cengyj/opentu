@@ -8,24 +8,6 @@ import type { ApiConfig } from './types';
 import type { ResolvedProviderContext } from '../provider-routing/types';
 
 /**
- * 异步图片模型 ID 列表
- */
-const ASYNC_IMAGE_MODELS = [
-  'gemini-3-pro-image-preview-async',
-  'gemini-3-pro-image-preview-2k-async',
-  'gemini-3-pro-image-preview-4k-async',
-];
-
-/**
- * 检测是否为异步图片模型
- */
-export function isAsyncImageModel(model?: string): boolean {
-  if (!model) return false;
-  const lower = model.toLowerCase();
-  return ASYNC_IMAGE_MODELS.some((m) => lower.includes(m));
-}
-
-/**
  * 规范化 API base URL，移除尾部 / 或 /v1
  * 便于统一拼接 /v1/videos 等路径
  */
@@ -290,27 +272,6 @@ export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 /**
- * 图片生成支持的宽高比列表（NxM 格式）
- */
-const VALID_IMAGE_SIZES = [
-  'auto',
-  '1x1',
-  '1x4',
-  '4x1',
-  '1x8',
-  '8x1',
-  '16x9',
-  '9x16',
-  '3x2',
-  '2x3',
-  '4x3',
-  '3x4',
-  '5x4',
-  '4x5',
-  '21x9',
-];
-
-/**
  * 将宽高比字符串解析为数值比例
  * 支持格式：'16:9', '16x9', '2.35:1', '1920x1080'（像素尺寸）
  * @returns 宽高比数值（w/h），解析失败返回 null
@@ -330,76 +291,6 @@ function parseAspectRatioValue(size: string): number | null {
   if (!w || !h || isNaN(w) || isNaN(h)) return null;
 
   return w / h;
-}
-
-/**
- * 计算标准 size token 的宽高比数值
- */
-function sizeTokenToRatio(sizeToken: string): number | null {
-  if (sizeToken === 'auto') return null;
-  return parseAspectRatioValue(sizeToken);
-}
-
-/**
- * 将任意 size 字符串规范化为最接近的可用图片尺寸
- *
- * 处理逻辑：
- * 1. 如果 size 已在可用列表中（精确匹配），直接返回
- * 2. 如果 size 是具体像素尺寸，保留原值
- * 3. 将 ':' 转为 'x' 后再次精确匹配
- * 4. 解析为宽高比数值，找到数值最接近的可用 size
- * 5. 都无法处理时返回默认值 'auto'
- *
- * @param size 原始 size 字符串，如 '2.35:1', '16:9', '1920x1080'
- * @param defaultSize 默认尺寸，当无法匹配时返回
- * @returns 最接近的可用图片 size
- */
-export function normalizeToClosestImageSize(
-  size?: string,
-  defaultSize: string = 'auto'
-): string {
-  if (!size) return defaultSize;
-
-  const trimmed = size.trim();
-  if (!trimmed) return defaultSize;
-
-  // 1. 精确匹配（不区分大小写）
-  const lower = trimmed.toLowerCase();
-  if (VALID_IMAGE_SIZES.includes(lower)) return lower;
-
-  const pixelSize = parseSize(lower);
-  if (
-    pixelSize &&
-    pixelSize.width > 0 &&
-    pixelSize.height > 0 &&
-    (pixelSize.width > 32 || pixelSize.height > 32)
-  ) {
-    return lower;
-  }
-
-  // 3. ':' → 'x' 后再精确匹配
-  const colonToX = lower.replace(':', 'x');
-  if (VALID_IMAGE_SIZES.includes(colonToX)) return colonToX;
-
-  // 4. 解析为宽高比数值，找最接近的
-  const targetRatio = parseAspectRatioValue(trimmed);
-  if (targetRatio === null) return defaultSize;
-
-  let bestMatch = defaultSize;
-  let bestDiff = Infinity;
-
-  for (const candidate of VALID_IMAGE_SIZES) {
-    if (candidate === 'auto') continue;
-    const candidateRatio = sizeTokenToRatio(candidate);
-    if (candidateRatio === null) continue;
-    const diff = Math.abs(targetRatio - candidateRatio);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      bestMatch = candidate;
-    }
-  }
-
-  return bestMatch;
 }
 
 /**

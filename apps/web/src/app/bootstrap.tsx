@@ -14,18 +14,20 @@ import {
   memoryMonitorService,
   crashRecoveryService,
   swChannelClient,
-  safeReload,
 } from '@drawnix/drawnix/runtime';
 import {
   getAnalyticsReleaseContext,
   registerAnalyticsSuperProperties,
 } from '@drawnix/drawnix';
 import { initSWConsoleCapture } from '../utils/sw-console-capture';
+import {
+  fetchVersionMetadata,
+  installVersionUpgradeRuntime,
+  postUpgradeCommitWithAcknowledgement,
+  resolveServiceWorkerVersionState,
+  subscribeToApprovedActivationReload,
+} from './version-upgrade-runtime';
 
-const isLocalDev =
-  typeof window !== 'undefined' &&
-  (window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1');
 const swQueryParam =
   typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('sw')
@@ -55,6 +57,12 @@ const APP_VERSION =
   import.meta.env.VITE_APP_VERSION ||
   document.querySelector('meta[name="app-version"]')?.getAttribute('content') ||
   '0.0.0';
+const APP_RELEASE_ID =
+  import.meta.env.VITE_APP_RELEASE_ID ||
+  document
+    .querySelector('meta[name="app-release-id"]')
+    ?.getAttribute('content') ||
+  APP_VERSION;
 const RELEASE_CONTEXT = getAnalyticsReleaseContext();
 const LAZY_CHUNK_RETRY_PARAM = '_lazy_chunk_retry';
 const LAZY_CHUNK_RETRY_TS_PARAM = '_t';
@@ -128,14 +136,6 @@ function getBootController(): BootController | null {
 
 function updateBootStatus(options?: BootProgressOptions): void {
   getBootController()?.setProgress?.(options?.progress, options);
-}
-
-interface RuntimeSWVersionState {
-  committedVersion: string;
-  pendingVersion: string | null;
-  pendingReadyAt: number | null;
-  upgradeState: 'idle' | 'prewarming' | 'ready' | 'committing';
-  swVersion: string;
 }
 
 function getRuntimeCDNPreference(): RuntimeCDNPreference | null {
@@ -339,51 +339,124 @@ if (typeof window !== 'undefined') {
   });
 }
 
-if (
-  hasServiceWorkerSupport &&
-  isServiceWorkerExplicitlyDisabled
-) {
+if (hasServiceWorkerSupport && isServiceWorkerExplicitlyDisabled) {
   cleanupDisabledServiceWorker();
 }
 
 // 注册Service Worker来处理CORS问题和PWA功能
 if (shouldUseServiceWorker) {
-  const isDevelopment = isLocalDev;
+  const isDevelopment = import.meta.env.DEV;
+  const versionUpgradeRuntime = installVersionUpgradeRuntime(
+    window,
+    APP_RELEASE_ID
+  );
 
   // 等待中的新 Worker
   let pendingWorker: ServiceWorker | null = null;
-  // 用户是否已确认升级（只有用户确认后才触发刷新）
-  let userConfirmedUpgrade = false;
+  let lastPendingReleaseNotified: string | null = null;
+  let metadataRequestKey: string | null = null;
   let upgradeReloadScheduled = false;
-  let lastPendingVersionNotified: string | null = null;
 
   // Global reference to service worker registration
   let swRegistration: ServiceWorkerRegistration | null = null;
 
-  const notifyUpdateReady = (version: string) => {
-    if (lastPendingVersionNotified === version) {
+  const resolveVersionMetadataScope = (): string => {
+    if (swRegistration?.scope) {
+      return swRegistration.scope;
+    }
+
+    const worker =
+      pendingWorker ||
+      swRegistration?.waiting ||
+      navigator.serviceWorker.controller ||
+      swRegistration?.active ||
+      null;
+    if (worker?.scriptURL) {
+      try {
+        return new URL('.', worker.scriptURL).toString();
+      } catch {
+        // Fall through to the application origin below.
+      }
+    }
+
+    return new URL('/', window.location.origin).toString();
+  };
+
+  const refreshVersionMetadata = () => {
+    const currentSnapshot = versionUpgradeRuntime.getSnapshot();
+    if (
+      currentSnapshot.pendingReleaseId &&
+      currentSnapshot.metadata?.releaseId === currentSnapshot.pendingReleaseId
+    ) {
       return;
     }
-    lastPendingVersionNotified = version;
+    const fence = versionUpgradeRuntime.createMetadataFence();
+    if (!fence) {
+      return;
+    }
+
+    const requestKey = `${fence.pendingReleaseId}:${fence.revision}`;
+    if (metadataRequestKey === requestKey) {
+      return;
+    }
+    metadataRequestKey = requestKey;
+
+    fetchVersionMetadata({
+      pendingReleaseId: fence.pendingReleaseId,
+      baseUrl: resolveVersionMetadataScope(),
+      expectedOrigin: window.location.origin,
+    })
+      .then((metadata) => {
+        versionUpgradeRuntime.applyMetadata(fence, metadata);
+      })
+      .catch((error) => {
+        console.warn('[Main] Failed to load version metadata:', error);
+      })
+      .finally(() => {
+        if (metadataRequestKey === requestKey) {
+          metadataRequestKey = null;
+        }
+      });
+  };
+
+  const notifyUpdateReady = (
+    releaseId: string,
+    displayVersion?: string | null
+  ) => {
+    versionUpgradeRuntime.replacePendingRelease(releaseId, displayVersion);
+    refreshVersionMetadata();
+
+    if (lastPendingReleaseNotified === releaseId) {
+      return;
+    }
+    lastPendingReleaseNotified = releaseId;
     window.dispatchEvent(
       new CustomEvent('sw-update-available', {
-        detail: { version },
+        detail: {
+          releaseId,
+          version: displayVersion || releaseId,
+        },
       })
     );
   };
 
-  const handleRuntimeVersionState = (state: RuntimeSWVersionState) => {
-    if (
-      state.pendingVersion &&
-      state.pendingVersion !== state.committedVersion &&
-      (state.upgradeState === 'ready' || state.upgradeState === 'committing')
-    ) {
-      notifyUpdateReady(state.pendingVersion);
+  const handleRuntimeVersionState = (payload: unknown) => {
+    const state = resolveServiceWorkerVersionState(payload);
+    if (!state) {
+      console.warn('[Main] Ignored invalid Service Worker version state');
       return;
     }
 
-    if (!state.pendingVersion) {
-      lastPendingVersionNotified = null;
+    versionUpgradeRuntime.applyAuthoritativeState(state);
+
+    const snapshot = versionUpgradeRuntime.getSnapshot();
+    if (snapshot.pendingReleaseId && snapshot.phase === 'ready') {
+      notifyUpdateReady(
+        snapshot.pendingReleaseId,
+        snapshot.displayVersion || state.pendingDisplayVersion
+      );
+    } else if (!snapshot.pendingReleaseId) {
+      lastPendingReleaseNotified = null;
     }
   };
 
@@ -400,7 +473,10 @@ if (shouldUseServiceWorker) {
       return;
     }
 
-    worker.postMessage({ type: 'GET_VERSION_STATE' });
+    worker.postMessage({
+      type: 'GET_VERSION_STATE',
+      clientReleaseId: APP_RELEASE_ID,
+    });
   };
 
   const claimCurrentClientIfNeeded = (
@@ -413,31 +489,58 @@ if (shouldUseServiceWorker) {
     registration.active.postMessage({ type: 'CLAIM_CLIENTS' });
   };
 
-  const scheduleConfirmedUpgradeReload = (reason: string) => {
-    if (!userConfirmedUpgrade || upgradeReloadScheduled) {
+  const scheduleApprovedUpgradeReload = (reason: string) => {
+    if (upgradeReloadScheduled) {
       return;
     }
-
     upgradeReloadScheduled = true;
+
     // 延迟一点，给新 SW 留出接管后收尾时间
     setTimeout(() => {
-      void safeReload();
+      console.info(`[Main] Reloading after approved upgrade (${reason})`);
+      window.location.reload();
     }, 1000);
+  };
+
+  subscribeToApprovedActivationReload(versionUpgradeRuntime, () =>
+    scheduleApprovedUpgradeReload('authoritative-version-state')
+  );
+
+  const selectWaitingUpgradeWorker = (
+    candidates: Array<ServiceWorker | null | undefined>
+  ): ServiceWorker | null => {
+    for (const worker of candidates) {
+      if (!worker || worker.state === 'redundant') {
+        continue;
+      }
+
+      // A staged commit must never be sent to the controller serving this page.
+      if (worker === navigator.serviceWorker.controller) {
+        continue;
+      }
+
+      pendingWorker = worker;
+      return worker;
+    }
+    return null;
   };
 
   const resolvePendingUpgradeWorker =
     async (): Promise<ServiceWorker | null> => {
-      const candidates: Array<ServiceWorker | null | undefined> = [
+      const immediateWorker = selectWaitingUpgradeWorker([
         pendingWorker,
         swRegistration?.waiting,
-      ];
+      ]);
+      if (immediateWorker) {
+        return immediateWorker;
+      }
 
       try {
         const liveRegistration =
           (await navigator.serviceWorker.getRegistration()) || null;
         if (liveRegistration) {
           swRegistration = liveRegistration;
-          candidates.push(liveRegistration.waiting);
+          return selectWaitingUpgradeWorker([liveRegistration.waiting]);
         }
       } catch (error) {
         console.warn(
@@ -446,39 +549,17 @@ if (shouldUseServiceWorker) {
         );
       }
 
-      try {
-        const readyRegistration = await navigator.serviceWorker.ready;
-        candidates.push(readyRegistration.waiting);
-      } catch (error) {
-        console.warn(
-          '[Main] Failed to inspect ready service worker registration:',
-          error
-        );
-      }
-
-      for (const worker of candidates) {
-        if (!worker || worker.state === 'redundant') {
-          continue;
-        }
-
-        // staged update only commits the waiting/installed worker, never the old controller
-        if (worker === navigator.serviceWorker.controller) {
-          continue;
-        }
-
-        pendingWorker = worker;
-        return worker;
-      }
-
       return null;
     };
 
   const swRegistrationPromise =
     window.__OPENTU_SW_REGISTRATION_PROMISE__ ||
-    navigator.serviceWorker.register('./sw.js').catch((error) => {
-      console.warn('[Main] Service worker registration failed:', error);
-      return null;
-    });
+    navigator.serviceWorker
+      .register('./sw.js', { updateViaCache: 'none' })
+      .catch((error) => {
+        console.warn('[Main] Service worker registration failed:', error);
+        return null;
+      });
 
   window.__OPENTU_SW_REGISTRATION_PROMISE__ = swRegistrationPromise;
 
@@ -594,18 +675,16 @@ if (shouldUseServiceWorker) {
         // 这里只同步一次状态，真正刷新等待 sw:activated / controllerchange。
         requestSWVersionState();
       },
-      onSWNewVersionReady: (event) => {
-        notifyUpdateReady(event.version);
+      onSWNewVersionReady: (_event) => {
+        // This legacy channel event carries only a display version. The
+        // immutable pending identity comes exclusively from SW_VERSION_STATE.
         requestSWVersionState();
       },
       onSWActivated: (_event) => {
-        if (userConfirmedUpgrade) {
-          scheduleConfirmedUpgradeReload('sw:activated');
-          return;
-        }
-
         // 老版本页面关闭后，waiting worker 可能在后台自然转为 active。
-        // 这时不再重复弹升级提示，只更新运行时状态。
+        // 这时不再重复弹升级提示。sw:activated 的 version 可能只是展示
+        // 版本，不能作为 immutable release identity；刷新统一等待新 controller
+        // 返回权威 SW_VERSION_STATE 后由 runtime 的 one-shot claim 决定。
         pendingWorker = null;
         requestSWVersionState();
       },
@@ -688,7 +767,7 @@ if (shouldUseServiceWorker) {
 
   navigator.serviceWorker.addEventListener('message', (event: MessageEvent) => {
     if (event.data?.type === 'SW_VERSION_STATE') {
-      handleRuntimeVersionState(event.data as RuntimeSWVersionState);
+      handleRuntimeVersionState(event.data);
     }
   });
 
@@ -697,17 +776,56 @@ if (shouldUseServiceWorker) {
   navigator.serviceWorker.addEventListener('controllerchange', () => {
     scheduleCDNPreferenceSync(swRegistration);
     requestSWVersionState();
-    scheduleConfirmedUpgradeReload('controllerchange');
   });
 
+  window.addEventListener(
+    'user-requested-current-release-reload',
+    (event: Event) => {
+      const customEvent = event as CustomEvent<{
+        committedReleaseId?: string;
+      }>;
+      const snapshot = versionUpgradeRuntime.getSnapshot();
+      const isReloadRequiredRejection =
+        snapshot.confirmationIssue === 'commit-rejected' &&
+        (snapshot.confirmationRejectionReason === 'client-release-mismatch' ||
+          snapshot.confirmationRejectionReason === 'already-committed');
+      if (
+        !isReloadRequiredRejection ||
+        customEvent.detail?.committedReleaseId !== snapshot.committedReleaseId
+      ) {
+        return;
+      }
+      window.location.reload();
+    }
+  );
+
   // 监听用户确认升级事件
-  window.addEventListener('user-confirmed-upgrade', () => {
+  window.addEventListener('user-confirmed-upgrade', (event: Event) => {
     void (async () => {
-      const worker = await resolvePendingUpgradeWorker();
-      if (!worker) {
+      const customEvent = event as CustomEvent<{ releaseId?: string }>;
+      const pendingReleaseId =
+        customEvent.detail?.releaseId ||
+        versionUpgradeRuntime.getSnapshot().pendingReleaseId;
+      if (!pendingReleaseId) {
+        return;
+      }
+
+      const result = await versionUpgradeRuntime.confirmPendingRelease(
+        pendingReleaseId,
+        resolvePendingUpgradeWorker,
+        postUpgradeCommitWithAcknowledgement
+      );
+      if (result === 'acknowledgement-pending') {
         console.warn(
-          '[Main] No waiting service worker available for COMMIT_UPGRADE'
+          '[Main] Upgrade commit acknowledgement is unknown; waiting for authoritative Service Worker state'
         );
+        requestSWVersionState();
+      } else if (
+        result === 'worker-unavailable' ||
+        result === 'delivery-failed' ||
+        result === 'rejected'
+      ) {
+        console.warn(`[Main] Upgrade commit remains retryable (${result})`);
         requestSWVersionState();
         swRegistration?.update().catch((error) => {
           console.warn(
@@ -715,12 +833,7 @@ if (shouldUseServiceWorker) {
             error
           );
         });
-        return;
       }
-
-      // 标记用户已确认升级，允许后续的 reload
-      userConfirmedUpgrade = true;
-      worker.postMessage({ type: 'COMMIT_UPGRADE' });
     })();
   });
 

@@ -1,9 +1,31 @@
 import type {
   PreparedProviderTransportRequest,
+  ProviderAuthQueryKey,
   ProviderBaseUrlStrategy,
+  ProviderModelBinding,
   ProviderTransportRequest,
   ResolvedProviderContext,
 } from './types';
+
+export function resolveProviderBindingAuthQueryKey(
+  binding?: Pick<ProviderModelBinding, 'protocol'> | null
+): ProviderAuthQueryKey | undefined {
+  if (!binding) {
+    return undefined;
+  }
+
+  return binding.protocol === 'google.generateContent' ? 'key' : 'api_key';
+}
+
+export function resolveProviderBindingPollPath(
+  binding: Pick<ProviderModelBinding, 'pollPathTemplate'> | null | undefined,
+  taskId: string,
+  fallbackTemplate: string
+): string {
+  const template = binding?.pollPathTemplate || fallbackTemplate;
+  const encodedTaskId = encodeURIComponent(taskId);
+  return template.replace(/\{(?:taskId|task_id|id)\}/g, encodedTaskId);
+}
 
 function trimTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, '');
@@ -90,7 +112,8 @@ function applyAuthHeaders(
 
 function applyAuthQuery(
   context: ResolvedProviderContext,
-  query: Record<string, string | number | boolean | null | undefined>
+  query: Record<string, string | number | boolean | null | undefined>,
+  explicitQueryKey?: ProviderAuthQueryKey
 ): Record<string, string | number | boolean | null | undefined> {
   if (!context.apiKey || context.authType !== 'query') {
     return query;
@@ -101,7 +124,8 @@ function applyAuthQuery(
   }
 
   const authQueryKey =
-    context.providerType === 'gemini-compatible' ? 'key' : 'api_key';
+    explicitQueryKey ||
+    (context.providerType === 'gemini-compatible' ? 'key' : 'api_key');
 
   return {
     ...query,
@@ -162,7 +186,11 @@ export class ProviderTransport {
   ): PreparedProviderTransportRequest {
     const mergedHeaders = mergeHeaders(context.extraHeaders, request.headers);
     const authenticatedHeaders = applyAuthHeaders(context, mergedHeaders);
-    const query = applyAuthQuery(context, request.query || {});
+    const query = applyAuthQuery(
+      context,
+      request.query || {},
+      request.authQueryKey
+    );
     const resolvedBaseUrl = applyBaseUrlStrategy(
       context.baseUrl,
       request.baseUrlStrategy
@@ -203,9 +231,7 @@ export class ProviderTransport {
     } catch (error) {
       if (timeoutControl.didTimeout()) {
         const timeoutMinutes = Math.floor((request.timeoutMs || 0) / 60000);
-        const timeoutError = new Error(
-          `请求超时（>${timeoutMinutes} 分钟）`
-        );
+        const timeoutError = new Error(`请求超时（>${timeoutMinutes} 分钟）`);
         timeoutError.name = 'TimeoutError';
         throw timeoutError;
       }

@@ -360,7 +360,6 @@ export function buildImageGenerationAnchorViewModel(
     task.status === TaskStatus.PROCESSING &&
     (phase === 'queued' || phase === 'generating')
       ? resolveImageTaskDisplayProgress({
-          startedAt: task.startedAt,
           fallbackProgress,
         })
       : fallbackProgress;

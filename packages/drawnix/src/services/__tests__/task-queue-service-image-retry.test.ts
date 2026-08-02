@@ -5,9 +5,26 @@ import {
   TaskType,
 } from '../../types/task.types';
 import type { Task } from '../../types/task.types';
+import type {
+  ExecutionOptions,
+  ImageGenerationParams,
+} from '../media-executor/types';
+import type { ImageTaskAttemptWriteOptions } from '../media-executor/task-storage-writer';
+import type { NormalizedImageRequest } from '../image-invocation';
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function deferred<T = void>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 const TINY_PNG_BASE64 =
@@ -166,6 +183,7 @@ async function setupTaskQueueServiceHarness(
       return {
         taskId,
         status: terminalTask.status,
+        attemptStartedAt: executionOptions?.imageAttemptStartedAt,
         progress: terminalTask.progress,
         result: terminalTask.result,
         error: terminalTask.error,
@@ -174,30 +192,58 @@ async function setupTaskQueueServiceHarness(
       };
     }),
     generateVideo: vi.fn(async () => undefined),
-    updateStatus: vi.fn(async (taskId: string, status: TaskStatus) => {
-      const task = storedTasks.get(taskId);
-      if (!task) return;
-      storedTasks.set(taskId, {
-        ...task,
-        status,
-        startedAt: task.startedAt || Date.now(),
-        updatedAt: Date.now(),
-      });
-    }),
-    completeTask: vi.fn(async (taskId: string, result: any) => {
-      const task = storedTasks.get(taskId);
-      if (!task) return;
-      const completedTask = {
-        ...task,
-        status: TaskStatus.COMPLETED,
-        result: clone(result),
-        progress: 100,
-        completedAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-      delete completedTask.executionPhase;
-      storedTasks.set(taskId, completedTask);
-    }),
+    updateStatus: vi.fn(
+      async (
+        taskId: string,
+        status: TaskStatus,
+        writeOptions?: ImageTaskAttemptWriteOptions
+      ) => {
+        const task = storedTasks.get(taskId);
+        if (!task) return false;
+        if (
+          task.type === TaskType.IMAGE &&
+          writeOptions?.expectedStartedAt !== undefined &&
+          task.startedAt !== writeOptions.expectedStartedAt
+        ) {
+          return false;
+        }
+        storedTasks.set(taskId, {
+          ...task,
+          status,
+          startedAt: task.startedAt || Date.now(),
+          updatedAt: Date.now(),
+        });
+        return true;
+      }
+    ),
+    completeTask: vi.fn(
+      async (
+        taskId: string,
+        result: NonNullable<Task['result']>,
+        writeOptions?: ImageTaskAttemptWriteOptions
+      ) => {
+        const task = storedTasks.get(taskId);
+        if (!task) return;
+        if (
+          task.type === TaskType.IMAGE &&
+          writeOptions?.expectedStartedAt !== undefined &&
+          task.startedAt !== writeOptions.expectedStartedAt
+        ) {
+          return clone(task);
+        }
+        const completedTask = {
+          ...task,
+          status: TaskStatus.COMPLETED,
+          result: clone(result),
+          progress: 100,
+          completedAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        delete completedTask.executionPhase;
+        storedTasks.set(taskId, completedTask);
+        return clone(completedTask);
+      }
+    ),
     markInserted: vi.fn(async (taskId: string) => {
       const task = storedTasks.get(taskId);
       if (!task) return;
@@ -370,49 +416,89 @@ async function setupTaskQueueServiceHarness(
     },
   }));
 
-  vi.doMock('../provider-routing', () => ({
-    resolveInvocationPlanFromRoute: vi.fn(
-      (operation: string, routeModel?: any) => {
-        const profileId =
-          typeof routeModel === 'object' ? routeModel?.profileId : null;
-        if (!profileId) {
-          return null;
-        }
-
-        const modelId =
-          typeof routeModel === 'string'
-            ? routeModel
-            : routeModel?.modelId || 'default-model';
-        return {
-          provider: {
-            profileId,
-            profileName: profileId,
-            providerType: 'custom',
-            baseUrl: 'https://api.example.com/v1',
-            apiKey: 'test-key',
-            authType: 'bearer',
-          },
-          modelRef: {
-            profileId,
-            modelId,
-          },
-          binding: {
-            id: `${profileId}:${modelId}:${operation}`,
-            profileId,
-            modelId,
-            operation,
-            protocol: 'openai.async.video',
-            requestSchema: 'openai.video.form-input-reference',
-            responseSchema: 'openai.async.task',
-            submitPath: '/videos',
-            pollPathTemplate: '/videos/{taskId}',
-            priority: 100,
-            confidence: 'high',
-            source: 'template',
-          },
-        };
+  const resolveInvocationPlanFromRoute = vi.fn(
+    (operation: string, routeModel?: any) => {
+      const profileId =
+        typeof routeModel === 'object' ? routeModel?.profileId : null;
+      if (!profileId) {
+        return null;
       }
-    ),
+
+      const modelId =
+        typeof routeModel === 'string'
+          ? routeModel
+          : routeModel?.modelId || 'default-model';
+      return {
+        provider: {
+          profileId,
+          profileName: profileId,
+          providerType: 'custom',
+          baseUrl: 'https://api.example.com/v1',
+          apiKey: 'test-key',
+          authType: 'bearer',
+        },
+        modelRef: {
+          profileId,
+          modelId,
+        },
+        binding: {
+          id: `${profileId}:${modelId}:${operation}`,
+          profileId,
+          modelId,
+          operation,
+          protocol: 'openai.async.video',
+          requestSchema: 'openai.video.form-input-reference',
+          responseSchema: 'openai.async.task',
+          submitPath: '/videos',
+          submitMethod: 'POST',
+          pollPathTemplate: '/videos/{taskId}',
+          pollMethod: 'GET',
+          priority: 100,
+          confidence: 'high',
+          source: 'template',
+        },
+      };
+    }
+  );
+
+  vi.doMock('../provider-routing', () => ({
+    resolveInvocationPlanFromRoute,
+  }));
+
+  const resolveNormalizedImageInvocation = vi.fn(
+    (request: NormalizedImageRequest) => {
+      const preferredRequestSchema = request.referenceImages.length
+        ? ['openai.image.gpt-edit-form']
+        : ['openai.image.gpt-generation-json'];
+      const plan = resolveInvocationPlanFromRoute(
+        'image',
+        request.modelRef || request.model,
+        {
+          bindingId: request.bindingId,
+          preferredRequestSchema,
+        }
+      );
+      if (!plan) {
+        throw new Error('Missing image invocation plan fixture');
+      }
+      return {
+        request,
+        intent: request.referenceImages.length ? 'edit' : 'generation',
+        preferredRequestSchema,
+        plan,
+        modelRef: plan.modelRef,
+        modelId: plan.modelRef.modelId,
+        adapter: { id: 'test-image-adapter', kind: 'image' },
+        adapterContext: { binding: plan.binding, provider: plan.provider },
+        capabilities: {},
+        telemetry: {},
+      };
+    }
+  );
+
+  vi.doMock('../image-invocation', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../image-invocation')>()),
+    resolveNormalizedImageInvocation,
   }));
 
   vi.doMock('../../utils/posthog-analytics', () => ({
@@ -500,6 +586,7 @@ async function setupTaskQueueServiceHarness(
     mocks: {
       ...mocks,
       waitForTaskCompletion,
+      resolveInvocationPlanFromRoute,
     },
     terminalReopenPersistenceReached,
     releaseTerminalReopenPersistence,
@@ -550,7 +637,7 @@ describe('task-queue-service lifecycle integration', () => {
     await flushAsyncWork();
 
     expect(mocks.generateImage).toHaveBeenCalledTimes(2);
-    expect(mocks.generateImage.mock.calls[1]?.[0]).toMatchObject({
+    expect(mocks.generateImage.mock.calls[1]?.[0]?.request).toMatchObject({
       generationMode: 'image_to_image',
       referenceImages: ['data:image/png;base64,source'],
       maskImage: 'data:image/png;base64,mask',
@@ -559,6 +646,96 @@ describe('task-queue-service lifecycle integration', () => {
     expect(storedTasks.get(task.id)?.params.referenceImages).toEqual([
       'data:image/png;base64,source',
     ]);
+  });
+
+  it('normalizes a legacy singular uploaded image before the snapshotted edit route executes', async () => {
+    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness([
+      TaskStatus.COMPLETED,
+    ]);
+    const modelRef = {
+      profileId: 'provider-edit',
+      modelId: 'gpt-image-2',
+    };
+    const uploadedImage = {
+      url: 'data:image/png;base64,source',
+    };
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Legacy singular image edit',
+        model: modelRef.modelId,
+        modelRef,
+        uploadedImage,
+      },
+      TaskType.IMAGE
+    );
+
+    await flushAsyncWork();
+
+    expect(task.invocationRoute).toMatchObject({
+      providerProfileId: modelRef.profileId,
+      modelId: modelRef.modelId,
+    });
+    expect(mocks.resolveInvocationPlanFromRoute).toHaveBeenCalledWith(
+      'image',
+      modelRef,
+      expect.objectContaining({
+        preferredRequestSchema: ['openai.image.gpt-edit-form'],
+      })
+    );
+    expect(mocks.resolveInvocationPlanFromRoute).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.generateImage.mock.calls[0]?.[0]?.resolvedInvocation
+    ).toMatchObject({
+      modelRef,
+      plan: {
+        binding: { id: 'provider-edit:gpt-image-2:image' },
+      },
+    });
+    expect(mocks.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request: expect.objectContaining({
+          model: modelRef.modelId,
+          modelRef,
+          referenceImages: [uploadedImage.url],
+        }),
+      }),
+      expect.any(Object)
+    );
+  });
+
+  it('reuses the resolved invocation after initial persistence without replanning', async () => {
+    const { taskQueueService, mocks } = await setupTaskQueueServiceHarness(
+      [TaskStatus.COMPLETED],
+      { delayInitialImagePersistenceMs: 30 }
+    );
+    const modelRef = {
+      profileId: 'provider-stable',
+      modelId: 'stable-image-model',
+    };
+
+    const task = taskQueueService.createTask(
+      {
+        prompt: 'Keep the submitted endpoint contract',
+        model: modelRef.modelId,
+        modelRef,
+      },
+      TaskType.IMAGE
+    );
+    const plannedInvocation = task.invocationRoute;
+    mocks.resolveInvocationPlanFromRoute.mockImplementation(() => {
+      throw new Error('settings changed after planning');
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    await flushAsyncWork();
+
+    expect(mocks.resolveInvocationPlanFromRoute).toHaveBeenCalledTimes(1);
+    expect(mocks.generateImage).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.generateImage.mock.calls[0]?.[0]?.resolvedInvocation?.plan.binding
+        .id
+    ).toBe(plannedInvocation?.binding?.id);
   });
 
   it('keeps a base64 image completion when the initial task persistence is delayed', async () => {
@@ -907,12 +1084,27 @@ describe('task-queue-service lifecycle integration', () => {
       },
     });
 
+    task.params.modelRef = {
+      profileId: 'provider-b',
+      modelId: 'shared-image-model',
+    };
+
     taskQueueService.retryTask(task.id);
     await flushAsyncWork();
 
     expect(mocks.generateImage).toHaveBeenCalledTimes(2);
-    expect(mocks.generateImage.mock.calls[0]?.[0]?.modelRef).toEqual(modelRef);
-    expect(mocks.generateImage.mock.calls[1]?.[0]?.modelRef).toEqual(modelRef);
+    expect(mocks.generateImage.mock.calls[0]?.[0]?.request.modelRef).toEqual(
+      modelRef
+    );
+    expect(mocks.generateImage.mock.calls[1]?.[0]?.request.modelRef).toEqual(
+      modelRef
+    );
+    expect(mocks.generateImage.mock.calls[0]?.[0]?.request.bindingId).toBe(
+      'provider-a:shared-image-model:image'
+    );
+    expect(mocks.generateImage.mock.calls[1]?.[0]?.request.bindingId).toBe(
+      'provider-a:shared-image-model:image'
+    );
   });
 
   it('allows explicit manual retry for completed image tasks and clears stale results', async () => {
@@ -963,7 +1155,7 @@ describe('task-queue-service lifecycle integration', () => {
       insertedToCanvas: false,
       savedToLibrary: false,
     });
-    expect(mocks.generateImage.mock.calls[1]?.[0]).toMatchObject({
+    expect(mocks.generateImage.mock.calls[1]?.[0]?.request).toMatchObject({
       prompt: 'Regenerate completed image',
       model: 'gpt-image-2',
       size: '1x1',
@@ -1043,7 +1235,7 @@ describe('task-queue-service lifecycle integration', () => {
     await flushAsyncWork();
 
     expect(mocks.generateImage).toHaveBeenCalledTimes(1);
-    expect(mocks.generateImage.mock.calls[0]?.[0]).toMatchObject({
+    expect(mocks.generateImage.mock.calls[0]?.[0]?.request).toMatchObject({
       generationMode: 'image_to_image',
       referenceImages: ['data:image/png;base64,restored-source'],
       maskImage: 'data:image/png;base64,restored-mask',
@@ -1195,6 +1387,159 @@ describe('task-queue-service lifecycle integration', () => {
     );
     expect(storedTasks.get(task.id)?.status).toBe(TaskStatus.CANCELLED);
   });
+
+  it.each([TaskStatus.CANCELLED, TaskStatus.FAILED])(
+    'keeps a retried processing image attempt isolated from a late %s attempt result',
+    async (firstTerminalStatus) => {
+      const { taskQueueService, storedTasks, mocks } =
+        await setupTaskQueueServiceHarness([TaskStatus.COMPLETED]);
+      const firstAttemptStarted = deferred<number>();
+      const releaseFirstAttempt = deferred();
+      const currentAttemptStarted = deferred<number>();
+      const releaseCurrentAttempt = deferred();
+      const currentAttemptCompleted = deferred();
+      let executionCall = 0;
+
+      mocks.generateImage.mockImplementation(
+        async (
+          params: ImageGenerationParams,
+          executionOptions: ExecutionOptions
+        ) => {
+          const callIndex = executionCall;
+          executionCall += 1;
+          const attemptStartedAt =
+            executionOptions.imageAttemptStartedAt as number;
+          const result = {
+            url:
+              callIndex === 0
+                ? 'https://example.com/stale-attempt.png'
+                : 'https://example.com/current-attempt.png',
+            format: 'png',
+            size: 1,
+          };
+
+          if (callIndex === 0) {
+            firstAttemptStarted.resolve(attemptStartedAt);
+            await releaseFirstAttempt.promise;
+            executionOptions.onProgress?.({
+              progress: 88,
+              phase: TaskExecutionPhase.DOWNLOADING,
+            });
+          } else {
+            currentAttemptStarted.resolve(attemptStartedAt);
+            await releaseCurrentAttempt.promise;
+          }
+
+          const storedTask = await mocks.completeTask(params.taskId, result, {
+            expectedStartedAt: attemptStartedAt,
+          });
+          if (storedTask.startedAt !== attemptStartedAt) {
+            return {
+              taskId: params.taskId,
+              status: 'stale',
+              attemptStartedAt,
+              updatedAt: storedTask.updatedAt,
+            };
+          }
+
+          if (callIndex === 1) {
+            currentAttemptCompleted.resolve();
+          }
+          return {
+            taskId: params.taskId,
+            status: 'completed',
+            attemptStartedAt,
+            progress: 100,
+            result: clone(storedTask.result),
+            completedAt: storedTask.completedAt,
+            updatedAt: storedTask.updatedAt,
+          };
+        }
+      );
+
+      const task = taskQueueService.createTask(
+        {
+          prompt: 'Retry while an old provider promise is still pending',
+          model: 'gpt-image-2',
+          size: '1x1',
+        },
+        TaskType.IMAGE
+      );
+      const firstStartedAt = await firstAttemptStarted.promise;
+
+      if (firstTerminalStatus === TaskStatus.CANCELLED) {
+        taskQueueService.cancelTask(task.id);
+        await flushAsyncWork();
+      } else {
+        await taskQueueService.updateTaskStatus(task.id, TaskStatus.FAILED, {
+          error: {
+            code: 'FIRST_ATTEMPT_FAILED',
+            message: 'Retryable first attempt failure',
+          },
+        });
+      }
+      expect(taskQueueService.getTask(task.id)?.status).toBe(
+        firstTerminalStatus
+      );
+
+      taskQueueService.retryTask(task.id);
+      const currentStartedAt = await currentAttemptStarted.promise;
+      expect(currentStartedAt).toBeGreaterThan(firstStartedAt);
+      expect(taskQueueService.getTask(task.id)).toMatchObject({
+        status: TaskStatus.PROCESSING,
+        startedAt: currentStartedAt,
+      });
+
+      releaseFirstAttempt.resolve();
+      await flushAsyncWork();
+
+      expect(taskQueueService.getTask(task.id)).toMatchObject({
+        status: TaskStatus.PROCESSING,
+        startedAt: currentStartedAt,
+      });
+      expect(taskQueueService.getTask(task.id)?.progress).not.toBe(88);
+      expect(storedTasks.get(task.id)).toMatchObject({
+        status: TaskStatus.PROCESSING,
+        startedAt: currentStartedAt,
+      });
+      expect(storedTasks.get(task.id)?.result).toBeUndefined();
+
+      releaseCurrentAttempt.resolve();
+      await currentAttemptCompleted.promise;
+      await flushAsyncWork();
+
+      expect(mocks.generateImage).toHaveBeenCalledTimes(2);
+      expect(mocks.generateImage.mock.calls[0]?.[1]).toMatchObject({
+        imageAttemptStartedAt: firstStartedAt,
+      });
+      expect(mocks.generateImage.mock.calls[1]?.[1]).toMatchObject({
+        imageAttemptStartedAt: currentStartedAt,
+      });
+      expect(taskQueueService.getTask(task.id)).toMatchObject({
+        status: TaskStatus.COMPLETED,
+        startedAt: currentStartedAt,
+        result: { url: 'https://example.com/current-attempt.png' },
+      });
+
+      expect(storedTasks.get(task.id)).toMatchObject({
+        status: TaskStatus.COMPLETED,
+        startedAt: currentStartedAt,
+        result: { url: 'https://example.com/current-attempt.png' },
+      });
+      expect(taskQueueService.getTask(task.id)).toMatchObject({
+        status: TaskStatus.COMPLETED,
+        startedAt: currentStartedAt,
+        result: { url: 'https://example.com/current-attempt.png' },
+      });
+      expect(
+        mocks.completeTask.mock.calls.some(
+          ([, result, writeOptions]) =>
+            result.url === 'https://example.com/stale-attempt.png' &&
+            writeOptions.expectedStartedAt === firstStartedAt
+        )
+      ).toBe(true);
+    }
+  );
 
   it('rejects a late external image outcome after in-memory cancellation', async () => {
     const { taskQueueService } = await setupTaskQueueServiceHarness([

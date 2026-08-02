@@ -55,29 +55,21 @@ import { unifiedCacheService } from '../unified-cache-service';
 import { submitVideoGeneration } from '../media-api';
 import {
   extractPromptFromMessages,
-  buildImageRequestBody,
-  parseImageResponse,
   pollVideoStatus,
-  generateAsyncImage,
   ensureBase64ForAI,
   cacheRemoteUrl,
-  cacheRemoteUrls,
 } from './fallback-utils';
 import { resolveAdapterForInvocation } from '../model-adapters';
-import { GPT_IMAGE_EDIT_REQUEST_SCHEMAS } from '../model-adapters';
+import { resolveNormalizedImageInvocation } from '../image-invocation';
 import {
   executeImageViaAdapter,
   executeVideoViaAdapter,
 } from './fallback-adapter-routes';
 import {
-  completeImageExecution,
-  failImageExecution,
-} from './image-execution-outcome';
-import { IMAGE_GENERATION_TIMEOUT_MS } from '../../constants/TASK_CONSTANTS';
-import {
   assertTaskInvocationRouteAvailable,
   createTaskInvocationRouteSnapshot,
   resolveLegacyTaskInvocationRouteModel,
+  resolveTaskInvocationPlanFromSnapshot,
   shouldUseStrictTaskInvocationRoute,
 } from '../task-invocation-route';
 import { normalizeLlmTextContent } from '../../utils/llm-json-extractor';
@@ -170,56 +162,6 @@ function extractProviderErrorMessage(rawText: string): string {
   }
 }
 
-/** 从 uploadedImages 提取 URL 列表，与 SW ImageHandler 逻辑一致 */
-function extractUrlsFromUploadedImages(
-  uploadedImages: unknown
-): string[] | undefined {
-  if (!uploadedImages || !Array.isArray(uploadedImages)) return undefined;
-  const urls = (uploadedImages as Array<{ url?: string }>)
-    .filter(
-      (img) => img && typeof img === 'object' && typeof img.url === 'string'
-    )
-    .map((img) => img.url as string);
-  return urls.length > 0 ? urls : undefined;
-}
-
-function getStringParam(
-  params: ImageGenerationParams,
-  keys: string[]
-): string | undefined {
-  const rawParams = params as unknown as Record<string, unknown>;
-  const nestedParams =
-    rawParams.params && typeof rawParams.params === 'object'
-      ? (rawParams.params as Record<string, unknown>)
-      : undefined;
-
-  for (const key of keys) {
-    const value = rawParams[key] ?? nestedParams?.[key];
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-
-  return undefined;
-}
-
-function isImageEditRequest(
-  params: ImageGenerationParams,
-  referenceImages?: string[]
-): boolean {
-  const generationMode = getStringParam(params, [
-    'generationMode',
-    'generation_mode',
-  ]);
-
-  return (
-    !!referenceImages?.length ||
-    generationMode === 'image_edit' ||
-    generationMode === 'image_to_image' ||
-    !!getStringParam(params, ['maskImage', 'mask_image'])
-  );
-}
-
 /**
  * 主线程媒体执行器
  *
@@ -250,386 +192,46 @@ export class FallbackMediaExecutor implements IMediaExecutor {
     params: ImageGenerationParams,
     options?: ExecutionOptions
   ): Promise<ImageExecutionOutcome> {
-    const {
-      taskId,
-      prompt,
-      model,
-      modelRef,
-      size,
-      quality,
-      count = 1,
-    } = params;
-    const referenceImages =
-      (params.referenceImages && params.referenceImages.length > 0
-        ? params.referenceImages
-        : undefined) || extractUrlsFromUploadedImages(params.uploadedImages);
-    const shouldUseEditSchema = isImageEditRequest(params, referenceImages);
-    const invocationOptions = {
-      preferredRequestSchema: shouldUseEditSchema
-        ? GPT_IMAGE_EDIT_REQUEST_SCHEMAS
-        : undefined,
-    };
-
-    const config = this.getConfig({ imageModel: modelRef || model });
+    const { taskId } = params;
+    const snapshotPlan = params.invocationRoute
+      ? resolveTaskInvocationPlanFromSnapshot('image', {
+          invocationRoute: params.invocationRoute,
+        })
+      : null;
+    const imageInvocation =
+      params.resolvedInvocation ||
+      resolveNormalizedImageInvocation(
+        params.request,
+        snapshotPlan ? { plan: snapshotPlan } : undefined
+      );
 
     // 更新任务状态为 processing
-    await taskStorageWriter.updateStatus(taskId, 'processing');
+    const attemptStartedAt = options?.imageAttemptStartedAt;
+    const attemptAccepted =
+      attemptStartedAt === undefined
+        ? await taskStorageWriter.updateStatus(taskId, 'processing')
+        : await taskStorageWriter.updateStatus(taskId, 'processing', {
+            expectedStartedAt: attemptStartedAt,
+          });
+    if (attemptAccepted === false) {
+      return {
+        taskId,
+        status: 'stale',
+        attemptStartedAt,
+        updatedAt: Date.now(),
+      };
+    }
     options?.onProgress?.({ progress: 0, phase: 'submitting' });
 
     const startTime = Date.now();
-    const modelName = model || config.imageConfig.modelName;
-
-    // 异步图片模型：使用 /v1/videos 接口（仅当 binding 为 async-image 时）
-    const imagePlan = resolveInvocationPlanFromRoute(
-      'image',
-      modelRef || modelName,
-      invocationOptions
-    );
-    if (
-      imagePlan?.binding.protocol === 'openai.async.media' ||
-      imagePlan?.binding.requestSchema === 'openai.async.image.form'
-    ) {
-      return this.generateAsyncImageTask(
-        taskId,
-        {
-          prompt,
-          model: modelName,
-          modelRef: modelRef || null,
-          size,
-          referenceImages,
-          maskImage: params.maskImage,
-          assetMetadata: params.assetMetadata,
-        },
-        config,
-        options,
-        startTime
-      );
-    }
-
-    const imageAdapter = resolveAdapterForInvocation(
-      'image',
-      modelName,
-      modelRef || null,
-      invocationOptions
-    );
-    const shouldUseImageAdapter =
-      imageAdapter?.kind === 'image' &&
-      (imageAdapter.id !== 'gemini-image-adapter' ||
-        imagePlan?.binding.protocol === 'google.generateContent');
-    if (shouldUseImageAdapter) {
-      return executeImageViaAdapter(
-        taskId,
-        imageAdapter,
-        {
-          prompt,
-          model: modelName,
-          modelRef: modelRef || null,
-          size,
-          resolution: params.resolution,
-          quality,
-          count,
-          referenceImages,
-          generationMode: params.generationMode,
-          maskImage: params.maskImage,
-          inputFidelity: params.inputFidelity,
-          background: params.background,
-          outputFormat: params.outputFormat,
-          outputCompression: params.outputCompression,
-          params: params.params,
-          assetMetadata: params.assetMetadata,
-          preferredRequestSchema: invocationOptions.preferredRequestSchema,
-        },
-        options,
-        startTime
-      );
-    }
-
-    // 开始记录 LLM API 调用
-    const logId = startLLMApiLog({
-      endpoint: '/images/generations',
-      model: modelName,
-      taskType: 'image',
-      prompt,
-      hasReferenceImages: !!referenceImages && referenceImages.length > 0,
-      referenceImageCount: referenceImages?.length,
-      referenceImages: referenceImages?.map(
-        (url) => ({ url, size: 0, width: 0, height: 0 } as LLMReferenceImage)
-      ),
+    return executeImageViaAdapter(
       taskId,
-    });
-
-    try {
-      // 处理参考图片：统一转为 base64（API 要求），并行处理提升性能
-      let processedImages: string[] | undefined;
-      if (referenceImages && referenceImages.length > 0) {
-        const t0 = performance.now();
-        processedImages = await Promise.all(
-          referenceImages.map(async (imgUrl) => {
-            const imageData = await unifiedCacheService.getImageForAI(imgUrl);
-            return ensureBase64ForAI(imageData, options?.signal);
-          })
-        );
-      }
-
-      // 构建请求体
-      const requestBody = buildImageRequestBody({
-        prompt,
-        model: modelName,
-        size,
-        referenceImages: processedImages,
-        quality,
-        n: Math.min(Math.max(1, count), 10),
-      });
-
-      options?.onProgress?.({ progress: 10, phase: 'submitting' });
-
-      // 直接调用 API
-      const response = await providerTransport.send(
-        buildProviderContext(config.imageConfig),
-        {
-          path: '/images/generations',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-          signal: options?.signal,
-          timeoutMs: IMAGE_GENERATION_TIMEOUT_MS,
-        }
-      );
-
-      if (!response.ok) {
-        const duration = Date.now() - startTime;
-        const errorBody = await response
-          .text()
-          .catch(
-            () => `HTTP ${response.status} ${response.statusText || 'Error'}`
-          );
-        failLLMApiLog(logId, {
-          httpStatus: response.status,
-          duration,
-          errorMessage: errorBody.substring(0, 500),
-        });
-        throw new Error(
-          `Image generation failed: ${response.status} - ${errorBody.substring(
-            0,
-            200
-          )}`
-        );
-      }
-
-      options?.onProgress?.({ progress: 80, phase: 'downloading' });
-
-      const data = await response.json();
-      const result = parseImageResponse(data);
-      const duration = Date.now() - startTime;
-      // 记录成功
-      completeLLMApiLog(logId, {
-        httpStatus: response.status,
-        duration,
-        resultType: 'image',
-        resultCount: 1,
-        resultUrl: result.url,
-      });
-
-      options?.onProgress?.({ progress: 95, phase: 'downloading' });
-
-      // 缓存远程 URL 到本地，避免签名 URL 的 Referer 校验问题
-      const allImgUrls = result.urls?.length ? result.urls : [result.url];
-      const cachedImgUrls = await cacheRemoteUrls(
-        allImgUrls,
-        taskId,
-        'image',
-        'png'
-      );
-
-      // 完成任务
-      return await completeImageExecution(taskId, {
-        url: cachedImgUrls[0],
-        urls: cachedImgUrls.length > 1 ? cachedImgUrls : undefined,
-        format: 'png',
-        size: 0,
-      });
-    } catch (error: any) {
-      const duration = Date.now() - startTime;
-      const errorMessage = error.message || 'Image generation failed';
-      console.error(
-        '[FallbackMediaExecutor] generateImage failed:',
-        errorMessage,
-        'taskId:',
-        taskId,
-        'duration:',
-        duration,
-        'ms'
-      );
-
-      // 检测认证错误，触发设置弹窗
-      const credentialErrorKind = classifyApiCredentialError(error);
-      if (credentialErrorKind) {
-        dispatchApiAuthError({
-          message: errorMessage,
-          source: 'image',
-          reason: credentialErrorKind,
-        });
-      }
-
-      // 如果日志还未更新为失败，更新它
-      failLLMApiLog(logId, {
-        duration,
-        errorMessage,
-      });
-      return await failImageExecution(taskId, {
-        code: 'IMAGE_GENERATION_ERROR',
-        message: errorMessage,
-      });
-    }
-  }
-
-  /**
-   * 生成异步图片（使用 /v1/videos 接口）
-   * 与 SW 模式保持一致的实现
-   */
-  private async generateAsyncImageTask(
-    taskId: string,
-    params: {
-      prompt: string;
-      model: string;
-      modelRef?: ImageGenerationParams['modelRef'];
-      size?: string;
-      referenceImages?: string[];
-      maskImage?: string;
-      assetMetadata?: ImageGenerationParams['assetMetadata'];
-    },
-    config: { imageConfig: GeminiConfig; videoConfig: VideoAPIConfig },
-    options?: ExecutionOptions,
-    startTime?: number
-  ): Promise<ImageExecutionOutcome> {
-    const logStartTime = startTime || Date.now();
-
-    // 开始记录 LLM API 调用
-    const logId = startLLMApiLog({
-      endpoint: '/v1/videos (async image)',
-      model: params.model,
-      taskType: 'image',
-      prompt: params.prompt,
-      hasReferenceImages:
-        params.referenceImages && params.referenceImages.length > 0,
-      referenceImageCount: params.referenceImages?.length,
-      referenceImages: params.referenceImages?.map(
-        (url) => ({ url, size: 0, width: 0, height: 0 } as LLMReferenceImage)
-      ),
-      taskId,
-    });
-
-    try {
-      // 处理参考图片：统一转为 base64（与同步路径一致），并行处理
-      let processedImages: string[] | undefined;
-      if (params.referenceImages && params.referenceImages.length > 0) {
-        const t0 = performance.now();
-        processedImages = await Promise.all(
-          params.referenceImages.map(async (imgUrl) => {
-            const imageData = await unifiedCacheService.getImageForAI(imgUrl);
-            return ensureBase64ForAI(imageData, options?.signal);
-          })
-        );
-      }
-      let processedMaskImage: string | undefined;
-      if (params.maskImage) {
-        const maskData = await unifiedCacheService.getImageForAI(
-          params.maskImage
-        );
-        processedMaskImage = await ensureBase64ForAI(maskData, options?.signal);
-      }
-
-      // 调用异步图片生成
-      const result = await generateAsyncImage(
-        {
-          prompt: params.prompt,
-          model: params.model,
-          size: params.size,
-          referenceImages: processedImages,
-          maskImage: processedMaskImage,
-        },
-        config.imageConfig,
-        {
-          onProgress: (progress) => {
-            const boundedProgress = Math.min(progress, 95);
-            options?.onProgress?.({
-              progress: boundedProgress,
-              phase: boundedProgress < 10 ? 'submitting' : 'polling',
-            });
-          },
-          onSubmitted: async (remoteId) => {
-            // 保存 remoteId，用于页面刷新后恢复轮询
-            await taskStorageWriter.updateRemoteId(
-              taskId,
-              remoteId,
-              createTaskInvocationRouteSnapshot(
-                'image',
-                params.modelRef || params.model
-              )
-            );
-          },
-          signal: options?.signal,
-        }
-      );
-
-      const duration = Date.now() - logStartTime;
-
-      // 记录成功
-      completeLLMApiLog(logId, {
-        httpStatus: 200,
-        duration,
-        resultType: 'image',
-        resultCount: 1,
-        resultUrl: result.url,
-      });
-
-      options?.onProgress?.({ progress: 95, phase: 'downloading' });
-
-      // 缓存远程 URL 到本地
-      const cachedAsyncUrl = await cacheRemoteUrl(
-        result.url,
-        taskId,
-        'image',
-        result.format,
-        undefined,
-        {
-          extraMetadata: params.assetMetadata
-            ? { ...params.assetMetadata }
-            : undefined,
-        }
-      );
-
-      // 完成任务
-      return await completeImageExecution(taskId, {
-        url: cachedAsyncUrl,
-        format: result.format,
-        size: 0,
-      });
-    } catch (error: any) {
-      const duration = Date.now() - logStartTime;
-      const errorMessage = error.message || 'Async image generation failed';
-
-      // 检测认证错误，触发设置弹窗
-      const credentialErrorKind = classifyApiCredentialError(error);
-      if (credentialErrorKind) {
-        dispatchApiAuthError({
-          message: errorMessage,
-          source: 'async-image',
-          reason: credentialErrorKind,
-        });
-      }
-
-      failLLMApiLog(logId, {
-        duration,
-        errorMessage,
-      });
-      return await failImageExecution(taskId, {
-        code: 'ASYNC_IMAGE_GENERATION_ERROR',
-        message: errorMessage,
-      });
-    }
+      {
+        imageInvocation,
+      },
+      options,
+      startTime
+    );
   }
 
   /**
@@ -1391,43 +993,26 @@ export class FallbackMediaExecutor implements IMediaExecutor {
   /**
    * 获取 API 配置
    */
-  private getConfig(models?: {
-    imageModel?: string | ModelRef | null;
-    textModel?: string | ModelRef | null;
-    videoModel?: string | ModelRef | null;
-  }): {
-    imageConfig: GeminiConfig;
+  private getConfig(
+    models?: {
+      textModel?: string | ModelRef | null;
+      videoModel?: string | ModelRef | null;
+    }
+  ): {
     textConfig: GeminiConfig;
     videoConfig: VideoAPIConfig;
   } {
-    const imageRoute = resolveInvocationRoute('image', models?.imageModel);
     const textRoute = resolveInvocationRoute('text', models?.textModel);
     const videoRoute = resolveInvocationRoute('video', models?.videoModel);
-    const imagePlan = resolveInvocationPlanFromRoute(
-      'image',
-      models?.imageModel
-    );
-    const textPlan = resolveInvocationPlanFromRoute('text', models?.textModel);
-    const videoPlan = resolveInvocationPlanFromRoute(
-      'video',
-      models?.videoModel
-    );
+    const textPlan =
+      models && Object.prototype.hasOwnProperty.call(models, 'textModel')
+        ? resolveInvocationPlanFromRoute('text', models.textModel)
+        : null;
+    const videoPlan =
+      models && Object.prototype.hasOwnProperty.call(models, 'videoModel')
+        ? resolveInvocationPlanFromRoute('video', models.videoModel)
+        : null;
     return {
-      imageConfig: {
-        apiKey: imageRoute.apiKey,
-        baseUrl: imageRoute.baseUrl || 'https://foropencode.com/v1',
-        modelName: imageRoute.modelId,
-        authType:
-          imagePlan?.provider.authType || inferAuthTypeFromRoute(imageRoute),
-        providerType:
-          imagePlan?.provider.providerType ||
-          imageRoute.providerType ||
-          'custom',
-        extraHeaders: imagePlan?.provider.extraHeaders,
-        protocol: imagePlan?.binding.protocol || null,
-        binding: imagePlan?.binding || null,
-        provider: imagePlan?.provider || null,
-      },
       textConfig: {
         apiKey: textRoute.apiKey,
         baseUrl: textRoute.baseUrl || 'https://foropencode.com/v1',

@@ -23,20 +23,16 @@ import {
   IMAGE_PARAMS,
 } from '../../constants/model-config';
 import { geminiSettings, type ModelRef } from '../../utils/settings-manager';
-import { normalizeToClosestImageSize } from '../../services/media-api/utils';
+import { resolveImageTaskModelSelection } from '../../services/image-task-model-selection';
 import {
-  getAdapterContextFromSettings,
-  resolveAdapterForInvocation,
-} from '../../services/model-adapters';
-import {
-  GPT_IMAGE_EDIT_REQUEST_SCHEMAS,
-  isGPTImageEditRequestSchema,
-} from '../../services/model-adapters';
+  artifactsToLegacyImageResult,
+  executeResolvedImageInvocation,
+  resolveImageInvocation,
+} from '../../services/image-invocation';
 import {
   createQueueTask,
   validatePrompt,
   wrapApiError,
-  toUploadedImages,
   type PromptLineageMeta,
 } from './shared/queue-utils';
 
@@ -125,69 +121,36 @@ export interface ImageGenerationParams {
   comicCreatorPageId?: string;
 }
 
-function shouldUseEditSchema(params: ImageGenerationParams): boolean {
-  return (
-    !!params.referenceImages?.length ||
-    params.generationMode === 'image_edit' ||
-    params.generationMode === 'image_to_image' ||
-    !!params.maskImage
-  );
-}
-
-function buildAdapterParams(
+function buildProviderParams(
   params: ImageGenerationParams
 ): Record<string, unknown> | undefined {
-  const adapterParams: Record<string, unknown> = {
-    ...(params.params || {}),
-  };
-
-  if (params.resolution !== undefined) {
-    adapterParams.resolution = params.resolution;
-  }
-
-  if (params.quality !== undefined) {
-    adapterParams.quality = params.quality;
-  }
-
-  if (typeof params.count === 'number' && Number.isFinite(params.count)) {
-    adapterParams.n = params.count;
-  }
-
-  return Object.keys(adapterParams).length > 0 ? adapterParams : undefined;
-}
-
-function buildQueueAdapterParams(
-  params: ImageGenerationParams
-): Record<string, unknown> | undefined {
-  // Queue mode already expands top-level count into multiple tasks.
-  // Do not also send it as adapter n/count, or count=2 becomes 2 tasks * 2 images.
-  return buildAdapterParams({ ...params, count: undefined });
+  const providerParams = { ...(params.params || {}) };
+  return Object.keys(providerParams).length > 0 ? providerParams : undefined;
 }
 
 /**
  * 直接调用 API 生成图片（async 模式）
  */
-async function executeAsync(params: ImageGenerationParams): Promise<MCPResult> {
-  const { prompt, size, referenceImages, modelRef } = params;
+async function executeAsync(
+  params: ImageGenerationParams,
+  signal?: AbortSignal
+): Promise<MCPResult> {
+  const { prompt, size, modelRef } = params;
 
   const promptError = validatePrompt(prompt);
   if (promptError) return promptError;
 
   try {
     const requestedModel = params.model || getCurrentImageModel();
-    const preferredRequestSchema = shouldUseEditSchema(params)
-      ? GPT_IMAGE_EDIT_REQUEST_SCHEMAS
-      : undefined;
-    const adapter = resolveAdapterForInvocation(
-      'image',
-      requestedModel,
-      modelRef || null,
-      {
-        preferredRequestSchema,
-      }
-    );
+    const invocation = resolveImageInvocation({
+      ...params,
+      model: requestedModel,
+      modelRef: modelRef || null,
+      signal,
+    });
+    const { adapter } = invocation;
 
-    if (!adapter || adapter.kind !== 'image') {
+    if (!adapter) {
       return {
         success: false,
         error: `未找到可用的图片适配器: ${requestedModel}`,
@@ -195,78 +158,70 @@ async function executeAsync(params: ImageGenerationParams): Promise<MCPResult> {
       };
     }
 
-    const result = await adapter.generateImage(
-      getAdapterContextFromSettings('image', modelRef || requestedModel, {
-        preferredRequestSchema,
-      }),
+    const result = await executeResolvedImageInvocation(invocation, { signal });
+
+    const { generateUUID, getFileExtension, normalizeImageDataUrl } =
+      await import('@aitu/utils');
+    const { cacheImageArtifacts } = await import(
+      '../../services/media-executor/fallback-utils'
+    );
+    const cacheCorrelationId = `mcp-image-direct-${generateUUID()}`;
+    const cachedArtifacts = await cacheImageArtifacts(
+      result.artifacts,
+      cacheCorrelationId,
       {
-        prompt,
-        model: requestedModel,
-        modelRef: modelRef || null,
-        size: size || '1x1',
-        generationMode:
-          params.generationMode ||
-          (isGPTImageEditRequestSchema(preferredRequestSchema)
-            ? 'image_to_image'
-            : 'text_to_image'),
-        referenceImages:
-          referenceImages && referenceImages.length > 0
-            ? referenceImages
-            : undefined,
-        maskImage: params.maskImage,
-        inputFidelity: params.inputFidelity,
-        background: params.background,
-        outputFormat: params.outputFormat,
-        outputCompression: params.outputCompression,
-        params: buildAdapterParams(params),
+        requirePersistence: true,
+        forceRemoteCache: true,
+        signal,
+        telemetry: invocation.telemetry,
       }
     );
-
-    const { getFileExtension, normalizeImageDataUrl } = await import(
-      '@aitu/utils'
-    );
-    const imageUrl = normalizeImageDataUrl(result.url);
-    const format = getFileExtension(imageUrl) || result.format || 'png';
+    const primaryArtifact = cachedArtifacts[0];
+    if (!primaryArtifact) {
+      throw new Error('图片适配器未返回可缓存的 artifact');
+    }
+    const projected = artifactsToLegacyImageResult(cachedArtifacts, {
+      fallbackFormat: 'png',
+      includeSingleUrl: true,
+    });
+    const imageUrl = normalizeImageDataUrl(projected.url);
+    const format = getFileExtension(imageUrl) || projected.format || 'png';
 
     return {
       success: true,
       data: {
         url: imageUrl,
-        urls: result.urls?.map((url) => normalizeImageDataUrl(url)),
-        format: format === 'bin' ? result.format || 'png' : format,
+        urls: projected.urls?.map((url) => normalizeImageDataUrl(url)),
+        format: format === 'bin' ? projected.format || 'png' : format,
         prompt,
         size: size || '1x1',
       },
       type: 'image',
     };
-  } catch (error: any) {
-    console.error('[ImageGenerationTool] Generation failed:', error);
+  } catch (error: unknown) {
+    console.error(
+      '[ImageGenerationTool] Generation failed:',
+      error instanceof Error ? error.message : '图片生成失败'
+    );
     return wrapApiError(error, '图片生成失败');
   }
 }
 
 /** 图片任务队列配置 */
 function getImageQueueConfig(params: ImageGenerationParams) {
-  const uploadedImages = toUploadedImages(params.referenceImages);
-
   return {
     taskType: TaskType.IMAGE,
     resultType: 'image' as const,
     getDefaultModel: getCurrentImageModel,
     logPrefix: 'ImageGenerationTool',
     buildTaskPayload: () => {
-      const adapterParams = buildQueueAdapterParams(params);
+      const providerParams = buildProviderParams(params);
       return {
         prompt: params.prompt,
-        size: params.size || '1x1',
-        uploadedImages:
-          uploadedImages && uploadedImages.length > 0
-            ? uploadedImages
-            : undefined,
-        referenceImages:
-          params.referenceImages && params.referenceImages.length > 0
-            ? params.referenceImages
-            : undefined,
+        size: params.size,
+        resolution: params.resolution,
+        quality: params.quality,
+        referenceImages: params.referenceImages,
         generationMode: params.generationMode,
         maskImage: params.maskImage,
         inputFidelity: params.inputFidelity,
@@ -286,7 +241,7 @@ function getImageQueueConfig(params: ImageGenerationParams) {
         comicCreatorAction: params.comicCreatorAction,
         comicCreatorRecordId: params.comicCreatorRecordId,
         comicCreatorPageId: params.comicCreatorPageId,
-        ...(adapterParams ? { params: adapterParams } : {}),
+        ...(providerParams ? { params: providerParams } : {}),
       };
     },
     buildResultData: () => ({
@@ -462,13 +417,14 @@ export const imageGenerationTool: MCPTool = {
   ): Promise<MCPResult> => {
     const rawParams = params as unknown as ImageGenerationParams;
     const mode = options?.mode || 'async';
-
-    // 规范化 size：将不在可用范围内的 size 自动转换为最接近的可用值
+    const modelSelection = resolveImageTaskModelSelection(
+      rawParams.model,
+      rawParams.modelRef
+    );
     const typedParams: ImageGenerationParams = {
       ...rawParams,
-      size: rawParams.size
-        ? normalizeToClosestImageSize(rawParams.size, '1x1')
-        : rawParams.size,
+      model: modelSelection.model,
+      modelRef: modelSelection.modelRef,
     };
 
     if (mode === 'queue') {
@@ -479,7 +435,7 @@ export const imageGenerationTool: MCPTool = {
       );
     }
 
-    return executeAsync(typedParams);
+    return executeAsync(typedParams, options?.signal);
   },
 };
 
@@ -487,11 +443,12 @@ export const imageGenerationTool: MCPTool = {
  * 便捷方法：直接生成图片（async 模式）
  */
 export async function generateImage(
-  params: ImageGenerationParams
+  params: ImageGenerationParams,
+  options?: Pick<MCPExecuteOptions, 'signal'>
 ): Promise<MCPResult> {
   return imageGenerationTool.execute(
     params as unknown as Record<string, unknown>,
-    { mode: 'async' }
+    { ...options, mode: 'async' }
   );
 }
 

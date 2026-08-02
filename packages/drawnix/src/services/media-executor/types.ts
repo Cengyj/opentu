@@ -1,12 +1,16 @@
 import type { ModelRef } from '../../utils/settings-manager';
 import type { GeminiMessagePart } from '../../utils/gemini-api/types';
-import type { GenerationParams as TaskGenerationParams } from '../../types/shared/core.types';
 import type { Task } from '../../types/task.types';
+import type { TaskInvocationRouteSnapshot } from '../../types/task.types';
 import type {
   ProviderAuthStrategy,
   ProviderModelBinding,
   ResolvedProviderContext,
 } from '../provider-routing';
+import type {
+  NormalizedImageRequest,
+  ResolvedImageInvocation,
+} from '../image-invocation';
 
 /**
  * Media Executor Types
@@ -22,40 +26,15 @@ import type {
 export interface ImageGenerationParams {
   /** 任务 ID（用于写入 tasks 表） */
   taskId: string;
-  /** 生成提示词 */
-  prompt: string;
-  /** 模型名称 */
-  model?: string;
-  /** 模型来源引用（用于按供应商路由） */
-  modelRef?: ModelRef | null;
-  /** 图片尺寸 (如 "1024x1024", "16:9") */
-  size?: string;
-  /** 图片生成模式：文生图、图生图或编辑 */
-  generationMode?: 'text_to_image' | 'image_to_image' | 'image_edit';
-  /** 参考图片 URL 列表 */
-  referenceImages?: string[];
-  /** 编辑蒙版图片 URL 或 data URL */
-  maskImage?: string;
-  /** GPT Image 输入保真度 */
-  inputFidelity?: 'high' | 'low';
-  /** GPT Image 背景模式 */
-  background?: 'transparent' | 'opaque' | 'auto';
-  /** GPT Image 输出格式 */
-  outputFormat?: 'png' | 'jpeg' | 'webp';
-  /** GPT Image 输出压缩率 */
-  outputCompression?: number;
-  /** 上传图片列表（与 SW 一致，fallback 会从中提取 URL） */
-  uploadedImages?: Array<{ url?: string }>;
-  /** 分辨率档位 */
-  resolution?: '1k' | '2k' | '4k';
-  /** 官方画质（GPT）或兼容旧值 */
-  quality?: 'auto' | 'low' | 'medium' | 'high' | '1k' | '2k' | '4k';
-  /** 生成数量 (1-10) */
-  count?: number;
-  /** 额外参数（如 seedream_quality），透传给 adapter */
-  params?: Record<string, unknown>;
-  /** 素材库轻量元数据 */
-  assetMetadata?: TaskGenerationParams['assetMetadata'];
+  /** 已完成别名收敛的唯一内部图片请求合同。 */
+  request: NormalizedImageRequest;
+  /**
+   * 无凭据的不可变调用快照。主线程执行器从该快照恢复 binding，只从同一
+   * Profile 刷新凭据，避免在同一次调用中重新规划。
+   */
+  invocationRoute?: TaskInvocationRouteSnapshot;
+  /** 同一调用栈中已解析的不可变调用；刷新/队列恢复时省略并从快照水合。 */
+  resolvedInvocation?: ResolvedImageInvocation;
 }
 
 // ============================================================================
@@ -171,6 +150,12 @@ export interface ExecutionOptions {
   onProgress?: ProgressCallback;
   /** 取消信号 */
   signal?: AbortSignal;
+  /**
+   * Queue-owned image attempt identity captured at submission. Executors pass
+   * it to every image storage mutation so a late provider callback cannot
+   * overwrite a retry with a different `startedAt` value.
+   */
+  imageAttemptStartedAt?: number;
 }
 
 /**
@@ -182,7 +167,10 @@ export interface ExecutionOptions {
  */
 export interface ImageExecutionOutcome {
   taskId: string;
-  status: 'completed' | 'failed' | 'cancelled';
+  /** `stale` means storage rejected a late result from an older attempt. */
+  status: 'completed' | 'failed' | 'cancelled' | 'stale';
+  /** Present for queue-owned attempts; omitted for legacy/direct execution. */
+  attemptStartedAt?: number;
   progress?: number;
   result?: Task['result'];
   error?: Task['error'];

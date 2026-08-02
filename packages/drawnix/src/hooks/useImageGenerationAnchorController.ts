@@ -55,8 +55,6 @@ export function useImageGenerationAnchorController(
 
   const { displayProgress } = useImageTaskProgress({
     taskType: resolvedTask?.type,
-    taskStatus: resolvedTask?.status,
-    startedAt: resolvedTask?.startedAt,
     fallbackProgress: resolvedTask?.progress ?? anchor.progress,
   });
 

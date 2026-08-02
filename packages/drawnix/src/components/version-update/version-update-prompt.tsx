@@ -1,98 +1,224 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { Button, Dialog } from 'tdesign-react';
-import { useTaskQueue } from '../../hooks/useTaskQueue';
 import { RefreshIcon } from 'tdesign-icons-react';
-import { useI18n } from '../../i18n';
+import { useTaskQueue } from '../../hooks/useTaskQueue';
 import './version-update-prompt.scss';
 
+type VersionUpgradePhase =
+  | 'idle'
+  | 'ready'
+  | 'confirming'
+  | 'commit-sent'
+  | 'activating';
+
+type VersionUpgradeConfirmationIssue =
+  | 'waiting-worker-unavailable'
+  | 'commit-delivery-failed'
+  | 'commit-acknowledgement-pending'
+  | 'commit-rejected';
+
+interface VersionUpgradeSnapshot {
+  revision: number;
+  committedReleaseId: string;
+  pendingReleaseId: string | null;
+  displayVersion: string | null;
+  phase: VersionUpgradePhase;
+  metadata: { changelog?: readonly string[] } | null;
+  confirmationIssue: VersionUpgradeConfirmationIssue | null;
+  confirmationRejectionReason: string | null;
+}
+
+interface VersionUpgradeRuntimeView {
+  getSnapshot: () => VersionUpgradeSnapshot;
+  subscribe: (listener: () => void) => () => void;
+  replacePendingRelease?: (
+    releaseId: string,
+    displayVersion?: string | null
+  ) => void;
+}
+
+interface VersionUpgradeWindow {
+  __OPENTU_VERSION_UPGRADE_RUNTIME__?: VersionUpgradeRuntimeView;
+  __debugTriggerUpdate?: (version?: string, releaseId?: string) => void;
+}
+
+interface UpgradeTaskBlocker {
+  classification: 'unknown-authority';
+  reason: 'projection-unavailable';
+  count: number;
+}
+
+const getVersionUpgradeRuntime = (): VersionUpgradeRuntimeView | null =>
+  (window as Window & VersionUpgradeWindow)
+    .__OPENTU_VERSION_UPGRADE_RUNTIME__ || null;
+
+const subscribeToNoRuntime = (): (() => void) => () => undefined;
+const getNoRuntimeSnapshot = (): null => null;
+
 export const VersionUpdatePrompt: React.FC = () => {
-  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; changelog?: string[] } | null>(null);
+  const runtime = getVersionUpgradeRuntime();
+  const snapshot = useSyncExternalStore(
+    runtime?.subscribe || subscribeToNoRuntime,
+    runtime?.getSnapshot || getNoRuntimeSnapshot,
+    runtime?.getSnapshot || getNoRuntimeSnapshot
+  );
   const [showChangelog, setShowChangelog] = useState(false);
-  const { activeTasks } = useTaskQueue();
-  // const { t } = useI18n(); // Assuming i18n is available, if not fallback to strings
+  const { activeTasks, isLoading } = useTaskQueue();
 
   useEffect(() => {
-    // Listen for the custom event dispatched by the Web bootstrap.
-    const handleUpdateAvailable = async (event: Event) => {
-      const customEvent = event as CustomEvent;
-      
-      const newVersion = customEvent.detail?.version;
-      
-      // 获取当前运行的版本（从 HTML meta 标签）
-      const currentVersionMeta = document.querySelector('meta[name="app-version"]');
-      const currentVersion = currentVersionMeta?.getAttribute('content');
-      
-      try {
-        // Fetch detailed version info (changelog)
-        const res = await fetch(`./version.json?t=${Date.now()}`);
-        if (res.ok) {
-          const data = await res.json();
-          
-          // 如果当前版本已经是最新版本，不显示更新提示
-          if (currentVersion && data.version === currentVersion) {
-            // console.log('[VersionUpdatePrompt] Already on latest version, skipping prompt');
-            return;
-          }
-          
-          // Use fetched data if versions match or if event didn't specify version
-          if (!newVersion || data.version === newVersion) {
-            setUpdateAvailable(data);
-            return;
-          }
-        }
-      } catch (error) {
-        console.warn('Failed to fetch version.json:', error);
-      }
+    setShowChangelog(false);
+  }, [snapshot?.pendingReleaseId]);
 
-      // 如果无法获取 version.json，但事件带了版本号，检查是否相同
-      if (currentVersion && newVersion && currentVersion === newVersion) {
-        return; // 已经是最新版本
-      }
-
-      // Fallback to event detail
-      setUpdateAvailable(customEvent.detail);
-    };
-
-    window.addEventListener('sw-update-available', handleUpdateAvailable);
-
-    // 调试辅助：在开发环境下挂载手动触发方法
-    if (process.env.NODE_ENV === 'development') {
-      (window as any).__debugTriggerUpdate = (version = '9.9.9') => {
-        // console.log('[Debug] Triggering update prompt');
-        window.dispatchEvent(new CustomEvent('sw-update-available', { 
-          detail: { version } 
-        }));
-      };
-      // console.log('[VersionUpdatePrompt] Debug mode: run window.__debugTriggerUpdate() to test');
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'development' || !runtime) {
+      return;
     }
 
-    return () => {
-      window.removeEventListener('sw-update-available', handleUpdateAvailable);
+    const debugWindow = window as Window & VersionUpgradeWindow;
+    debugWindow.__debugTriggerUpdate = (
+      version = '9.9.9',
+      releaseId = `debug-${version}`
+    ) => {
+      runtime.replacePendingRelease?.(releaseId, version);
     };
-  }, []);
 
-  const handleUpdate = () => {
-    // Keep the prompt visible until the new SW actually takes over.
-    // Otherwise a failed COMMIT_UPGRADE looks like a successful update.
-    setShowChangelog(false);
-    // Dispatch an event so the Web bootstrap can proceed with the upgrade.
-    window.dispatchEvent(new CustomEvent('user-confirmed-upgrade'));
-  };
+    return () => {
+      delete debugWindow.__debugTriggerUpdate;
+    };
+  }, [runtime]);
 
-  // Only show if update is available AND no active tasks
-  if (!updateAvailable || activeTasks.length > 0) {
+  if (!snapshot?.pendingReleaseId || !snapshot.displayVersion) {
     return null;
   }
 
+  const taskBlocker: UpgradeTaskBlocker | null =
+    activeTasks.length > 0
+      ? {
+          classification: 'unknown-authority',
+          reason: 'projection-unavailable',
+          count: activeTasks.length,
+        }
+      : null;
+  const confirmationBlocked = isLoading || taskBlocker !== null;
+  const confirmationInProgress =
+    snapshot.phase === 'confirming' ||
+    snapshot.phase === 'commit-sent' ||
+    snapshot.phase === 'activating';
+  const confirmationDisabled =
+    confirmationBlocked || snapshot.phase !== 'ready';
+  const requiresCurrentReleaseReload =
+    snapshot.confirmationIssue === 'commit-rejected' &&
+    (snapshot.confirmationRejectionReason === 'client-release-mismatch' ||
+      snapshot.confirmationRejectionReason === 'already-committed');
+
+  const handleUpdate = () => {
+    if (confirmationDisabled) {
+      return;
+    }
+    setShowChangelog(false);
+    if (requiresCurrentReleaseReload) {
+      window.dispatchEvent(
+        new CustomEvent('user-requested-current-release-reload', {
+          detail: { committedReleaseId: snapshot.committedReleaseId },
+        })
+      );
+      return;
+    }
+    window.dispatchEvent(
+      new CustomEvent('user-confirmed-upgrade', {
+        detail: { releaseId: snapshot.pendingReleaseId },
+      })
+    );
+  };
+
+  const getActionLabel = (): string => {
+    if (isLoading) {
+      return '正在核对任务';
+    }
+    if (taskBlocker) {
+      return '等待任务完成';
+    }
+    if (requiresCurrentReleaseReload) {
+      return '刷新当前版本';
+    }
+    if (
+      snapshot.confirmationIssue === 'waiting-worker-unavailable' ||
+      snapshot.confirmationIssue === 'commit-delivery-failed' ||
+      snapshot.confirmationIssue === 'commit-rejected'
+    ) {
+      return '重试更新';
+    }
+    if (snapshot.phase === 'confirming') {
+      return '正在连接更新服务';
+    }
+    if (snapshot.phase === 'commit-sent' || snapshot.phase === 'activating') {
+      return '正在切换版本';
+    }
+    return '立即更新';
+  };
+
+  const changelog = snapshot.metadata?.changelog;
+
   return (
     <>
-      <div className="version-update-prompt">
+      <div
+        className="version-update-prompt"
+        data-upgrade-blocker={
+          taskBlocker
+            ? `${taskBlocker.classification}:${taskBlocker.reason}`
+            : undefined
+        }
+      >
         <div className="version-update-prompt__content">
-          <span className="version-update-prompt__text">
-            新版本 v{updateAvailable.version} 已就绪
-          </span>
-          {updateAvailable.changelog && updateAvailable.changelog.length > 0 && (
+          <div className="version-update-prompt__message">
+            <span className="version-update-prompt__text">
+              新版本 v{snapshot.displayVersion} 已就绪
+            </span>
+            {isLoading && (
+              <span className="version-update-prompt__hint">
+                正在核对任务执行状态，确认安全后即可更新。
+              </span>
+            )}
+            {taskBlocker && (
+              <span className="version-update-prompt__hint">
+                检测到 {taskBlocker.count}{' '}
+                个活动任务，但当前缺少可验证的执行归属。为避免中断任务或重复计费，任务完成前不会安装更新。
+              </span>
+            )}
+            {snapshot.confirmationIssue === 'waiting-worker-unavailable' &&
+              !confirmationBlocked && (
+                <span className="version-update-prompt__hint">
+                  更新组件暂不可用，本次没有提交升级；可以安全重试。
+                </span>
+              )}
+            {snapshot.confirmationIssue === 'commit-delivery-failed' &&
+              !confirmationBlocked && (
+                <span className="version-update-prompt__hint">
+                  尚未收到更新服务确认，系统会继续核对版本状态；可以安全重试。
+                </span>
+              )}
+            {snapshot.confirmationIssue === 'commit-acknowledgement-pending' &&
+              !confirmationBlocked && (
+                <span className="version-update-prompt__hint">
+                  更新提交已发送，但确认回执尚未到达。系统正在核对权威版本状态，不会重复提交更新。
+                </span>
+              )}
+            {snapshot.confirmationIssue === 'commit-rejected' &&
+              requiresCurrentReleaseReload &&
+              !confirmationBlocked && (
+                <span className="version-update-prompt__hint">
+                  当前页面仍在运行旧版本，无法安全跨过已提交的版本。请先刷新到当前版本，再安装新更新。
+                </span>
+              )}
+            {snapshot.confirmationIssue === 'commit-rejected' &&
+              !requiresCurrentReleaseReload &&
+              !confirmationBlocked && (
+                <span className="version-update-prompt__hint">
+                  更新服务尚未接受本次切换，版本状态已重新同步；可以安全重试。
+                </span>
+              )}
+          </div>
+          {changelog && changelog.length > 0 && (
             <Button
               theme="default"
               variant="text"
@@ -102,32 +228,50 @@ export const VersionUpdatePrompt: React.FC = () => {
               查看更新内容
             </Button>
           )}
-          <Button 
-            theme="primary" 
-            size="small" 
+          <Button
+            theme="primary"
+            size="small"
             onClick={handleUpdate}
+            disabled={confirmationDisabled}
+            loading={confirmationInProgress}
             icon={<RefreshIcon />}
           >
-            立即更新
+            {getActionLabel()}
           </Button>
         </div>
       </div>
 
       <Dialog
-        header={`新版本 v${updateAvailable.version} 更新内容`}
+        header={`新版本 v${snapshot.displayVersion} 更新内容`}
         visible={showChangelog}
         onClose={() => setShowChangelog(false)}
         width={600}
         footer={
-          <Button theme="primary" onClick={handleUpdate}>
-            立即更新
+          <Button
+            theme="primary"
+            onClick={handleUpdate}
+            disabled={confirmationDisabled}
+            loading={confirmationInProgress}
+          >
+            {getActionLabel()}
           </Button>
         }
       >
-        <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '8px' }}>
+        <div
+          style={{
+            maxHeight: '400px',
+            overflowY: 'auto',
+            paddingRight: '8px',
+          }}
+        >
           <ul style={{ paddingLeft: '20px', margin: 0 }}>
-            {updateAvailable.changelog?.map((item, index) => (
-              <li key={index} style={{ marginBottom: '4px', lineHeight: '1.5' }}>{index + 1}. {item}</li>
+            {changelog?.map((item, index) => (
+              <li
+                key={`${snapshot.pendingReleaseId}:${index}`}
+                style={{ marginBottom: '4px', lineHeight: '1.5' }}
+              >
+                {index + 1}. {item}
+              </li>
             ))}
           </ul>
         </div>

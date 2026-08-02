@@ -13,6 +13,9 @@ vi.mock('../../services/provider-routing', () => ({
   providerTransport: {
     send: (...args: unknown[]) => sendMock(...args),
   },
+  resolveProviderBindingAuthQueryKey: (
+    binding?: { protocol?: string } | null
+  ) => (binding?.protocol === 'google.generateContent' ? 'key' : 'api_key'),
 }));
 
 vi.mock('../posthog-analytics', () => ({
@@ -88,6 +91,46 @@ describe('callGoogleGenerateContentRaw', () => {
     ).rejects.toThrow('HTTP 400: bad request');
 
     expect(analyticsMock.trackAPICallFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retain inline image bytes from provider errors', async () => {
+    const imageBytes = `data:image/png;base64,${'A'.repeat(2048)}`;
+    sendMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: imageBytes } }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    let caught: unknown;
+    try {
+      await callGoogleGenerateContentRaw(
+        {
+          apiKey: 'secret',
+          baseUrl: 'https://api.example.com',
+          modelName: 'gemini-image-model',
+          protocol: 'google.generateContent',
+          authType: 'query',
+        },
+        [
+          {
+            role: 'user',
+            content: [{ type: 'text', text: 'draw a cat' }],
+          },
+        ],
+        { stream: false, includeInlineMediaInContent: false }
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe(
+      'HTTP 500: Google API request failed (500)'
+    );
+    expect(JSON.stringify(analyticsMock.trackAPICallFailure.mock.calls)).not.toContain(
+      imageBytes
+    );
   });
 
   it('uses provider baseUrl for analytics host', async () => {
@@ -206,8 +249,65 @@ describe('callGoogleGenerateContentRaw', () => {
       expect.objectContaining({
         path: '/v1beta/models/gemini-3.1-flash-image-preview-4k:generateContent',
         baseUrlStrategy: 'trim-v1',
+        authQueryKey: 'key',
         method: 'POST',
       })
     );
+  });
+
+  it('keeps image bytes only in structured inlineMedia when requested', async () => {
+    const pngBase64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    sendMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  { text: 'image ready' },
+                  {
+                    inlineData: {
+                      mimeType: 'image/png',
+                      data: pngBase64,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      )
+    );
+
+    const result = await callGoogleGenerateContentRaw(
+      {
+        apiKey: 'secret',
+        baseUrl: 'https://api.example.com/v1',
+        modelName: 'gemini-image-model',
+        protocol: 'google.generateContent',
+        authType: 'query',
+      },
+      [
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'draw a cat' }],
+        },
+      ],
+      {
+        stream: false,
+        includeInlineMediaInContent: false,
+      }
+    );
+
+    expect(result.inlineMedia).toEqual([
+      { data: pngBase64, mimeType: 'image/png' },
+    ]);
+    expect(result.choices[0]?.message.content).toBe('image ready');
+    expect(result.choices[0]?.message.content).not.toContain(pngBase64);
   });
 });

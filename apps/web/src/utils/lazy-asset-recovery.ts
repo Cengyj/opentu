@@ -1,7 +1,17 @@
+import {
+  DYNAMIC_IMPORT_RECOVERY_REQUEST_TYPE,
+  resolveDynamicImportRecoveryAcknowledgement,
+  type DynamicImportRecoveryAcknowledgement,
+  type DynamicImportRecoveryRequest,
+  type DynamicImportRecoveryTarget,
+} from '../sw/release-contract';
+
 const LAZY_CHUNK_RETRY_KEY_PREFIX = 'aitu:lazy-chunk-retry';
 const LAZY_CHUNK_RETRY_PARAM = '_lazy_chunk_retry';
 const LAZY_CHUNK_RETRY_TS_PARAM = '_t';
-const STATIC_CACHE_NAME_PREFIX = 'drawnix-static-v';
+const DYNAMIC_IMPORT_RECOVERY_ACK_TIMEOUT_MS = 4000;
+const DYNAMIC_IMPORT_RECOVERY_MAX_ATTEMPTS = 3;
+const DYNAMIC_IMPORT_RECOVERY_RETRY_DELAY_MS = 250;
 const DYNAMIC_IMPORT_ERROR_PATTERNS = [
   /Failed to fetch dynamically imported module/i,
   /Importing a module script failed/i,
@@ -11,6 +21,179 @@ const DYNAMIC_IMPORT_ERROR_PATTERNS = [
 ];
 
 let lazyAssetRecoveryScheduled = false;
+let dynamicImportRecoverySequence = 0;
+
+interface DynamicImportRecoveryWorker {
+  postMessage(message: unknown, transfer?: Transferable[]): void;
+}
+
+interface DynamicImportRecoveryDeliveryOptions {
+  timeoutMs?: number;
+  maxAttempts?: number;
+  retryDelayMs?: number;
+  createMessageChannel?: () => MessageChannel | null;
+  messageTarget?: DynamicImportRecoveryMessageTarget | null;
+}
+
+interface DynamicImportRecoveryMessageTarget {
+  addEventListener(
+    type: 'message',
+    listener: (event: MessageEvent<unknown>) => void
+  ): void;
+  removeEventListener(
+    type: 'message',
+    listener: (event: MessageEvent<unknown>) => void
+  ): void;
+}
+
+function getDefaultRecoveryMessageTarget(): DynamicImportRecoveryMessageTarget | null {
+  if (
+    typeof navigator === 'undefined' ||
+    !('serviceWorker' in navigator) ||
+    !navigator.serviceWorker
+  ) {
+    return null;
+  }
+  return navigator.serviceWorker;
+}
+
+function createDefaultRecoveryMessageChannel(): MessageChannel | null {
+  return typeof MessageChannel === 'function' ? new MessageChannel() : null;
+}
+
+function postDynamicImportRecoveryAttempt(
+  worker: DynamicImportRecoveryWorker,
+  request: DynamicImportRecoveryRequest,
+  timeoutMs: number,
+  createMessageChannel: () => MessageChannel | null,
+  messageTarget: DynamicImportRecoveryMessageTarget | null
+): Promise<DynamicImportRecoveryAcknowledgement> {
+  return new Promise((resolve, reject) => {
+    let channel: MessageChannel | null = null;
+    try {
+      channel = createMessageChannel();
+    } catch {
+      channel = null;
+    }
+    let settled = false;
+    let fallbackMessageListener:
+      | ((event: MessageEvent<unknown>) => void)
+      | null = null;
+    const timeout = setTimeout(() => {
+      settleWithError(
+        new Error('Dynamic import cache invalidation acknowledgement timed out')
+      );
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (channel) {
+        channel.port1.onmessage = null;
+        channel.port1.onmessageerror = null;
+        channel.port1.close();
+      }
+      if (fallbackMessageListener && messageTarget) {
+        messageTarget.removeEventListener('message', fallbackMessageListener);
+      }
+    };
+    const settleWithError = (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+    const settleFromMessage = (data: unknown) => {
+      const acknowledgement = resolveDynamicImportRecoveryAcknowledgement(
+        data,
+        request
+      );
+      if (!acknowledgement || settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(acknowledgement);
+    };
+
+    if (channel) {
+      channel.port1.onmessage = (event: MessageEvent<unknown>) => {
+        settleFromMessage(event.data);
+      };
+      channel.port1.onmessageerror = () => {
+        settleWithError(
+          new Error('Dynamic import cache invalidation acknowledgement failed')
+        );
+      };
+      channel.port1.start();
+    } else if (messageTarget) {
+      fallbackMessageListener = (event: MessageEvent<unknown>) => {
+        settleFromMessage(event.data);
+      };
+      messageTarget.addEventListener('message', fallbackMessageListener);
+    } else {
+      settleWithError(
+        new Error('Dynamic import acknowledgement channel is unavailable')
+      );
+      return;
+    }
+
+    try {
+      if (channel) {
+        worker.postMessage(request, [channel.port2]);
+      } else {
+        worker.postMessage(request);
+      }
+    } catch (error) {
+      settleWithError(
+        error instanceof Error
+          ? error
+          : new Error('Dynamic import cache invalidation delivery failed')
+      );
+    }
+  });
+}
+
+export async function postDynamicImportRecoveryWithAcknowledgement(
+  worker: DynamicImportRecoveryWorker,
+  request: DynamicImportRecoveryRequest,
+  {
+    timeoutMs = DYNAMIC_IMPORT_RECOVERY_ACK_TIMEOUT_MS,
+    maxAttempts = DYNAMIC_IMPORT_RECOVERY_MAX_ATTEMPTS,
+    retryDelayMs = DYNAMIC_IMPORT_RECOVERY_RETRY_DELAY_MS,
+    createMessageChannel = createDefaultRecoveryMessageChannel,
+    messageTarget = getDefaultRecoveryMessageTarget(),
+  }: DynamicImportRecoveryDeliveryOptions = {}
+): Promise<DynamicImportRecoveryAcknowledgement> {
+  const safeMaxAttempts = Math.max(1, Math.floor(maxAttempts));
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= safeMaxAttempts; attempt += 1) {
+    try {
+      return await postDynamicImportRecoveryAttempt(
+        worker,
+        request,
+        timeoutMs,
+        createMessageChannel,
+        messageTarget
+      );
+    } catch (error) {
+      lastError =
+        error instanceof Error
+          ? error
+          : new Error('Dynamic import cache invalidation delivery failed');
+      if (attempt < safeMaxAttempts && retryDelayMs > 0) {
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, retryDelayMs);
+        });
+      }
+    }
+  }
+  throw (
+    lastError ||
+    new Error('Dynamic import cache invalidation was not acknowledged')
+  );
+}
 
 type ErrorLikeEvent = Event & {
   error?: unknown;
@@ -28,6 +211,18 @@ function getAppVersion(): string {
     document
       .querySelector('meta[name="app-version"]')
       ?.getAttribute('content') || 'unknown'
+  );
+}
+
+function getAppReleaseId(): string {
+  if (typeof document === 'undefined') {
+    return 'unknown';
+  }
+
+  return (
+    document
+      .querySelector('meta[name="app-release-id"]')
+      ?.getAttribute('content') || getAppVersion()
   );
 }
 
@@ -81,12 +276,12 @@ function serializeError(error: unknown, depth = 0): string {
   return String(error ?? '');
 }
 
-function extractModuleKey(errorText: string): string {
+function extractModuleKey(errorText: string): string | null {
   const matchedUrl = errorText.match(
     /https?:\/\/[^\s)'"]+\.(?:js|css)(?:\?[^\s)'"]*)?/i
   );
   if (!matchedUrl) {
-    return 'unknown-module';
+    return null;
   }
 
   try {
@@ -104,45 +299,96 @@ function isRecoverableDynamicImportError(error: unknown): boolean {
 }
 
 async function prepareDynamicImportRecoveryReload(
-  moduleKey: string,
-  errorText: string
+  moduleKey: string | null
 ): Promise<void> {
-  const cleanupTasks: Promise<unknown>[] = [];
+  const controller = navigator.serviceWorker?.controller;
+  const releaseId = getAppReleaseId();
+  const target: DynamicImportRecoveryTarget = moduleKey
+    ? { kind: 'module', moduleKey }
+    : { kind: 'reload-only' };
+  const recoveryRequest: DynamicImportRecoveryRequest = {
+    type: DYNAMIC_IMPORT_RECOVERY_REQUEST_TYPE,
+    releaseId,
+    requestId: `${releaseId}:${Date.now()}:${++dynamicImportRecoverySequence}`,
+    target,
+  };
 
-  try {
-    navigator.serviceWorker?.controller?.postMessage({
-      type: 'RECOVER_DYNAMIC_IMPORT_FAILURE',
-      appVersion: getAppVersion(),
-      moduleKey,
-      error: errorText.slice(0, 500),
-    });
-  } catch {
-    // Best-effort only. The reload path below still works without SW support.
-  }
+  if (controller) {
+    const workers: DynamicImportRecoveryWorker[] = [];
+    const addWorker = (worker: DynamicImportRecoveryWorker | null) => {
+      if (worker && !workers.includes(worker)) {
+        workers.push(worker);
+      }
+    };
 
-  if (typeof caches !== 'undefined') {
-    cleanupTasks.push(
-      caches
-        .keys()
-        .then((cacheNames) =>
-          Promise.all(
-            cacheNames
-              .filter((name) => name.startsWith(STATIC_CACHE_NAME_PREFIX))
-              .map((name) => caches.delete(name))
-          )
-        )
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      const addRegistrationWorkers = () => {
+        addWorker(registration?.waiting || null);
+        if (registration?.active !== controller) {
+          addWorker(registration?.active || null);
+        }
+      };
+      addRegistrationWorkers();
+      if (
+        !registration?.waiting &&
+        (!registration?.active || registration.active === controller)
+      ) {
+        await registration?.update();
+        addRegistrationWorkers();
+      }
+    } catch (error) {
+      console.warn(
+        '[ErrorBoundary] Service Worker update check failed during lazy recovery:',
+        error
+      );
+    }
+    // A newly installed or activated worker understands the versioned
+    // contract; the current page may still use the previous controller.
+    addWorker(controller);
+
+    let lastDeliveryError: Error | null = null;
+    for (const worker of workers) {
+      try {
+        const acknowledgement =
+          await postDynamicImportRecoveryWithAcknowledgement(
+            worker,
+            recoveryRequest
+          );
+        if (acknowledgement.accepted) {
+          return;
+        }
+        lastDeliveryError = new Error(
+          `Dynamic import cache invalidation was rejected: ${
+            acknowledgement.reason || 'unknown-reason'
+          }`
+        );
+        if (acknowledgement.reason !== 'release-mismatch') {
+          throw lastDeliveryError;
+        }
+      } catch (error) {
+        lastDeliveryError =
+          error instanceof Error
+            ? error
+            : new Error('Dynamic import cache invalidation delivery failed');
+      }
+    }
+    throw (
+      lastDeliveryError ||
+      new Error('No Service Worker accepted dynamic import recovery')
     );
   }
 
-  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
-    cleanupTasks.push(
-      navigator.serviceWorker
-        .getRegistration()
-        .then((registration) => registration?.update())
-    );
-  }
+  // An uncontrolled page cannot have a Service Worker invalidation in flight.
+  // Preserve the one-time cache-busted reload for older/uncontrolled clients.
+}
 
-  await Promise.allSettled(cleanupTasks);
+export async function reloadAfterDynamicImportRecovery(
+  moduleKey: string | null,
+  reload: () => void
+): Promise<void> {
+  await prepareDynamicImportRecoveryReload(moduleKey);
+  reload();
 }
 
 export function tryRecoverDynamicImportError(error: unknown): boolean {
@@ -160,7 +406,9 @@ export function tryRecoverDynamicImportError(error: unknown): boolean {
 
   const errorText = serializeError(error);
   const moduleKey = extractModuleKey(errorText);
-  const retryKey = `${LAZY_CHUNK_RETRY_KEY_PREFIX}:${getAppVersion()}:${moduleKey}`;
+  const retryKey = `${LAZY_CHUNK_RETRY_KEY_PREFIX}:${getAppReleaseId()}:${
+    moduleKey || 'reload-only'
+  }`;
 
   try {
     if (sessionStorage.getItem(retryKey) === '1') {
@@ -182,7 +430,7 @@ export function tryRecoverDynamicImportError(error: unknown): boolean {
   reloadUrl.searchParams.set(LAZY_CHUNK_RETRY_TS_PARAM, String(Date.now()));
 
   console.warn(
-    '[ErrorBoundary] Detected stale lazy asset. Reloading once to recover.',
+    '[ErrorBoundary] Detected stale lazy asset. Preparing one safe recovery.',
     error
   );
 
@@ -195,8 +443,12 @@ export function tryRecoverDynamicImportError(error: unknown): boolean {
     window.location.replace(reloadUrl.toString());
   };
 
-  window.setTimeout(reload, 700);
-  void prepareDynamicImportRecoveryReload(moduleKey, errorText).finally(reload);
+  void reloadAfterDynamicImportRecovery(moduleKey, reload).catch((error) => {
+    console.warn(
+      '[ErrorBoundary] Dynamic import recovery did not complete; reload was suppressed:',
+      error
+    );
+  });
 
   return true;
 }

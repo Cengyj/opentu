@@ -105,7 +105,9 @@ export interface NewApiPricingApiResponse {
   supported_endpoint?: Record<string, PricingEndpointInfo | string>;
 }
 
-export type PricingApiResponse = ForPricingApiResponse | NewApiPricingApiResponse;
+export type PricingApiResponse =
+  | ForPricingApiResponse
+  | NewApiPricingApiResponse;
 
 /** 计算后的单个模型价格（已转换为 CNY） */
 export interface ModelPrice {
@@ -133,6 +135,8 @@ export interface PricingGroup {
 /** 缓存的供应商价格数据 */
 export interface ProviderPricingCache {
   profileId: string;
+  /** Version of endpoint evidence used by automatic image routing. */
+  routingEvidenceVersion?: number;
   fetchedAt: number;
   sourceSignature?: string;
   autoRefreshSourceSignature?: string | null;

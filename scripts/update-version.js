@@ -1,5 +1,16 @@
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
+const { createReleaseId } = require('./release-identity.cjs');
+
+function getGitCommit() {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+  try {
+    return execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+  } catch {
+    return 'unknown';
+  }
+}
 
 // 获取当前版本号
 function getCurrentVersion() {
@@ -32,19 +43,29 @@ function createVersionFile(version) {
     }
   }
   
+  const buildTime = process.env.OPENTU_BUILD_TIME || new Date().toISOString();
+  const gitCommit = getGitCommit();
+  const releaseId = createReleaseId({
+    version,
+    explicitReleaseId: process.env.OPENTU_RELEASE_ID,
+    gitCommit,
+    buildTime,
+  });
   const versionInfo = {
     version: version,
-    buildTime: new Date().toISOString(),
-    gitCommit: process.env.GITHUB_SHA || 'unknown',
+    releaseId,
+    buildTime,
+    gitCommit,
     changelog: existingChangelog
   };
   
   fs.writeFileSync(versionPath, `${JSON.stringify(versionInfo, null, 2)}\n`);
-  console.log(`✅ Version file created: ${version}${existingChangelog.length > 0 ? ` (保留 ${existingChangelog.length} 条更新日志)` : ''}`);
+  console.log(`✅ Version file created: ${version} (${releaseId})${existingChangelog.length > 0 ? ` (保留 ${existingChangelog.length} 条更新日志)` : ''}`);
+  return releaseId;
 }
 
 // 更新 HTML 文件，添加版本号到资源链接
-function updateHtmlWithVersion(version) {
+function updateHtmlWithVersion(version, releaseId) {
   const htmlPath = path.join(__dirname, '../apps/web/index.html');
   let htmlContent = fs.readFileSync(htmlPath, 'utf8');
   
@@ -67,6 +88,18 @@ function updateHtmlWithVersion(version) {
     htmlContent = htmlContent.replace(
       '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
       `    <meta name="viewport" content="width=device-width, initial-scale=1" />\n${versionMeta}`
+    );
+  }
+
+  if (htmlContent.includes('name="app-release-id"')) {
+    htmlContent = htmlContent.replace(
+      /<meta name="app-release-id" content="[^"]*" \/>/g,
+      `<meta name="app-release-id" content="${releaseId}" />`
+    );
+  } else {
+    htmlContent = htmlContent.replace(
+      /(<meta name="app-version" content="[^"]*" \/>)/,
+      `$1\n    <meta name="app-release-id" content="${releaseId}" />`
     );
   }
   
@@ -101,8 +134,8 @@ function main() {
   console.log(`🚀 Updating app to version ${version}`);
   
   // updateServiceWorkerVersion(version);
-  createVersionFile(version);
-  updateHtmlWithVersion(version);
+  const releaseId = createVersionFile(version);
+  updateHtmlWithVersion(version, releaseId);
   checkChangelog(version);
   
   console.log(`🎉 Version update completed: ${version}`);

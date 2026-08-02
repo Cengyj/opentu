@@ -204,7 +204,6 @@ function sanitizeSelectedParams(
   const sizeParam = compatibleParams.find((param) => param.id === 'size');
   if (
     sizeParam &&
-    !modelId.startsWith('mj') &&
     !excludeParamIds.has('size') &&
     options?.keepDefaultSize !== false
   ) {

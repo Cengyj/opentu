@@ -310,6 +310,51 @@ describe('prompt-history-service', () => {
     ).toEqual({ kind: 'error', text: '失败原因' });
   });
 
+  it('uses ordered canonical image artifacts for multi-image history results', async () => {
+    const { taskSummaryToPromptHistoryRecord } = await import(
+      './prompt-history-service'
+    );
+
+    const record = taskSummaryToPromptHistoryRecord(
+      createSummary({
+        type: TaskType.IMAGE,
+        result: {
+          url: 'https://example.com/stale.png',
+          urls: ['https://example.com/stale.png'],
+          imageArtifacts: [
+            {
+              url: 'https://example.com/first.webp',
+              source: 'url',
+              mimeType: 'image/webp',
+              format: 'webp',
+            },
+            {
+              url: 'https://example.com/second.png',
+              source: 'url',
+              mimeType: 'image/png',
+              format: 'png',
+            },
+          ],
+        } as PromptHistoryTaskSummary['result'],
+      })
+    );
+
+    expect(record.resultPreviews).toEqual([
+      {
+        kind: 'image',
+        url: 'https://example.com/first.webp',
+        title: undefined,
+      },
+      {
+        kind: 'image',
+        url: 'https://example.com/second.png',
+        title: undefined,
+      },
+    ]);
+    expect(record.resultPreview).toEqual(record.resultPreviews[0]);
+    expect(record.resultCount).toBe(2);
+  });
+
   it('classifies PPT slide image tasks separately and uses the slide prompt', async () => {
     const { taskSummaryToPromptHistoryRecord } = await import(
       './prompt-history-service'

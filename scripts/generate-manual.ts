@@ -9,10 +9,16 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomUUID } from 'node:crypto';
 import matter from 'gray-matter';
 import yaml from 'js-yaml';
-import { compile } from '@mdx-js/mdx';
-import { glob } from 'glob';
+import {
+  readManualSourcePages,
+  USER_MANUAL_DOCUMENT_MARKER,
+  USER_MANUAL_SOURCE_DIGEST_META,
+  USER_MANUAL_VERSION_META,
+  validateManualOutput,
+} from './manual-integrity';
 
 // CDN 基础路径（由 deploy-hybrid.js 设置）
 const CDN_BASE = process.env.MANUAL_CDN_BASE || '';
@@ -50,6 +56,7 @@ interface Page {
   meta: PageMeta;
   content: string;
   html: string;
+  sourceDigest: string;
 }
 
 const SITE_URL = 'https://opentu.ai';
@@ -71,10 +78,10 @@ function readConfig(configPath: string): Config {
 }
 
 // 获取版本号
-function getVersion(): string {
+function getVersion(workspaceRoot: string): string {
   try {
     const packageJson = JSON.parse(
-      fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8')
+      fs.readFileSync(path.join(workspaceRoot, 'package.json'), 'utf-8')
     );
     return packageJson.version || '0.0.0';
   } catch {
@@ -355,7 +362,7 @@ function generateStructuredData(page: Page, description: string, canonicalUrl: s
 }
 
 // 生成 HTML 头部和样式
-function generateHtmlHead(page: Page, config: Config): string {
+function generateHtmlHead(page: Page, config: Config, version: string): string {
   const title = getPageTitle(page, config.site.title);
   const description = getPageDescription(page, config.site.description);
   const canonicalUrl = getCanonicalUrl(page);
@@ -368,6 +375,9 @@ function generateHtmlHead(page: Page, config: Config): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  ${USER_MANUAL_DOCUMENT_MARKER}
+  <meta name="${USER_MANUAL_SOURCE_DIGEST_META}" content="${page.sourceDigest}" />
+  <meta name="${USER_MANUAL_VERSION_META}" content="${escapeHtml(version)}" />
   <title>${escapeHtml(title)}</title>
   <meta name="description" content="${escapeHtml(description)}" />
   <meta name="keywords" content="${escapeHtml(keywords)}" />
@@ -666,7 +676,7 @@ function generateSidebar(pages: Page[], config: Config, currentSlug: string): st
 
 // 生成单个页面
 function generatePage(page: Page, allPages: Page[], config: Config, version: string): string {
-  let html = generateHtmlHead(page, config);
+  let html = generateHtmlHead(page, config, version);
   
   html += `
 <body>
@@ -721,8 +731,21 @@ function copyScreenshots(sourceDir: string, outputDir: string): number {
 }
 
 // 从 E2E 测试结果目录复制新截图
-function copyE2EScreenshots(outputDir: string): number {
-  const e2eScreenshotsDir = path.join(process.cwd(), 'apps', 'web-e2e', 'test-results', 'manual-screenshots');
+function getE2EScreenshotsDirectory(workspaceRoot: string): string {
+  return path.join(
+    workspaceRoot,
+    'apps',
+    'web-e2e',
+    'test-results',
+    'manual-screenshots'
+  );
+}
+
+function copyE2EScreenshots(
+  outputDir: string,
+  workspaceRoot: string
+): number {
+  const e2eScreenshotsDir = getE2EScreenshotsDirectory(workspaceRoot);
   
   if (!fs.existsSync(e2eScreenshotsDir)) {
     console.log(`ℹ️  E2E 截图目录不存在: ${e2eScreenshotsDir}`);
@@ -738,9 +761,14 @@ function copyE2EScreenshots(outputDir: string): number {
 }
 
 // 从 E2E 测试结果复制 GIF 文件
-function copyE2EGifs(outputDir: string): number {
+function copyE2EGifs(outputDir: string, workspaceRoot: string): number {
   const gifsOutputDir = path.join(outputDir, 'gifs');
-  const e2eTestResults = path.join(process.cwd(), 'apps', 'web-e2e', 'test-results');
+  const e2eTestResults = path.join(
+    workspaceRoot,
+    'apps',
+    'web-e2e',
+    'test-results'
+  );
   
   if (!fs.existsSync(e2eTestResults)) {
     return 0;
@@ -784,20 +812,6 @@ function copyE2EGifs(outputDir: string): number {
     }
   }
   
-  // 也检查 gifs 目录（如果 video-to-gif.js 已经生成了）
-  const gifsSourceDir = path.join(process.cwd(), 'apps', 'web', 'public', 'user-manual', 'gifs');
-  if (fs.existsSync(gifsSourceDir)) {
-    const files = fs.readdirSync(gifsSourceDir);
-    for (const file of files) {
-      if (file.endsWith('.gif')) {
-        const sourcePath = path.join(gifsSourceDir, file);
-        const targetPath = path.join(gifsOutputDir, file);
-        fs.copyFileSync(sourcePath, targetPath);
-        copied++;
-      }
-    }
-  }
-  
   findGifs(e2eTestResults);
   
   if (copied > 0) {
@@ -806,9 +820,117 @@ function copyE2EGifs(outputDir: string): number {
   return copied;
 }
 
+export interface GenerateManualOptions {
+  workspaceRoot?: string;
+  outputDir?: string;
+}
+
+export interface GenerateManualResult {
+  contentDir: string;
+  outputDir: string;
+  pageCount: number;
+  slugs: string[];
+}
+
+function copyPreservedResourceDirectory(
+  existingOutputDir: string,
+  stagingDir: string,
+  resourceName: 'screenshots' | 'gifs'
+): void {
+  const sourceDir = path.join(existingOutputDir, resourceName);
+  if (!fs.existsSync(sourceDir) || !fs.statSync(sourceDir).isDirectory()) {
+    return;
+  }
+
+  fs.cpSync(sourceDir, path.join(stagingDir, resourceName), {
+    recursive: true,
+  });
+}
+
+function createStagingDirectory(outputDir: string): string {
+  const parentDir = path.dirname(outputDir);
+  fs.mkdirSync(parentDir, { recursive: true });
+  return fs.mkdtempSync(
+    path.join(parentDir, `.${path.basename(outputDir)}.staging-`)
+  );
+}
+
+function isCrossDeviceRenameError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error as NodeJS.ErrnoException).code === 'EXDEV'
+  );
+}
+
+type RenameDirectory = (sourceDir: string, targetDir: string) => void;
+
+function moveDirectory(
+  sourceDir: string,
+  targetDir: string,
+  renameDirectory: RenameDirectory
+): void {
+  try {
+    renameDirectory(sourceDir, targetDir);
+    return;
+  } catch (error) {
+    if (!isCrossDeviceRenameError(error)) {
+      throw error;
+    }
+  }
+
+  // Docker overlayfs can reject rename for a directory originating from a
+  // lower image layer. Copy first, then remove the source; the caller owns the
+  // surrounding backup/rollback transaction.
+  fs.cpSync(sourceDir, targetDir, {
+    recursive: true,
+    force: false,
+    errorOnExist: true,
+  });
+  fs.rmSync(sourceDir, { recursive: true, force: true });
+}
+
+export function replaceOutputDirectory(
+  stagingDir: string,
+  outputDir: string,
+  renameDirectory: RenameDirectory = fs.renameSync
+): void {
+  const outputExists = fs.existsSync(outputDir);
+  const backupDir = path.join(
+    path.dirname(outputDir),
+    `.${path.basename(outputDir)}.backup-${process.pid}-${randomUUID()}`
+  );
+
+  try {
+    if (outputExists) {
+      moveDirectory(outputDir, backupDir, renameDirectory);
+    }
+    moveDirectory(stagingDir, outputDir, renameDirectory);
+  } catch (error) {
+    if (fs.existsSync(outputDir)) {
+      fs.rmSync(outputDir, { recursive: true, force: true });
+    }
+    if (outputExists && fs.existsSync(backupDir)) {
+      moveDirectory(backupDir, outputDir, renameDirectory);
+    }
+    throw error;
+  }
+
+  if (outputExists && fs.existsSync(backupDir)) {
+    try {
+      fs.rmSync(backupDir, { recursive: true, force: true });
+    } catch (error) {
+      console.warn(`⚠️  无法清理用户手册旧产物备份: ${backupDir}`, error);
+    }
+  }
+}
+
 // 主函数
-async function main() {
-  const manualDir = path.join(process.cwd(), 'docs', 'user-manual');
+export async function generateManual(
+  options: GenerateManualOptions = {}
+): Promise<GenerateManualResult> {
+  const workspaceRoot = path.resolve(options.workspaceRoot || process.cwd());
+  const manualDir = path.join(workspaceRoot, 'docs', 'user-manual');
   const contentDir = path.join(manualDir, 'content');
   const configPath = path.join(manualDir, 'config.yaml');
   
@@ -816,88 +938,121 @@ async function main() {
   
   // 读取配置
   if (!fs.existsSync(configPath)) {
-    console.error('❌ 配置文件不存在:', configPath);
-    process.exit(1);
+    throw new Error(`配置文件不存在: ${configPath}`);
   }
   
   const config = readConfig(configPath);
-  const version = getVersion();
+  const version = getVersion(workspaceRoot);
   
   // 解析输出目录路径
-  const outputDir = path.resolve(manualDir, config.output.dir);
-  const screenshotsOutputDir = path.join(outputDir, 'screenshots');
+  const outputDir = path.resolve(
+    options.outputDir || path.resolve(manualDir, config.output.dir)
+  );
   const screenshotsSourceDir = path.resolve(manualDir, config.screenshots.source);
-  
-  // 确保输出目录存在
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
   
   console.log(`📦 版本: ${version}`);
   console.log(`📁 内容目录: ${contentDir}`);
   console.log(`📁 输出目录: ${outputDir}`);
   
-  // 查找所有 MDX 文件
-  const mdxFiles = await glob('**/*.mdx', { cwd: contentDir });
-  console.log(`📄 找到 ${mdxFiles.length} 个 MDX 文件`);
-  
-  if (mdxFiles.length === 0) {
-    console.error('❌ 没有找到 MDX 文件');
-    process.exit(1);
-  }
+  // 统一读取 source pages；该边界同时验证 title 和 slug 唯一性。
+  const sourcePages = readManualSourcePages(contentDir);
+  console.log(`📄 找到 ${sourcePages.length} 个 MDX 文件`);
   
   // 解析所有页面
   const pages: Page[] = [];
   
-  for (const mdxFile of mdxFiles) {
-    const filePath = path.join(contentDir, mdxFile);
-    const fileContent = fs.readFileSync(filePath, 'utf-8');
+  for (const sourcePage of sourcePages) {
+    const fileContent = fs.readFileSync(sourcePage.filePath, 'utf-8');
     
     // 解析 frontmatter
     const { data, content } = matter(fileContent);
     const meta = data as PageMeta;
-    
-    // 生成 slug
-    const slug = mdxFile
-      .replace(/\.mdx$/, '')
-      .replace(/\//g, '-')
-      .replace(/^-/, '');
-    
+
     // 转换 Markdown 为 HTML
-    const html = markdownToHtml(content, screenshotsOutputDir);
+    const html = markdownToHtml(content, 'screenshots');
     
     pages.push({
-      slug: slug === 'index' ? 'index' : slug,
-      filePath,
+      slug: sourcePage.slug,
+      filePath: sourcePage.filePath,
       meta,
       content,
       html,
+      sourceDigest: sourcePage.sourceDigest,
     });
   }
-  
-  // 生成 HTML 文件
-  for (const page of pages) {
-    const pageHtml = generatePage(page, pages, config, version);
-    const outputPath = path.join(outputDir, `${page.slug}.html`);
-    fs.writeFileSync(outputPath, pageHtml);
-    console.log(`✅ 生成: ${page.slug}.html`);
+
+  const stagingDir = createStagingDirectory(outputDir);
+  const screenshotsOutputDir = path.join(stagingDir, 'screenshots');
+
+  try {
+    // 原生成器不会清空资源目录。原子替换前先保留已有资源，再用新资源覆盖。
+    copyPreservedResourceDirectory(outputDir, stagingDir, 'screenshots');
+    copyPreservedResourceDirectory(outputDir, stagingDir, 'gifs');
+
+    // 所有页面只写入同文件系统的临时目录，完整性验证成功后才替换正式目录。
+    for (const page of pages) {
+      const pageHtml = generatePage(page, pages, config, version);
+      const outputPath = path.join(stagingDir, `${page.slug}.html`);
+      fs.writeFileSync(outputPath, pageHtml);
+      console.log(`✅ 生成: ${page.slug}.html`);
+    }
+
+    // 先从 E2E 测试结果复制新截图（如果存在）
+    copyE2EScreenshots(screenshotsOutputDir, workspaceRoot);
+
+    // 再从配置的源目录复制（可能有一些非 E2E 生成的截图）
+    const sourceCopied =
+      path.resolve(screenshotsSourceDir) ===
+      path.resolve(getE2EScreenshotsDirectory(workspaceRoot))
+        ? 0
+        : copyScreenshots(screenshotsSourceDir, screenshotsOutputDir);
+    if (sourceCopied > 0) {
+      console.log(`📷 从源目录复制了 ${sourceCopied} 个截图`);
+    }
+
+    // 复制 GIF 动图
+    copyE2EGifs(stagingDir, workspaceRoot);
+
+    const report = validateManualOutput({
+      contentDir,
+      outputDir: stagingDir,
+      expectedVersion: version,
+    });
+    replaceOutputDirectory(stagingDir, outputDir);
+
+    console.log(`\n🎉 用户手册生成完成！`);
+    console.log(`📁 输出目录: ${outputDir}`);
+    console.log(`📄 共 ${report.htmlFiles.length} 个页面`);
+
+    return {
+      contentDir,
+      outputDir,
+      pageCount: report.htmlFiles.length,
+      slugs: report.slugs,
+    };
+  } catch (error) {
+    if (fs.existsSync(stagingDir)) {
+      fs.rmSync(stagingDir, { recursive: true, force: true });
+    }
+    throw error;
   }
-  
-  // 先从 E2E 测试结果复制新截图（如果存在）
-  const e2eCopied = copyE2EScreenshots(screenshotsOutputDir);
-  
-  // 再从配置的源目录复制（可能有一些非 E2E 生成的截图）
-  const sourceCopied = copyScreenshots(screenshotsSourceDir, screenshotsOutputDir);
-  if (sourceCopied > 0) {
-    console.log(`📷 从源目录复制了 ${sourceCopied} 个截图`);
-  }
-  
-  // 复制 GIF 动图
-  copyE2EGifs(outputDir);
-  
-  console.log(`\n🎉 用户手册生成完成！`);
-  console.log(`📁 输出目录: ${outputDir}`);
-  console.log(`📄 共 ${pages.length} 个页面`);
 }
 
-main().catch(console.error);
+export async function runGenerateManualCli(
+  action: () => Promise<GenerateManualResult> = () => generateManual(),
+  logger: Pick<Console, 'error'> = console
+): Promise<number> {
+  try {
+    await action();
+    return 0;
+  } catch (error) {
+    logger.error('❌ 用户手册生成失败:', error);
+    return 1;
+  }
+}
+  
+if (typeof require !== 'undefined' && require.main === module) {
+  void runGenerateManualCli().then((exitCode) => {
+    process.exitCode = exitCode;
+  });
+}

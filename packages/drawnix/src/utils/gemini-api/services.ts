@@ -8,6 +8,7 @@ import {
   VideoGenerationOptions,
   ProcessedContent,
   GeminiResponse,
+  GeminiConfig,
 } from './types';
 import {
   DEFAULT_CONFIG,
@@ -28,6 +29,7 @@ import {
 } from '../settings-manager';
 import {
   providerTransport,
+  resolveProviderBindingAuthQueryKey,
   resolveInvocationPlanFromRoute,
   type ResolvedProviderContext,
   type ProviderAuthStrategy,
@@ -144,6 +146,23 @@ export function normalizeAspectRatio(size?: string): string | undefined {
   return `${width / divisor}:${height / divisor}`;
 }
 
+export interface GeminiImageGenerationOptions {
+  size?: string;
+  image?: string | string[];
+  response_format?: 'url' | 'b64_json';
+  omitDefaultResponseFormat?: boolean;
+  quality?: '1k' | '2k' | '4k';
+  count?: number;
+  model?: string;
+  modelRef?: ModelRef | null;
+  signal?: AbortSignal;
+  /**
+   * The preplanned adapter invocation. Image execution is not allowed to
+   * resolve settings or invent an endpoint inside this transport helper.
+   */
+  invocationConfig: GeminiConfig;
+}
+
 function normalizeGoogleImageSize(
   quality?: '1k' | '2k' | '4k'
 ): '1K' | '2K' | '4K' | undefined {
@@ -154,46 +173,46 @@ function normalizeGoogleImageSize(
   return quality.toUpperCase() as '1K' | '2K' | '4K';
 }
 
-function normalizeGoogleImageResult(content: string): {
-  data: Array<{ b64_json?: string; url?: string; mime_type?: string }>;
-} {
-  const base64Matches = Array.from(
-    content.matchAll(/data:([^;]+);base64,([A-Za-z0-9+/=]+)/g)
-  );
-  const urlMatches = Array.from(content.matchAll(/https?:\/\/[^\s<>"')]+/g));
-
-  return {
-    data: [
-      ...base64Matches.map((match) => ({
-        b64_json: match[2],
-        mime_type: match[1],
-      })),
-      ...urlMatches.map((match) => ({
-        url: match[0],
-      })),
-    ],
+function summarizeImageProviderError(
+  responseText: string,
+  status: number
+): string {
+  const readMessage = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const normalized = value.trim();
+    if (
+      !normalized ||
+      normalized.length > 1000 ||
+      /(?:data:image\/|;base64,)/i.test(normalized)
+    ) {
+      return undefined;
+    }
+    return normalized.slice(0, 500);
   };
-}
 
-function normalizeStructuredGoogleImageResult(response: GeminiResponse): {
-  data: Array<{ b64_json?: string; url?: string; mime_type?: string }>;
-} {
-  if (response.inlineMedia?.length) {
-    return {
-      data: response.inlineMedia.map((item) =>
-        item.data
-          ? {
-              b64_json: item.data,
-              mime_type: item.mimeType || 'image/png',
-            }
-          : { url: item.url }
-      ),
+  try {
+    const parsed = JSON.parse(responseText) as {
+      message?: unknown;
+      detail?: unknown;
+      error?: unknown;
     };
+    const nestedError =
+      parsed.error && typeof parsed.error === 'object'
+        ? (parsed.error as { message?: unknown; detail?: unknown })
+        : undefined;
+    return (
+      readMessage(nestedError?.message) ||
+      readMessage(nestedError?.detail) ||
+      readMessage(parsed.error) ||
+      readMessage(parsed.message) ||
+      readMessage(parsed.detail) ||
+      `供应商拒绝了图片请求（HTTP ${status}）`
+    );
+  } catch {
+    return `供应商拒绝了图片请求（HTTP ${status}）`;
   }
-
-  return normalizeGoogleImageResult(
-    response.choices[0]?.message?.content || ''
-  );
 }
 
 /**
@@ -203,28 +222,22 @@ function normalizeStructuredGoogleImageResult(response: GeminiResponse): {
  */
 export async function generateImageWithGemini(
   prompt: string,
-  options: {
-    size?: string;
-    image?: string | string[]; // 支持单图或多图
-    response_format?: 'url' | 'b64_json';
-    omitDefaultResponseFormat?: boolean;
-    quality?: '1k' | '2k' | '4k';
-    count?: number;
-    model?: string; // 支持指定模型
-    modelRef?: ModelRef | null;
-  } = {}
+  options: GeminiImageGenerationOptions
 ): Promise<any> {
-  // 等待设置管理器初始化完成
-  await settingsManager.waitForInitialization();
+  const binding = options.invocationConfig.binding;
+  if (!binding?.submitPath?.trim()) {
+    throw new Error('图片请求缺少已规划的 InvocationPlan.binding');
+  }
+  if (
+    (options.model && options.model !== binding.modelId) ||
+    (options.modelRef?.profileId &&
+      options.modelRef.profileId !== binding.profileId) ||
+    (options.modelRef?.modelId && options.modelRef.modelId !== binding.modelId)
+  ) {
+    throw new Error('图片请求模型与已规划 binding 不一致');
+  }
 
-  const routeModel = options.modelRef || options.model;
-  const route = resolveInvocationRoute('image', routeModel);
-  const modelName =
-    route.modelId ||
-    DEFAULT_CONFIG.modelName ||
-    'gemini-3-pro-image-preview-vip';
-
-  return generateImageDirect(prompt, options, modelName, routeModel);
+  return generateImageDirect(prompt, options, binding.modelId);
 }
 
 // generateImageViaSW 已移除 - 不再依赖 SW 任务队列
@@ -234,26 +247,17 @@ export async function generateImageWithGemini(
  */
 async function generateImageDirect(
   prompt: string,
-  options: {
-    size?: string;
-    image?: string | string[];
-    response_format?: 'url' | 'b64_json';
-    omitDefaultResponseFormat?: boolean;
-    quality?: '1k' | '2k' | '4k';
-    count?: number;
-    model?: string;
-    modelRef?: ModelRef | null;
-  },
-  modelName: string,
-  routeModel?: string | ModelRef | null
+  options: GeminiImageGenerationOptions,
+  modelName: string
 ): Promise<any> {
-  const { config: runtimeConfig } = buildRuntimeConfig(
-    'image',
-    routeModel || modelName,
+  const binding = options.invocationConfig.binding!;
+  const runtimeConfig = {
+    ...options.invocationConfig,
     modelName,
-    DEFAULT_CONFIG
-  );
+    binding,
+  };
   const startTime = Date.now();
+  const plannedEndpoint = binding.submitPath;
 
   // 开始记录 LLM API 调用（降级模式）
   const referenceImages = options.image
@@ -262,7 +266,7 @@ async function generateImageDirect(
       : [options.image]
     : undefined;
   const logId = startLLMApiLog({
-    endpoint: '/images/generations',
+    endpoint: plannedEndpoint,
     model: modelName,
     taskType: 'image',
     prompt,
@@ -271,7 +275,9 @@ async function generateImageDirect(
   });
 
   try {
-    const validatedConfig = await validateAndEnsureConfig(runtimeConfig);
+    const validatedConfig = await validateAndEnsureConfig(runtimeConfig, {
+      credentialFallback: 'none',
+    });
 
     if (validatedConfig.protocol === 'google.generateContent') {
       const content = [
@@ -302,6 +308,8 @@ async function generateImageDirect(
         ],
         {
           stream: false,
+          signal: options.signal,
+          includeInlineMediaInContent: false,
           generationConfig: {
             responseModalities: ['IMAGE'],
             imageConfig: {
@@ -317,16 +325,15 @@ async function generateImageDirect(
       );
 
       const duration = Date.now() - startTime;
-      const normalizedResult = normalizeStructuredGoogleImageResult(response);
 
       completeLLMApiLog(logId, {
         httpStatus: 200,
         duration,
         resultType: 'image',
-        resultCount: normalizedResult.data.length || 1,
+        resultCount: response.inlineMedia?.length || 0,
       });
 
-      return normalizedResult;
+      return response;
     }
 
     const headers = {
@@ -335,15 +342,15 @@ async function generateImageDirect(
 
     // 构建请求体 - 强调生成图片
     const enhancedPrompt = `Generate an image: ${prompt}`;
-  const data: any = {
-    model: validatedConfig.modelName || 'gemini-3-pro-image-preview-vip',
-    prompt: enhancedPrompt,
-  };
-  if (options.response_format) {
-    data.response_format = options.response_format;
-  } else if (!options.omitDefaultResponseFormat) {
-    data.response_format = 'url'; // 默认返回 url
-  }
+    const data: any = {
+      model: validatedConfig.modelName || 'gemini-3-pro-image-preview-vip',
+      prompt: enhancedPrompt,
+    };
+    if (options.response_format) {
+      data.response_format = options.response_format;
+    } else if (!options.omitDefaultResponseFormat) {
+      data.response_format = 'url'; // 默认返回 url
+    }
 
     // size 参数可选，不传则由 API 自动决定（对应 auto）
     if (options.size && options.size !== 'auto') {
@@ -371,27 +378,38 @@ async function generateImageDirect(
     const response = await providerTransport.send(
       buildProviderContextFromConfig(validatedConfig),
       {
-        path: '/images/generations',
-        method: 'POST',
+        path: binding.submitPath,
+        authQueryKey: resolveProviderBindingAuthQueryKey(binding),
+        method: binding.submitMethod,
         headers,
         body: JSON.stringify(data),
+        signal: options.signal,
+        fetcher: validatedConfig.fetcher,
         timeoutMs: IMAGE_GENERATION_TIMEOUT_MS,
       }
     );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('[ImageAPI] Request failed:', response.status, errorText);
+      const errorSummary = summarizeImageProviderError(
+        errorText,
+        response.status
+      );
+      console.error(
+        '[ImageAPI] Request failed:',
+        response.status,
+        errorSummary
+      );
       const duration = Date.now() - startTime;
       failLLMApiLog(logId, {
         httpStatus: response.status,
         duration,
-        errorMessage: errorText.substring(0, 500),
+        errorMessage: errorSummary,
       });
       const error = new Error(
-        `图片生成请求失败: ${response.status} - ${errorText}`
+        `图片生成请求失败: ${response.status} - ${errorSummary}`
       );
-      (error as any).apiErrorBody = errorText;
+      (error as any).apiErrorBody = errorSummary;
       (error as any).httpStatus = response.status;
       throw error;
     }

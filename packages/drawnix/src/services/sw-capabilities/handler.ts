@@ -31,6 +31,10 @@ import { insertAudioFromUrl } from '../../data/audio';
 import { scrollToPointIfNeeded } from '../../utils/selection-utils';
 import { WorkZoneTransforms } from '../../plugins/workzone-transforms';
 import type { PlaitWorkZone } from '../../types/workzone.types';
+import {
+  createModelRef,
+  resolveInvocationRoute,
+} from '../../utils/settings-manager';
 
 /**
  * Board reference holder
@@ -747,8 +751,17 @@ export class SWCapabilitiesHandler {
   private async handleGenerateImage(params: ImageGenerationParams): Promise<CapabilityResult> {
     try {
       const { createImageTask } = await import('../../mcp/tools/image-generation');
-
-      const result = await createImageTask(params);
+      const route = resolveInvocationRoute(
+        'image',
+        params.modelRef || params.model || null
+      );
+      const modelRef =
+        params.modelRef || createModelRef(route.profileId, route.modelId);
+      const result = await createImageTask({
+        ...params,
+        model: modelRef?.modelId || params.model || route.modelId,
+        modelRef,
+      });
 
       if (!result.success) {
         console.error('[SWCapabilities] Image task creation failed:', result.error);

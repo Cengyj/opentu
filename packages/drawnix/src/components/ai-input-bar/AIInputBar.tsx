@@ -89,13 +89,22 @@ import {
   type ModelConfig,
 } from '../../constants/model-config';
 import { getEffectiveVideoCompatibleParams } from '../../services/video-binding-utils';
+import {
+  pruneSelectedImageParams,
+  resolveImageParametersForSelection,
+} from '../../services/image-binding-parameter-capabilities';
+import { useImageBindingCapabilityRevision } from '../../hooks/use-image-binding-capability-revision';
+import {
+  normalizeImageRequest,
+  resolveImageOperationIntent,
+  type ImageOperationIntent,
+} from '../../services/image-invocation';
 import { initializeMCP, mcpRegistry } from '../../mcp';
 import { setCanvasBoard } from '../../services/canvas-operations/canvas-insertion';
 import { setCanvasBoard as setMcpCanvasBoard } from '../../mcp/tools/canvas-insertion';
 import { setBoard } from '../../mcp/tools/shared';
 import { setCapabilitiesBoard } from '../../services/sw-capabilities/handler';
 import { initializeLongVideoChainService } from '../../services/long-video-chain-service';
-import { gridImageService } from '../../services/photo-wall';
 import type { MCPTaskResult } from '../../mcp/types';
 import {
   getAlignedImageDimensions,
@@ -408,6 +417,29 @@ interface SelectedContent {
   height?: number; // 图片/视频高度
 }
 
+function resolveSelectedContentImageOperation(
+  content: readonly SelectedContent[]
+): ImageOperationIntent {
+  const imageItems = content.filter(
+    (item): item is SelectedContent & { url: string } =>
+      item.type === 'image' && typeof item.url === 'string'
+  );
+  const graphicItems = content.filter(
+    (item): item is SelectedContent & { url: string } =>
+      item.type === 'graphics' && typeof item.url === 'string'
+  );
+  return resolveImageOperationIntent(
+    normalizeImageRequest({
+      prompt: 'capability-preview',
+      referenceImages: [...imageItems, ...graphicItems].map((item) => item.url),
+      maskImage:
+        imageItems.length === 1 && graphicItems.length === 0
+          ? imageItems[0].maskImage
+          : undefined,
+    })
+  );
+}
+
 interface GenerationRequestOverride {
   prompt: string;
   content: SelectedContent[];
@@ -649,7 +681,6 @@ const SelectionWatcher: React.FC<{
       setMcpCanvasBoard(board);
       setBoard(board);
       setCapabilitiesBoard(board);
-      gridImageService.setBoard(board);
       // 同时设置外部 ref
       if (externalBoardRef) {
         externalBoardRef.current = board;
@@ -659,7 +690,6 @@ const SelectionWatcher: React.FC<{
         setMcpCanvasBoard(null);
         setBoard(null);
         setCapabilitiesBoard(null);
-        gridImageService.setBoard(null);
         if (externalBoardRef) {
           externalBoardRef.current = null;
         }
@@ -1160,6 +1190,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     );
     const [selectedAgentAudioModelRef, setSelectedAgentAudioModelRef] =
       useState<ModelRef | null>(getModelRefFromConfig(initialAudioModel));
+    const imageBindingCapabilityRevision =
+      useImageBindingCapabilityRevision();
     const [selectedSkillMediaTypes, setSelectedSkillMediaTypes] = useState<
       SkillMediaType[]
     >([]);
@@ -1308,17 +1340,34 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
 
       const initialModelId =
         initialSelectedModelConfig?.id || initialSelectedModelId;
-      const sizeParam = getCompatibleParams(initialModelId).find(
+      const initialCompatibleParams =
+        initialGenerationType === 'image'
+          ? resolveImageParametersForSelection(
+              initialModelId,
+              getModelRefFromConfig(initialSelectedModelConfig) ||
+                initialSelectedModelRef,
+              'generation'
+            ).compatibleParams
+          : getCompatibleParams(initialModelId);
+      const initialParams =
+        initialGenerationType === 'image'
+          ? pruneSelectedImageParams(
+              initialScopedSelectedParams,
+              initialCompatibleParams
+            )
+          : initialScopedSelectedParams;
+      const sizeParam = initialCompatibleParams.find(
         (param) => param.id === 'size'
       );
 
       return {
-        ...initialScopedSelectedParams,
-        ...(initialModelId.startsWith('mj') || !sizeParam
+        ...initialParams,
+        ...(!sizeParam
           ? {}
           : {
               size:
-                initialScopedSelectedParams.size ||
+                initialParams.size ||
+                sizeParam.defaultValue ||
                 getDefaultSizeForModel(initialModelId),
             }),
       };
@@ -1378,6 +1427,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const allContent = useMemo(() => {
       return [...uploadedContent, ...selectedContent];
     }, [uploadedContent, selectedContent]);
+    const imageOperation = useMemo(
+      () => resolveSelectedContentImageOperation(allContent),
+      [allContent]
+    );
     const localImageMessages = useMemo(
       () => ({
         invalidFile:
@@ -1605,6 +1658,14 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     // 预计算当前模型的可用参数，避免子组件内部 stale 计算
     const compatibleParams = useMemo(() => {
       if (generationType === 'agent') return [];
+      if (generationType === 'image') {
+        return resolveImageParametersForSelection(
+          selectedModel,
+          selectedModelRef,
+          imageOperation,
+          imageBindingCapabilityRevision
+        ).compatibleParams;
+      }
       if (generationType === 'video') {
         return getEffectiveVideoCompatibleParams(
           selectedModel,
@@ -1633,7 +1694,14 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       }
 
       return params;
-    }, [generationType, selectedModel, selectedModelRef, selectedParams]);
+    }, [
+      generationType,
+      imageBindingCapabilityRevision,
+      imageOperation,
+      selectedModel,
+      selectedModelRef,
+      selectedParams,
+    ]);
 
     // 点击外部关闭输入框的展开状态
     useEffect(() => {
@@ -2024,11 +2092,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const SelectionWatcherBoardRef = useRef<any>(null);
 
     // 使用工作流提交 Hook
-    const { submitWorkflow: prepareWorkflowSubmission } =
-      useWorkflowSubmission({
+    const { submitWorkflow: prepareWorkflowSubmission } = useWorkflowSubmission(
+      {
         boardRef: SelectionWatcherBoardRef,
         workZoneIdRef: currentWorkZoneIdRef,
-      });
+      }
+    );
 
     const inputRef = useRef<HTMLTextAreaElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -2945,7 +3014,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               selectedModel,
               selectedModelRef
             )}`;
-      const baseParams =
+      const persistedParams =
         generationType === 'agent'
           ? {}
           : selectedParamScopeRef.current === currentScopeKey
@@ -2956,6 +3025,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
               getSelectionKey(selectedModel, selectedModelRef),
               selectedParamsRef.current
             );
+      const baseParams =
+        generationType === 'image'
+          ? pruneSelectedImageParams(persistedParams, compatibleParams)
+          : persistedParams;
       const nextParams: Record<string, string> = {};
 
       const sizeParam = compatibleParams.find((p) => p.id === 'size');
@@ -2964,7 +3037,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         !prevSize ||
         !sizeParam?.options ||
         sizeParam.options.some((option) => option.value === prevSize);
-      if (!selectedModel.startsWith('mj') && sizeParam) {
+      if (sizeParam) {
         nextParams.size =
           prevSize && prevSizeIsValid
             ? prevSize
@@ -3080,8 +3153,19 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         const effectiveSelectedModel = override?.selectedModel ?? selectedModel;
         const effectiveSelectedModelRef =
           override?.selectedModelRef ?? selectedModelRef;
-        const effectiveSelectedParams =
+        const requestedSelectedParams =
           override?.selectedParams ?? selectedParams;
+        const effectiveSelectedParams =
+          effectiveGenerationType === 'image'
+            ? pruneSelectedImageParams(
+                requestedSelectedParams,
+                resolveImageParametersForSelection(
+                  effectiveSelectedModel,
+                  effectiveSelectedModelRef,
+                  resolveSelectedContentImageOperation(effectiveContent)
+                ).compatibleParams
+              )
+            : requestedSelectedParams;
         const effectiveSelectedCount = override?.selectedCount ?? selectedCount;
         const appendToCurrentChatSession =
           override?.appendToCurrentChatSession ?? false;

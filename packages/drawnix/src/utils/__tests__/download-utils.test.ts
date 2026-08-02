@@ -145,6 +145,40 @@ describe('download-utils', () => {
     });
   });
 
+  it('按 canonical artifact 的独立格式构建多图片下载项', () => {
+    const items = buildTaskDownloadItems(
+      createTask({
+        type: TaskType.IMAGE,
+        params: { prompt: 'mixed formats' },
+        result: {
+          url: '/cache/first.webp',
+          urls: ['/cache/first.webp', '/cache/second.jpg'],
+          imageArtifacts: [
+            {
+              url: '/cache/first.webp',
+              source: 'url',
+              mimeType: 'image/webp',
+              format: 'webp',
+            },
+            {
+              url: '/cache/second.jpg',
+              source: 'url',
+              mimeType: 'image/jpeg',
+              format: 'jpg',
+            },
+          ],
+          format: 'png',
+          size: 0,
+        },
+      })
+    );
+
+    expect(items.map((item) => item.filename)).toEqual([
+      'mixed-formats-1.webp',
+      'mixed-formats-2.jpg',
+    ]);
+  });
+
   it('单文件跨域抓取失败时改为打开链接', async () => {
     downloadFileMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
 

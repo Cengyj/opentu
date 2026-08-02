@@ -4,10 +4,10 @@
 
 The system SHALL provide persistent localized names, instructions, and programmatic state for the existing provider configuration controls without changing provider data, settings persistence, or network behavior.
 
-#### Scenario: Inspect or edit provider connection and pricing fields
+#### Scenario: Inspect or edit provider connection fields
 
 - **GIVEN** a provider profile is visible in the existing settings page
-- **WHEN** a keyboard or assistive-technology user reaches its name, provider type, image compatibility, icon URL, Base URL, API key, pricing URL, currency rate, or available pricing-group control
+- **WHEN** a keyboard or assistive-technology user reaches its name, provider type, image compatibility, icon URL, Base URL, or API key
 - **THEN** each rendered field SHALL be associated with its persistent localized visible purpose and any existing instruction
 - **AND** placeholders SHALL NOT be the sole programmatic name
 - **AND** values, parsing, masking, validation, draft state, and save behavior SHALL remain unchanged
@@ -18,13 +18,6 @@ The system SHALL provide persistent localized names, instructions, and programma
 - **WHEN** the switch is rendered or activated with pointer or keyboard input
 - **THEN** its provider-scoped localized purpose and current checked state SHALL be programmatically available on the actual switch
 - **AND** exactly the existing enabled-state callback, rollback, persistence, routing availability, and analytics behavior SHALL occur
-
-#### Scenario: Inspect or toggle asynchronous image preference
-
-- **GIVEN** the existing asynchronous-image-endpoint preference is visible
-- **WHEN** its switch is rendered or activated with pointer or keyboard input
-- **THEN** its localized purpose and current checked state SHALL be programmatically available on the actual switch
-- **AND** exactly the existing preference update behavior SHALL occur without changing request routing semantics in this change
 
 #### Scenario: Navigate the API-key field and reveal control
 

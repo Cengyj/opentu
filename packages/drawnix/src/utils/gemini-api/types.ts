@@ -19,6 +19,8 @@ export interface GeminiConfig {
   protocol?: string | null;
   binding?: ProviderModelBinding | null;
   provider?: ResolvedProviderContext | null;
+  /** Optional transport injection used by image execution and tests. */
+  fetcher?: typeof fetch;
 }
 
 export interface ImageInput {

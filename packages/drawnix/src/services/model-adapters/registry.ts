@@ -1,9 +1,10 @@
 import type { ModelAdapter, ModelKind } from './types';
-import { getModelConfig, ModelVendor } from '../../constants/model-config';
+import { getModelConfig } from '../../constants/model-config';
 import type { ModelType } from '../../constants/model-config';
 import type { ModelRef } from '../../utils/settings-manager';
 import {
   resolveInvocationPlanFromRoute,
+  type InvocationPlan,
   type ProviderModelBinding,
 } from '../provider-routing';
 
@@ -51,9 +52,15 @@ function scoreAdapterForBinding(
 
 export function resolveAdapterForBinding(
   binding: ProviderModelBinding,
-  kind: ModelKind
+  kind: ModelKind,
+  options: { requireExactRequestSchema?: boolean } = {}
 ): ModelAdapter | undefined {
   const adapters = listModelAdapters(kind)
+    .filter(
+      (adapter) =>
+        !options.requireExactRequestSchema ||
+        adapter.matchRequestSchemas?.includes(binding.requestSchema)
+    )
     .map((adapter) => ({
       adapter,
       score: scoreAdapterForBinding(adapter, binding),
@@ -62,6 +69,25 @@ export function resolveAdapterForBinding(
     .sort((left, right) => right.score - left.score);
 
   return adapters[0]?.adapter;
+}
+
+/**
+ * Resolve an adapter from an already-created invocation plan.
+ *
+ * Planned image execution is schema-exact regardless of profile mode: a broad
+ * protocol match does not prove that an adapter owns the binding serializer.
+ * Other automatic-profile operations retain the same exactness rule. Keeping
+ * this function plan-only also prevents callers from accidentally consulting
+ * the mutable model catalog a second time.
+ */
+export function resolveAdapterForPlan(
+  plan: InvocationPlan,
+  kind: ModelKind
+): ModelAdapter | undefined {
+  return resolveAdapterForBinding(plan.binding, kind, {
+    requireExactRequestSchema:
+      kind === 'image' || plan.provider.providerType === 'auto',
+  });
 }
 
 export function resolveAdapterForModel(
@@ -122,35 +148,19 @@ function toRouteType(kind: ModelKind): ModelType {
   }
 }
 
-function isGPTImageModel(modelId?: string | null): boolean {
-  if (!modelId) {
-    return false;
-  }
-
-  const modelConfig = getModelConfig(modelId);
-  const lowerId = modelId.toLowerCase();
-  return (
-    lowerId.startsWith('gpt-image') ||
-    lowerId === 'chatgpt-image-latest' ||
-    (modelConfig?.vendor === ModelVendor.GPT && lowerId.includes('gpt-image'))
-  );
-}
-
-function findImageAdapterBySchema(schema: string): ModelAdapter | undefined {
-  return listModelAdapters('image').find((adapter) =>
-    adapter.matchRequestSchemas?.includes(schema)
-  );
-}
-
-function resolveGPTImageAdapterForLegacyRoute(
-  modelId?: string | null,
-  modelRef?: ModelRef | null
+/** Model-only compatibility boundary used only when no provider binding exists. */
+export function resolveLegacyAdapterForModel(
+  kind: ModelKind,
+  modelId: string
 ): ModelAdapter | undefined {
-  if (!isGPTImageModel(modelId)) {
+  // Image execution must be backed by an InvocationPlan. Falling back to a
+  // model-only adapter would re-introduce a second protocol/endpoint authority
+  // after provider routing has failed or become ambiguous.
+  if (kind === 'image') {
     return undefined;
   }
 
-  return findImageAdapterBySchema('openai.image.gpt-generation-json');
+  return resolveAdapterForModel(modelId, kind);
 }
 
 export function resolveAdapterForInvocation(
@@ -170,25 +180,26 @@ export function resolveAdapterForInvocation(
   );
 
   if (plan) {
-    const adapter = resolveAdapterForBinding(plan.binding, kind);
-    if (adapter) {
+    const adapter = resolveAdapterForPlan(plan, kind);
+    if (adapter || kind === 'image' || plan.provider.providerType === 'auto') {
       return adapter;
     }
+  }
+
+  // A persisted/explicit binding is an execution identity, not a hint. If it
+  // cannot be planned, falling back to a model-only adapter could submit a
+  // retry or recovery request to a different endpoint.
+  if (options.bindingId) {
+    return undefined;
+  }
+
+  if (kind === 'image') {
+    return undefined;
   }
 
   if (!modelId) {
     return undefined;
   }
 
-  if (kind === 'image') {
-    const routeAdapter = resolveGPTImageAdapterForLegacyRoute(
-      modelId,
-      modelRef
-    );
-    if (routeAdapter) {
-      return routeAdapter;
-    }
-  }
-
-  return resolveAdapterForModel(modelId, kind);
+  return resolveLegacyAdapterForModel(kind, modelId);
 }

@@ -3,7 +3,6 @@ import {
   getTextBindingMaxImageCount,
   inferBindingsForProviderModel,
   InvocationPlanner,
-  InvocationPlanningError,
   supportsTextBindingImageInput,
 } from '../provider-routing';
 import { providerTransport } from '../provider-routing';
@@ -93,6 +92,56 @@ describe('provider routing', () => {
     expect(plan.binding.id).toBe('openai-image');
     expect(plan.binding.protocol).toBe('openai.images.generations');
     expect(plan.provider.profileId).toBe('provider-a');
+  });
+
+  it('does not let a lower-priority async candidate bypass normal binding ranking', () => {
+    const profile: ProviderProfileSnapshot = {
+      id: 'provider-ranked',
+      name: 'Ranked Provider',
+      providerType: 'openai-compatible',
+      baseUrl: 'https://api.example.com/v1',
+      apiKey: 'key',
+      authType: 'bearer',
+    };
+    const bindings: ProviderModelBinding[] = [
+      {
+        id: 'dedicated-image',
+        profileId: profile.id,
+        modelId: 'ranked-image',
+        operation: 'image',
+        protocol: 'flux.task',
+        requestSchema: 'flux.image.polling-json',
+        responseSchema: 'flux.task.status',
+        submitPath: '/flux/v1/{model}',
+        pollPathTemplate: '/flux/v1/get_result?id={taskId}',
+        priority: 600,
+        confidence: 'high',
+        source: 'template',
+      },
+      {
+        id: 'low-async-image',
+        profileId: profile.id,
+        modelId: 'ranked-image',
+        operation: 'image',
+        protocol: 'openai.async.media',
+        requestSchema: 'openai.async.image.form',
+        responseSchema: 'openai.async.task',
+        submitPath: '/videos',
+        pollPathTemplate: '/videos/{taskId}',
+        priority: 100,
+        confidence: 'medium',
+        source: 'discovered',
+      },
+    ];
+
+    const plan = new InvocationPlanner(
+      createRepositories({ profiles: [profile], bindings })
+    ).plan({
+      operation: 'image',
+      modelRef: { profileId: profile.id, modelId: 'ranked-image' },
+    });
+
+    expect(plan.binding.id).toBe('dedicated-image');
   });
 
   it('uses preferred request schema when a model has generation and edit bindings', () => {
@@ -228,6 +277,146 @@ describe('provider routing', () => {
     expect(plan.provider.authType).toBe('bearer');
   });
 
+  it('plans GPT generation, GPT edit, and Gemini image bindings within one auto profile', () => {
+    const profile: ProviderProfileSnapshot = {
+      id: 'provider-auto',
+      name: 'Mixed Image Provider',
+      providerType: 'auto',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'key-auto',
+      authType: 'bearer',
+      imageApiCompatibility: 'openai-gpt-image',
+    };
+    const gptModel: ModelConfig = {
+      id: 'gpt-image-2',
+      label: 'GPT Image 2',
+      type: 'image',
+      vendor: ModelVendor.GPT,
+    };
+    const geminiModel: ModelConfig = {
+      id: 'gemini-3-pro-image-preview',
+      label: 'Gemini Image',
+      type: 'image',
+      vendor: ModelVendor.GEMINI,
+    };
+    const bindings = [
+      ...inferBindingsForProviderModel(profile, gptModel),
+      ...inferBindingsForProviderModel(profile, geminiModel),
+    ];
+    const planner = new InvocationPlanner(
+      createRepositories({ profiles: [profile], bindings })
+    );
+
+    const gptGeneration = planner.plan({
+      operation: 'image',
+      modelRef: { profileId: profile.id, modelId: gptModel.id },
+    });
+    const gptEdit = planner.plan({
+      operation: 'image',
+      modelRef: { profileId: profile.id, modelId: gptModel.id },
+      preferredRequestSchema: 'openai.image.gpt-edit-form',
+    });
+    const geminiGeneration = planner.plan({
+      operation: 'image',
+      modelRef: { profileId: profile.id, modelId: geminiModel.id },
+    });
+
+    expect(gptGeneration.binding).toMatchObject({
+      protocol: 'openai.images.generations',
+      requestSchema: 'openai.image.gpt-generation-json',
+      submitPath: '/images/generations',
+    });
+    expect(gptEdit.binding).toMatchObject({
+      protocol: 'openai.images.edits',
+      requestSchema: 'openai.image.gpt-edit-form',
+      submitPath: '/images/edits',
+    });
+    expect(geminiGeneration.binding).toMatchObject({
+      protocol: 'google.generateContent',
+      requestSchema: 'google.generate-content.image-inline',
+      submitPath: '/v1beta/models/{model}:generateContent',
+    });
+    expect(
+      bindings.filter((binding) => binding.modelId === geminiModel.id)
+    ).toHaveLength(1);
+  });
+
+  it('rejects equally ranked incompatible bindings for auto profiles', () => {
+    const profile: ProviderProfileSnapshot = {
+      id: 'provider-auto',
+      name: 'Ambiguous Provider',
+      providerType: 'auto',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'key-auto',
+      authType: 'bearer',
+    };
+    const bindings: ProviderModelBinding[] = [
+      {
+        id: 'discovered-google',
+        profileId: profile.id,
+        modelId: 'unknown-image-model',
+        operation: 'image',
+        protocol: 'google.generateContent',
+        requestSchema: 'google.generate-content.image-inline',
+        responseSchema: 'google.generate-content.parts',
+        submitPath: '/v1beta/models/{model}:generateContent',
+        priority: 140,
+        confidence: 'medium',
+        source: 'discovered',
+      },
+      {
+        id: 'discovered-google-alternate',
+        profileId: profile.id,
+        modelId: 'unknown-image-model',
+        operation: 'image',
+        protocol: 'google.generateContent',
+        requestSchema: 'google.generate-content.image-inline',
+        responseSchema: 'google.generate-content.parts',
+        submitPath: '/custom/models/{model}:generateContent',
+        priority: 140,
+        confidence: 'medium',
+        source: 'discovered',
+      },
+    ];
+    const planner = new InvocationPlanner(
+      createRepositories({ profiles: [profile], bindings })
+    );
+
+    expect(() =>
+      planner.plan({
+        operation: 'image',
+        modelRef: {
+          profileId: profile.id,
+          modelId: 'unknown-image-model',
+        },
+      })
+    ).toThrowError(
+      expect.objectContaining({
+        name: 'InvocationPlanningError',
+        reason: 'AMBIGUOUS_BINDING',
+        details: expect.objectContaining({
+          profileId: profile.id,
+          modelId: 'unknown-image-model',
+          operation: 'image',
+          bindingIds: expect.arrayContaining([
+            'discovered-google',
+            'discovered-google-alternate',
+          ]),
+        }),
+      })
+    );
+    expect(
+      planner.plan({
+        operation: 'image',
+        modelRef: {
+          profileId: profile.id,
+          modelId: 'unknown-image-model',
+        },
+        bindingId: 'discovered-google',
+      }).binding.id
+    ).toBe('discovered-google');
+  });
+
   it('throws when no binding exists for the selected operation', () => {
     const planner = new InvocationPlanner(
       createRepositories({
@@ -252,7 +441,17 @@ describe('provider routing', () => {
           modelId: 'gemini-3-pro-image-preview',
         },
       })
-    ).toThrow(InvocationPlanningError);
+    ).toThrowError(
+      expect.objectContaining({
+        name: 'InvocationPlanningError',
+        reason: 'BINDING_NOT_FOUND',
+        details: {
+          profileId: 'provider-a',
+          modelId: 'gemini-3-pro-image-preview',
+          operation: 'video',
+        },
+      })
+    );
   });
 
   it('prepares bearer-auth transport requests', () => {
@@ -296,6 +495,36 @@ describe('provider routing', () => {
 
     expect(prepared.url).toBe(
       'https://generativelanguage.googleapis.com/v1beta/models/test:generateContent?key=secret'
+    );
+  });
+
+  it('uses the binding query-key contract for auto profiles', () => {
+    const context = {
+      profileId: 'provider-auto',
+      profileName: 'Auto Provider',
+      providerType: 'auto',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'secret',
+      authType: 'query' as const,
+      extraHeaders: { 'X-Tenant': 'tenant-a' },
+    };
+    const googleRequest = providerTransport.prepareRequest(context, {
+      path: '/v1beta/models/test:generateContent',
+      baseUrlStrategy: 'trim-v1',
+      authQueryKey: 'key',
+      query: { alt: 'sse' },
+    });
+    const openaiRequest = providerTransport.prepareRequest(context, {
+      path: '/images/generations',
+      authQueryKey: 'api_key',
+    });
+
+    expect(googleRequest.url).toBe(
+      'https://gateway.example.com/v1beta/models/test:generateContent?alt=sse&key=secret'
+    );
+    expect(googleRequest.headers['X-Tenant']).toBe('tenant-a');
+    expect(openaiRequest.url).toBe(
+      'https://gateway.example.com/v1/images/generations?api_key=secret'
     );
   });
 
@@ -549,6 +778,292 @@ describe('provider routing', () => {
     });
   });
 
+  it('keeps image compatibility auto semantics for auto provider profiles', () => {
+    const bindings = inferBindingsForProviderModel(
+      {
+        id: 'provider-auto',
+        name: 'Auto Provider',
+        providerType: 'auto',
+        baseUrl: 'https://foropencode.com/v1',
+        apiKey: 'business-key',
+        authType: 'bearer',
+        imageApiCompatibility: 'auto',
+      },
+      {
+        id: 'gpt-image-2',
+        label: 'GPT Image 2',
+        type: 'image',
+        vendor: ModelVendor.GPT,
+      }
+    );
+
+    expect(bindings.map((binding) => binding.requestSchema)).toEqual([
+      'openai.image.basic-json',
+    ]);
+  });
+
+  it('does not invent an image protocol for unknown auto-profile models', () => {
+    const bindings = inferBindingsForProviderModel(
+      {
+        id: 'provider-auto',
+        name: 'Auto Provider',
+        providerType: 'auto',
+        baseUrl: 'https://gateway.example.com/v1',
+        apiKey: 'key',
+        authType: 'bearer',
+      },
+      {
+        id: 'unknown-image-model',
+        label: 'Unknown Image',
+        type: 'image',
+        vendor: ModelVendor.OTHER,
+      }
+    );
+
+    expect(bindings).toEqual([]);
+  });
+
+  it('keeps known async image models on model-scoped bindings for auto profiles', () => {
+    const profile: ProviderProfileSnapshot = {
+      id: 'provider-auto',
+      name: 'Auto Provider',
+      providerType: 'auto',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'key',
+      authType: 'bearer',
+    };
+    const model: ModelConfig = {
+      id: 'gemini-3-pro-image-preview-async',
+      label: 'Gemini Async Image',
+      type: 'image',
+      vendor: ModelVendor.GEMINI,
+    };
+    const bindings = inferBindingsForProviderModel(profile, model);
+    const plan = new InvocationPlanner(
+      createRepositories({ profiles: [profile], bindings })
+    ).plan({
+      operation: 'image',
+      modelRef: { profileId: profile.id, modelId: model.id },
+    });
+
+    expect(bindings).toHaveLength(1);
+    expect(plan.binding).toMatchObject({
+      protocol: 'openai.async.media',
+      requestSchema: 'openai.async.image.form',
+      submitPath: '/videos',
+      pollPathTemplate: '/videos/{taskId}',
+    });
+  });
+
+  it('preserves real discovered path candidates so auto planning can reject same-schema ambiguity', () => {
+    const profile: ProviderProfileSnapshot = {
+      id: 'provider-auto',
+      name: 'Auto Provider',
+      providerType: 'auto',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'key',
+      authType: 'bearer',
+    };
+    const model: ModelConfig = {
+      id: 'unknown-image-model',
+      label: 'Unknown Image',
+      type: 'image',
+      vendor: ModelVendor.OTHER,
+    };
+    const bindings = inferBindingsForProviderModel(profile, model, {
+      primary: {
+        path: '/v1beta/models/{model}:generateContent',
+        method: 'POST',
+      },
+      alternate: {
+        path: '/custom/models/{model}:generateContent',
+        method: 'POST',
+      },
+    });
+    const planner = new InvocationPlanner(
+      createRepositories({ profiles: [profile], bindings })
+    );
+
+    expect(bindings).toHaveLength(2);
+    expect(new Set(bindings.map((binding) => binding.id)).size).toBe(2);
+    expect(() =>
+      planner.plan({
+        operation: 'image',
+        modelRef: { profileId: profile.id, modelId: model.id },
+        preferredRequestSchema: 'google.generate-content.image-inline',
+      })
+    ).toThrow(/Ambiguous protocol bindings/);
+  });
+
+  it('selects model-scoped custom GPT generation and edit endpoints by request schema', () => {
+    const profile: ProviderProfileSnapshot = {
+      id: 'provider-auto-gpt-custom',
+      name: 'Auto GPT Custom Provider',
+      providerType: 'auto',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'key',
+      authType: 'bearer',
+      imageApiCompatibility: 'openai-gpt-image',
+    };
+    const model: ModelConfig = {
+      id: 'gpt-image-2',
+      label: 'GPT Image 2',
+      type: 'image',
+      vendor: ModelVendor.GPT,
+    };
+    const bindings = inferBindingsForProviderModel(profile, model, {
+      generation: {
+        path: '/gateway/v2/images/generations',
+        method: 'PATCH',
+      },
+      edit: {
+        path: '/gateway/v2/images/edits',
+        method: 'POST',
+      },
+    });
+    const planner = new InvocationPlanner(
+      createRepositories({ profiles: [profile], bindings })
+    );
+
+    const generationPlan = planner.plan({
+      operation: 'image',
+      modelRef: { profileId: profile.id, modelId: model.id },
+      preferredRequestSchema: 'openai.image.gpt-generation-json',
+    });
+    const editPlan = planner.plan({
+      operation: 'image',
+      modelRef: { profileId: profile.id, modelId: model.id },
+      preferredRequestSchema: 'openai.image.gpt-edit-form',
+    });
+
+    expect(generationPlan.binding).toMatchObject({
+      source: 'discovered',
+      protocol: 'openai.images.generations',
+      requestSchema: 'openai.image.gpt-generation-json',
+      submitPath: '/gateway/v2/images/generations',
+      submitMethod: 'PATCH',
+      metadata: {
+        image: {
+          action: 'generation',
+          serialization: {
+            omitDefaultResponseFormat: true,
+            defaultResolution: '1k',
+          },
+        },
+      },
+    });
+    expect(editPlan.binding).toMatchObject({
+      source: 'discovered',
+      protocol: 'openai.images.edits',
+      requestSchema: 'openai.image.gpt-edit-form',
+      submitPath: '/gateway/v2/images/edits',
+      submitMethod: 'POST',
+      metadata: { image: { action: 'edit' } },
+    });
+    expect(() =>
+      planner.plan({
+        operation: 'image',
+        modelRef: { profileId: profile.id, modelId: model.id },
+      })
+    ).toThrow(/Ambiguous protocol bindings/);
+  });
+
+  it('does not attach chat, video, or audio endpoint hints to an image model', () => {
+    const profile: ProviderProfileSnapshot = {
+      id: 'provider-auto-modal-filter',
+      name: 'Auto Modal Filter Provider',
+      providerType: 'auto',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'key',
+      authType: 'bearer',
+    };
+    const bindings = inferBindingsForProviderModel(
+      profile,
+      {
+        id: 'runtime-image-model',
+        label: 'Runtime Image Model',
+        type: 'image',
+        vendor: ModelVendor.OTHER,
+      },
+      {
+        image: {
+          path: '/custom/images/generations',
+          method: 'POST',
+        },
+        chat: {
+          path: '/v1/chat/completions',
+          method: 'POST',
+        },
+        video: {
+          path: '/v1/videos',
+          method: 'POST',
+          scenario: 'video',
+        },
+        kling: {
+          path: '/kling/v1/videos/text2video',
+          method: 'POST',
+        },
+        audio: {
+          path: '/suno/submit/music',
+          method: 'POST',
+        },
+      }
+    );
+
+    expect(bindings).toHaveLength(1);
+    expect(bindings[0]).toMatchObject({
+      operation: 'image',
+      protocol: 'openai.images.generations',
+      requestSchema: 'openai.image.basic-json',
+      submitPath: '/custom/images/generations',
+      source: 'discovered',
+    });
+  });
+
+  it('does not attach image endpoint hints to manual non-image model bindings', () => {
+    const profile: ProviderProfileSnapshot = {
+      id: 'provider-manual-modal-filter',
+      name: 'Manual Modal Filter Provider',
+      providerType: 'openai-compatible',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'key',
+      authType: 'bearer',
+    };
+    const imageEndpoint = {
+      generation: {
+        path: '/custom/images/generations',
+        method: 'POST',
+      },
+    };
+    const textBindings = inferBindingsForProviderModel(
+      profile,
+      {
+        id: 'runtime-chat-model',
+        label: 'Runtime Chat Model',
+        type: 'text',
+        vendor: ModelVendor.OTHER,
+      },
+      imageEndpoint
+    );
+    const videoBindings = inferBindingsForProviderModel(
+      profile,
+      {
+        id: 'runtime-video-model',
+        label: 'Runtime Video Model',
+        type: 'video',
+        vendor: ModelVendor.OTHER,
+      },
+      imageEndpoint
+    );
+
+    expect(textBindings.map((binding) => binding.protocol)).toEqual([
+      'openai.chat.completions',
+    ]);
+    expect(videoBindings.map((binding) => binding.protocol)).toEqual([
+      'openai.async.video',
+    ]);
+  });
+
   it('keeps discovered generateContent bindings below template image bindings for For endpoints', () => {
     const profile = {
       id: 'provider-b',
@@ -567,7 +1082,7 @@ describe('provider routing', () => {
     const bindings = inferBindingsForProviderModel(profile, model, {
       image: {
         path: '/v1beta/models/gemini-2.5-flash-image:generateContent',
-      } as any,
+      },
     });
     const planner = new InvocationPlanner(
       createRepositories({
@@ -611,7 +1126,7 @@ describe('provider routing', () => {
     const bindings = inferBindingsForProviderModel(profile, model, {
       edit: {
         path: '/images/edits',
-      } as any,
+      },
     });
 
     expect(bindings.map((binding) => binding.requestSchema)).toEqual([
@@ -627,7 +1142,6 @@ describe('provider routing', () => {
       baseUrl: 'https://foropencode.com/v1',
       apiKey: 'key-a',
       authType: 'bearer' as const,
-      preferAsyncImageEndpoint: true,
     };
     const model: ModelConfig = {
       id: 'gpt-image-1-vip',
@@ -670,7 +1184,7 @@ describe('provider routing', () => {
     expect(plan.binding.pollPathTemplate).toBe('/videos/{taskId}');
   });
 
-  it('keeps async-image binding ahead of GPT edit preference for reference images', () => {
+  it('keeps a known async model when the requested edit schema is unavailable', () => {
     const profile = {
       id: 'provider-async',
       name: 'Async Provider',
@@ -678,7 +1192,6 @@ describe('provider routing', () => {
       baseUrl: 'https://foropencode.com/v1',
       apiKey: 'key-a',
       authType: 'bearer' as const,
-      preferAsyncImageEndpoint: true,
     };
     const model: ModelConfig = {
       id: 'gemini-3-pro-image-preview-async',
@@ -717,7 +1230,48 @@ describe('provider routing', () => {
     expect(plan.binding.submitPath).toBe('/videos');
   });
 
-  it('prefers async image binding for async-listed image models when enabled', () => {
+  it('honors an available GPT edit schema over an async generation candidate', () => {
+    const profile = {
+      id: 'provider-gpt-edit',
+      name: 'GPT Edit Provider',
+      providerType: 'openai-compatible' as const,
+      baseUrl: 'https://foropencode.com/v1',
+      apiKey: 'key-a',
+      authType: 'bearer' as const,
+      imageApiCompatibility: 'openai-gpt-image' as const,
+    };
+    const model: ModelConfig = {
+      id: 'gpt-image-2',
+      label: 'GPT Image 2',
+      type: 'image',
+      vendor: ModelVendor.GPT,
+    };
+    const bindings = inferBindingsForProviderModel(profile, model, {
+      async: {
+        path: '/v1/videos',
+        method: 'POST',
+        scenario: 'async-image',
+      },
+    });
+    const plan = new InvocationPlanner(
+      createRepositories({ profiles: [profile], bindings })
+    ).plan({
+      operation: 'image',
+      modelRef: { profileId: profile.id, modelId: model.id },
+      preferredRequestSchema: 'openai.image.gpt-edit-form',
+    });
+
+    expect(bindings.map((binding) => binding.protocol)).toContain(
+      'openai.async.media'
+    );
+    expect(plan.binding).toMatchObject({
+      protocol: 'openai.images.edits',
+      requestSchema: 'openai.image.gpt-edit-form',
+      submitPath: '/images/edits',
+    });
+  });
+
+  it('prefers async image binding for async-listed image models', () => {
     const profile = {
       id: 'provider-async',
       name: 'Async Provider',
@@ -725,7 +1279,6 @@ describe('provider routing', () => {
       baseUrl: 'https://foropencode.com/v1',
       apiKey: 'key-a',
       authType: 'bearer' as const,
-      preferAsyncImageEndpoint: true,
     };
     const model: ModelConfig = {
       id: 'gemini-3-pro-image-preview-async',
@@ -757,7 +1310,7 @@ describe('provider routing', () => {
     expect(plan.binding.submitPath).toBe('/videos');
   });
 
-  it('routes generic image models through /v1/videos when async image is enabled', () => {
+  it('routes generic image models through an explicitly discovered async endpoint', () => {
     const profile = {
       id: 'provider-async',
       name: 'Async Provider',
@@ -765,7 +1318,6 @@ describe('provider routing', () => {
       baseUrl: 'https://foropencode.com/v1',
       apiKey: 'key-a',
       authType: 'bearer' as const,
-      preferAsyncImageEndpoint: true,
     };
     const model: ModelConfig = {
       id: 'qwen-image-2.0',
@@ -797,7 +1349,39 @@ describe('provider routing', () => {
     expect(plan.binding.submitPath).toBe('/videos');
   });
 
-  it('routes mj-imagine through /v1/videos when async image is enabled', () => {
+  it('keeps ordinary image models on their normal binding without async evidence', () => {
+    const profile = {
+      id: 'provider-standard',
+      name: 'Standard Provider',
+      providerType: 'openai-compatible' as const,
+      baseUrl: 'https://foropencode.com/v1',
+      apiKey: 'key-a',
+      authType: 'bearer' as const,
+    };
+    const model: ModelConfig = {
+      id: 'qwen-image-2.0',
+      label: 'Qwen Image 2.0',
+      type: 'image',
+      vendor: ModelVendor.QWEN,
+    };
+    const bindings = inferBindingsForProviderModel(profile, model);
+    const plan = new InvocationPlanner(
+      createRepositories({ profiles: [profile], bindings })
+    ).plan({
+      operation: 'image',
+      modelRef: { profileId: profile.id, modelId: model.id },
+    });
+
+    expect(bindings.map((binding) => binding.protocol)).not.toContain(
+      'openai.async.media'
+    );
+    expect(plan.binding).toMatchObject({
+      protocol: 'openai.images.generations',
+      submitPath: '/images/generations',
+    });
+  });
+
+  it('routes mj-imagine through an explicitly discovered async endpoint', () => {
     const profile = {
       id: 'provider-async',
       name: 'Async Provider',
@@ -805,7 +1389,6 @@ describe('provider routing', () => {
       baseUrl: 'https://foropencode.com/v1',
       apiKey: 'key-a',
       authType: 'bearer' as const,
-      preferAsyncImageEndpoint: true,
     };
     const model: ModelConfig = {
       id: 'mj-imagine',
@@ -1113,5 +1696,38 @@ describe('provider routing', () => {
 
     expect(binding?.protocol).toBe('openai.chat.completions');
     expect(supportsTextBindingImageInput(binding)).toBe(true);
+  });
+
+  it('keeps auto-profile non-image models on existing gateway bindings', () => {
+    const profile: ProviderProfileSnapshot = {
+      id: 'provider-auto',
+      name: 'Auto Provider',
+      providerType: 'auto',
+      baseUrl: 'https://gateway.example.com/v1',
+      apiKey: 'key',
+      authType: 'bearer',
+    };
+    const textBindings = inferBindingsForProviderModel(profile, {
+      id: 'deepseek-chat',
+      label: 'DeepSeek Chat',
+      type: 'text',
+      vendor: ModelVendor.DEEPSEEK,
+    });
+    const videoBindings = inferBindingsForProviderModel(profile, {
+      id: 'qwen-video',
+      label: 'Qwen Video',
+      type: 'video',
+      vendor: ModelVendor.QWEN,
+    });
+    const audioBindings = inferBindingsForProviderModel(profile, {
+      id: 'suno-music',
+      label: 'Suno Music',
+      type: 'audio',
+      vendor: ModelVendor.SUNO,
+    });
+
+    expect(textBindings[0]?.protocol).toBe('openai.chat.completions');
+    expect(videoBindings[0]?.protocol).toBe('openai.async.video');
+    expect(audioBindings[0]?.protocol).toBe('for.suno.music');
   });
 });

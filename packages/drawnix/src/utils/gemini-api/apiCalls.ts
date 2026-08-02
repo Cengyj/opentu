@@ -5,7 +5,10 @@
  */
 
 import type { ResolvedProviderContext } from '../../services/provider-routing';
-import { providerTransport } from '../../services/provider-routing';
+import {
+  providerTransport,
+  resolveProviderBindingAuthQueryKey,
+} from '../../services/provider-routing';
 import {
   GeminiConfig,
   GeminiMessage,
@@ -177,7 +180,10 @@ function parseDataUrl(dataUrl: string): { mimeType: string; data: string } {
   };
 }
 
-async function toGoogleInlineData(url: string): Promise<GoogleInlineData> {
+async function toGoogleInlineData(
+  url: string,
+  signal?: AbortSignal
+): Promise<GoogleInlineData> {
   if (url.startsWith('data:')) {
     const parsed = parseDataUrl(url);
     return {
@@ -186,7 +192,7 @@ async function toGoogleInlineData(url: string): Promise<GoogleInlineData> {
     };
   }
 
-  const response = await fetch(url);
+  const response = await fetch(url, { signal });
   if (!response.ok) {
     throw new Error(`Failed to load image input: ${response.status}`);
   }
@@ -200,7 +206,10 @@ async function toGoogleInlineData(url: string): Promise<GoogleInlineData> {
   };
 }
 
-async function buildGoogleParts(messages: GeminiMessage[]): Promise<{
+async function buildGoogleParts(
+  messages: GeminiMessage[],
+  signal?: AbortSignal
+): Promise<{
   contents: Array<{
     role: 'user' | 'model';
     parts: Array<Record<string, unknown>>;
@@ -221,7 +230,7 @@ async function buildGoogleParts(messages: GeminiMessage[]): Promise<{
         parts.push({ text: part.text });
       } else if (part.type === 'image_url' && part.image_url?.url) {
         parts.push({
-          inline_data: await toGoogleInlineData(part.image_url.url),
+          inline_data: await toGoogleInlineData(part.image_url.url, signal),
         });
       } else if (part.type === 'inline_data' && part.data) {
         parts.push({
@@ -264,7 +273,10 @@ async function buildGoogleParts(messages: GeminiMessage[]): Promise<{
   };
 }
 
-function extractGooglePartContent(part: Record<string, any>): string {
+function extractGooglePartContent(
+  part: Record<string, any>,
+  includeInlineMedia: boolean
+): string {
   if (typeof part.text === 'string') {
     return part.text;
   }
@@ -272,6 +284,9 @@ function extractGooglePartContent(part: Record<string, any>): string {
   const inlineData: GoogleInlineData | undefined =
     part.inline_data || part.inlineData;
   if (inlineData?.data) {
+    if (!includeInlineMedia) {
+      return '';
+    }
     const mimeType = inlineData.mime_type || inlineData.mimeType || 'image/png';
     return `data:${mimeType};base64,${inlineData.data}`;
   }
@@ -285,7 +300,10 @@ function extractGooglePartContent(part: Record<string, any>): string {
   return '';
 }
 
-function normalizeGoogleResponseContent(response: Record<string, any>): string {
+function normalizeGoogleResponseContent(
+  response: Record<string, any>,
+  includeInlineMedia = true
+): string {
   const candidates = Array.isArray(response.candidates)
     ? response.candidates
     : [];
@@ -294,13 +312,14 @@ function normalizeGoogleResponseContent(response: Record<string, any>): string {
   );
 
   return parts
-    .map((part) => extractGooglePartContent(part || {}))
+    .map((part) => extractGooglePartContent(part || {}, includeInlineMedia))
     .filter(Boolean)
     .join('\n');
 }
 
 function normalizeGoogleResponse(
-  response: Record<string, any>
+  response: Record<string, any>,
+  includeInlineMediaInContent = true
 ): GeminiResponse {
   const inlineMedia = extractGoogleInlineMedia(response);
   return {
@@ -308,7 +327,10 @@ function normalizeGoogleResponse(
       {
         message: {
           role: 'assistant',
-          content: normalizeGoogleResponseContent(response),
+          content: normalizeGoogleResponseContent(
+            response,
+            includeInlineMediaInContent
+          ),
         },
       },
     ],
@@ -372,17 +394,48 @@ export function normalizeGoogleImageResponse(response: Record<string, any>): {
   };
 }
 
+function sanitizeGoogleErrorValue(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (
+    !normalized ||
+    /(?:data:image\/|;base64,)/i.test(normalized) ||
+    /[A-Za-z0-9+/]{256,}={0,2}/.test(normalized)
+  ) {
+    return undefined;
+  }
+  return normalized.slice(0, 500);
+}
+
 async function readGoogleError(response: Response): Promise<string> {
+  const responseText = (await response.text().catch(() => '')).slice(0, 8192);
   try {
-    const payload = await response.json();
+    const payload = JSON.parse(responseText) as {
+      error?: unknown;
+      message?: unknown;
+    };
+    const nestedError =
+      payload.error &&
+      typeof payload.error === 'object' &&
+      !Array.isArray(payload.error)
+        ? (payload.error as { message?: unknown; status?: unknown })
+        : undefined;
     return (
-      payload?.error?.message ||
-      payload?.error?.status ||
-      payload?.message ||
-      response.statusText
+      sanitizeGoogleErrorValue(nestedError?.message) ||
+      sanitizeGoogleErrorValue(nestedError?.status) ||
+      sanitizeGoogleErrorValue(payload.error) ||
+      sanitizeGoogleErrorValue(payload.message) ||
+      sanitizeGoogleErrorValue(response.statusText) ||
+      `Google API request failed (${response.status})`
     );
   } catch {
-    return (await response.text().catch(() => '')) || response.statusText;
+    return (
+      sanitizeGoogleErrorValue(responseText) ||
+      sanitizeGoogleErrorValue(response.statusText) ||
+      `Google API request failed (${response.status})`
+    );
   }
 }
 
@@ -394,12 +447,14 @@ export async function callGoogleGenerateContentRaw(
     onChunk?: (content: string) => void;
     signal?: AbortSignal;
     generationConfig?: Record<string, unknown>;
+    /** Image generation keeps bytes only in structured inlineMedia. */
+    includeInlineMediaInContent?: boolean;
   } = { stream: false }
 ): Promise<GeminiResponse> {
   const startTime = Date.now();
   const model = config.modelName || 'gemini-2.0-flash';
   const endpoint = buildGoogleEndpoint(config, model, options.stream);
-  const payload = await buildGoogleParts(messages);
+  const payload = await buildGoogleParts(messages, options.signal);
   const requestBody: Record<string, unknown> = {
     contents: payload.contents,
   };
@@ -431,13 +486,15 @@ export async function callGoogleGenerateContentRaw(
     const response = await providerTransport.send(providerContext, {
       path: endpoint,
       baseUrlStrategy: config.binding?.baseUrlStrategy,
-      method: 'POST',
+      authQueryKey: resolveProviderBindingAuthQueryKey(config.binding),
+      method: config.binding?.submitMethod || 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       query: options.stream ? { alt: 'sse' } : undefined,
       body: JSON.stringify(requestBody),
       signal: timeoutControl.signal,
+      fetcher: config.fetcher,
     });
 
     if (!response.ok) {
@@ -460,7 +517,10 @@ export async function callGoogleGenerateContentRaw(
 
     if (!options.stream) {
       const result = (await response.json()) as Record<string, any>;
-      const normalized = normalizeGoogleResponse(result);
+      const normalized = normalizeGoogleResponse(
+        result,
+        options.includeInlineMediaInContent !== false
+      );
       const duration = Date.now() - startTime;
       analytics.trackAPICallSuccess({
         endpoint,

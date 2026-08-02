@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   convertTasksToPagedFormat,
   compareTaskIndexes,
+  restoreTaskFromCompact,
 } from '../task-sync-service';
 import {
   convertWorkflowsToPagedFormat,
@@ -169,6 +170,58 @@ describe('Task Paged Sync', () => {
       expect(compactTask.result).not.toHaveProperty('toolCalls');
       // error.details 应该被省略
       expect(compactTask.error).not.toHaveProperty('details');
+    });
+
+    it('preserves canonical image artifacts through compact sync', () => {
+      const imageArtifacts = [
+        {
+          url: '/__aitu_cache__/image/task-1-0.webp',
+          source: 'url' as const,
+          mimeType: 'image/webp' as const,
+          format: 'webp' as const,
+          width: 1024,
+          height: 768,
+        },
+        {
+          url: '/__aitu_cache__/image/task-1-1.png',
+          source: 'inline' as const,
+          mimeType: 'image/png' as const,
+          format: 'png' as const,
+        },
+      ];
+      const task = createMockTask({
+        id: 'task-1',
+        result: {
+          url: imageArtifacts[0].url,
+          urls: imageArtifacts.map((artifact) => artifact.url),
+          imageArtifacts,
+          format: 'webp',
+          size: 2048,
+        },
+      });
+
+      const { pages } = convertTasksToPagedFormat([task]);
+      const compact = pages[0].tasks[0];
+      const restored = restoreTaskFromCompact(compact);
+
+      expect(compact.result?.imageArtifacts).toEqual(imageArtifacts);
+      expect(restored.result?.imageArtifacts).toEqual(imageArtifacts);
+      expect(restored.result?.urls).toEqual(
+        imageArtifacts.map((artifact) => artifact.url)
+      );
+    });
+
+    it('keeps legacy compact results valid without inventing artifacts', () => {
+      const { pages } = convertTasksToPagedFormat([createMockTask()]);
+      const compact = pages[0].tasks[0];
+      if (compact.result) {
+        delete compact.result.imageArtifacts;
+      }
+
+      expect(restoreTaskFromCompact(compact).result).toMatchObject({
+        url: 'https://example.com/image.png',
+        imageArtifacts: undefined,
+      });
     });
   });
 

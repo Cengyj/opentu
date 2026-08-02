@@ -86,7 +86,9 @@ describe('cdn-fallback', () => {
         '3.0.0',
         '/npm/aitu-app@3.0.0/assets/tool-drawers.css'
       )
-    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css');
+    ).toBe(
+      'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css'
+    );
   });
 
   it('normalizes absolute jsdelivr URLs before rebuilding fallback URLs', () => {
@@ -98,7 +100,9 @@ describe('cdn-fallback', () => {
         '3.0.0',
         'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css'
       )
-    ).toBe('https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css');
+    ).toBe(
+      'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/tool-drawers.css'
+    );
   });
 
   it('keeps third-party npm package URLs out of the aitu-app version template', () => {
@@ -110,7 +114,9 @@ describe('cdn-fallback', () => {
         '3.0.0',
         '/npm/winbox@0.2.82/dist/winbox.bundle.min.js'
       )
-    ).toBe('https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/winbox.bundle.min.js');
+    ).toBe(
+      'https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/winbox.bundle.min.js'
+    );
   });
 
   it('rewrites same-origin third-party npm package paths back to jsdelivr package URLs', () => {
@@ -122,7 +128,9 @@ describe('cdn-fallback', () => {
         '3.0.0',
         'https://pr.opentu.ai/npm/winbox@0.2.82/dist/winbox.bundle.min.js'
       )
-    ).toBe('https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/winbox.bundle.min.js');
+    ).toBe(
+      'https://cdn.jsdelivr.net/npm/winbox@0.2.82/dist/winbox.bundle.min.js'
+    );
   });
 
   it('uses CDN first for same-origin absolute asset URLs', async () => {
@@ -231,9 +239,11 @@ describe('cdn-fallback', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toContain(
       'https://cdn.jsdelivr.net/npm/aitu-app@3.0.0/assets/index.css'
     );
-    expect(fetchMock.mock.calls.some(([input]) =>
-      String(input).startsWith('https://origin.example.com/')
-    )).toBe(false);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).startsWith('https://origin.example.com/')
+      )
+    ).toBe(false);
   });
 
   it('falls back to origin when jsdelivr fails', async () => {
@@ -264,6 +274,40 @@ describe('cdn-fallback', () => {
     expect(result?.source).toBe('local');
     expect(fetchMock.mock.calls.at(-1)?.[0]).toContain(
       'https://origin.example.com/assets/index.css'
+    );
+  });
+
+  it('keeps local-origin recovery enabled for a production build served on localhost', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.startsWith('http://localhost:7200/')) {
+          return new Response('console.log("local production");', {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/javascript',
+              'Content-Length': '240',
+            },
+          });
+        }
+
+        return new Response('missing', { status: 404 });
+      });
+
+    const result = await fetchFromCDNWithFallback(
+      'assets/runtime-local.js',
+      '3.0.0',
+      'http://localhost:7200'
+    );
+
+    expect(result).toMatchObject({
+      source: 'local',
+      targetUrl: 'http://localhost:7200/assets/runtime-local.js',
+    });
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:7200/assets/runtime-local.js'
     );
   });
 

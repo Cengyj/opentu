@@ -4,7 +4,7 @@ import {
   formatModelPriceDetail,
   formatModelPriceSummary,
 } from '../utils/model-pricing-service';
-import type { ModelPrice, PricingGroup } from '../utils/model-pricing-types';
+import type { ModelPrice } from '../utils/model-pricing-types';
 
 export function useModelPrice(
   profileId: string | undefined | null,
@@ -38,15 +38,6 @@ export function useModelPriceText(
     summary: formatModelPriceSummary(price),
     detail: formatModelPriceDetail(price),
   };
-}
-
-export function usePricingGroups(profileId: string | undefined): PricingGroup[] {
-  const version = useSyncExternalStore(
-    (cb) => modelPricingService.subscribe(cb),
-    () => modelPricingService.getVersion()
-  );
-  void version;
-  return profileId ? modelPricingService.getGroups(profileId) : [];
 }
 
 export function useModelMeta(

@@ -41,10 +41,24 @@ jobs:
       # Run affected checks against those SHAs, then always produce the web
       # artifact required by startup and bundle-size verification.
       - run: npx nx affected -t test --verbose
+      - name: Test User Manual Build Contract
+        run: pnpm run manual:test
+      - name: Test release static contract
+        run: pnpm run release:static:test
       - run: npx nx affected -t lint --exclude=drawnix --verbose
       - name: Build web production artifact
         id: build-web
+        env:
+          OPENTU_RELEASE_ID: ${{ github.sha }}
+          GITHUB_SHA: ${{ github.sha }}
         run: pnpm build:web
+      - name: Verify production artifact release identity
+        run: >-
+          pnpm run release:static:create --
+          --dist dist/apps/web
+          --output "${{ runner.temp }}/release-static-contract.json"
+          --expected-release-id "${{ github.sha }}"
+          --expected-version "$(node -p "require('./package.json').version")"
       - name: Verify startup bundle
         run: pnpm verify:startup
 
@@ -148,8 +162,8 @@ jobs:
       - name: Run Manual Generation Tests
         run: pnpm run e2e:manual
 
-      # 生成用户手册
-      - name: Generate User Manual
+      # 生成并完整校验用户手册（全部 MDX 必须有对应 HTML）
+      - name: Generate and Verify User Manual
         run: pnpm run manual:build
 
       # 上传测试报告
@@ -173,4 +187,4 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: user-manual
-          path: docs/user-manual/
+          path: apps/web/public/user-manual/

@@ -14,6 +14,7 @@ import {
   generateVideoWithGemini,
   chatWithGemini,
   sendChatWithGemini,
+  type GeminiImageGenerationOptions,
 } from './services';
 import { geminiSettings, type ModelRef } from '../settings-manager';
 
@@ -52,19 +53,7 @@ export class GeminiClient {
   /**
    * 生成图片
    */
-  async generateImage(
-    prompt: string,
-    options: {
-      size?: string;
-      image?: string | string[];
-      response_format?: 'url' | 'b64_json';
-      omitDefaultResponseFormat?: boolean;
-      quality?: '1k' | '2k' | '4k';
-      count?: number;
-      model?: string; // 支持指定模型
-      modelRef?: ModelRef | null;
-    } = {}
-  ) {
+  async generateImage(prompt: string, options: GeminiImageGenerationOptions) {
     return generateImageWithGemini(prompt, options);
   }
 

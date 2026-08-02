@@ -5,16 +5,14 @@
  * 大部分逻辑已迁移到 media-api 共享模块
  */
 
-import type { VideoAPIConfig, GeminiConfig } from './types';
+import type { VideoAPIConfig } from './types';
 import {
   calculateBlobChecksum,
-  compressImageBlob,
   dataUrlToBlob,
   getFileExtension,
   isDataURL,
   normalizeImageDataUrl,
 } from '@aitu/utils';
-import { getDataURL } from '../../data/blob';
 import { unifiedCacheService } from '../unified-cache-service';
 import { providerTransport } from '../provider-routing/provider-transport';
 import {
@@ -27,17 +25,147 @@ import {
   resolveVideoPollPath,
   shouldDownloadVideoContent,
 } from '../video-binding-utils';
+import { mapImageInvocationWithConcurrency } from '../image-invocation/bounded-concurrency';
+import type { ImageInvocationTelemetry } from '../image-invocation/performance';
+import {
+  IMAGE_ARTIFACT_MIME_TYPES,
+  type ImageArtifactMimeType,
+  type ImageArtifact,
+  type ImageArtifactFormat,
+} from '../image-invocation/artifacts';
 
-/** 参考图转 base64 时最大体积（1MB），避免请求体过大 */
-export const MAX_REFERENCE_IMAGE_BYTES = 1 * 1024 * 1024;
+export {
+  MAX_REFERENCE_IMAGE_BYTES,
+  blobToBase64Under1MB,
+  ensureBase64ForAI,
+} from '../image-invocation/reference-materializer';
 
 /**
  * Local persistence is post-provider work and must never keep a successfully
  * returned image in the generating state indefinitely. The underlying Cache
- * Storage/IndexedDB APIs are not abortable, so callers fall back to the
- * normalized provider value when this deadline wins.
+ * Storage/IndexedDB APIs are not abortable, so this deadline gives task-backed
+ * image callers a deterministic failure and lets best-effort callers retain
+ * their existing provider-URL fallback.
  */
 export const MEDIA_CACHE_SETTLEMENT_TIMEOUT_MS = 10_000;
+
+export interface CacheRemoteUrlOptions {
+  source?: 'AI_GENERATED' | 'PLAYBACK_CACHE';
+  forceRemoteCache?: boolean;
+  /**
+   * Reject unless both the media bytes and cache metadata are durably readable.
+   * Task-backed image completion enables this; best-effort direct consumers do
+   * not, preserving their existing remote-URL behavior.
+   */
+  requirePersistence?: boolean;
+  signal?: AbortSignal;
+  extraMetadata?: Record<string, unknown>;
+  telemetry?: ImageInvocationTelemetry;
+  /** Internal hand-off used by canonical image artifact persistence. */
+  onImageMediaResolved?: (media: PersistedImageMedia) => void;
+}
+
+export const IMAGE_ARTIFACT_CACHE_CONCURRENCY = 3;
+
+export class ImageCachePersistenceError extends Error {
+  readonly code = 'IMAGE_CACHE_PERSISTENCE_FAILED' as const;
+
+  constructor(stage: string) {
+    super(`图片结果未能持久化到本地缓存（${stage}）`);
+    this.name = 'ImageCachePersistenceError';
+  }
+}
+
+interface PersistedImageMedia {
+  readonly mimeType: ImageArtifactMimeType;
+  readonly format: ImageArtifactFormat;
+}
+
+const IMAGE_CACHE_MIME_TO_FORMAT: Readonly<
+  Record<ImageArtifactMimeType, ImageArtifactFormat>
+> = Object.freeze({
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+});
+
+const IMAGE_CACHE_FORMAT_TO_MIME: Readonly<
+  Record<ImageArtifactFormat, ImageArtifactMimeType>
+> = Object.freeze({
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  webp: 'image/webp',
+  gif: 'image/gif',
+});
+
+const SUPPORTED_IMAGE_CACHE_MIME_TYPES = new Set<string>(
+  IMAGE_ARTIFACT_MIME_TYPES
+);
+
+function resolvePersistedImageMedia(
+  blob: Blob,
+  fallbackFormat: string
+): PersistedImageMedia {
+  const rawMimeType = blob.type.split(';', 1)[0]?.trim().toLowerCase();
+  const normalizedMimeType =
+    rawMimeType === 'image/jpg' ? 'image/jpeg' : rawMimeType;
+  const normalizedFallbackFormat =
+    fallbackFormat.toLowerCase() === 'jpeg'
+      ? 'jpg'
+      : fallbackFormat.toLowerCase();
+  const fallbackMimeType =
+    IMAGE_CACHE_FORMAT_TO_MIME[
+      normalizedFallbackFormat as ImageArtifactFormat
+    ];
+  const mimeType =
+    normalizedMimeType &&
+    normalizedMimeType !== 'application/octet-stream'
+      ? normalizedMimeType
+      : fallbackMimeType;
+
+  if (!mimeType || !SUPPORTED_IMAGE_CACHE_MIME_TYPES.has(mimeType)) {
+    throw new ImageCachePersistenceError(
+      `图片结果 MIME 不受支持（${mimeType || 'unknown'}）`
+    );
+  }
+
+  const canonicalMimeType = mimeType as ImageArtifactMimeType;
+  return {
+    mimeType: canonicalMimeType,
+    format: IMAGE_CACHE_MIME_TO_FORMAT[canonicalMimeType],
+  };
+}
+
+function reportPersistedImageMedia(
+  mediaType: 'image' | 'video' | 'audio',
+  blob: Blob,
+  fallbackFormat: string,
+  options?: CacheRemoteUrlOptions
+): void {
+  if (mediaType !== 'image') {
+    return;
+  }
+  options?.onImageMediaResolved?.(
+    resolvePersistedImageMedia(blob, fallbackFormat)
+  );
+}
+
+async function verifyCachedImageMedia(
+  url: string,
+  mediaType: 'image' | 'video' | 'audio',
+  fallbackFormat: string,
+  options?: CacheRemoteUrlOptions
+): Promise<void> {
+  if (mediaType !== 'image') {
+    return;
+  }
+  const blob = await unifiedCacheService.getCachedBlob(url);
+  if (!blob || blob.size === 0) {
+    throw new ImageCachePersistenceError('本地图片缓存不可读');
+  }
+  reportPersistedImageMedia(mediaType, blob, fallbackFormat, options);
+}
 
 class MediaCacheSettlementTimeoutError extends Error {
   constructor(operation: string) {
@@ -50,65 +178,71 @@ class MediaCacheSettlementTimeoutError extends Error {
 
 async function withMediaCacheDeadline<T>(
   operation: string,
-  run: () => Promise<T>
+  run: () => Promise<T>,
+  signal?: AbortSignal
 ): Promise<T> {
+  throwIfCacheAborted(signal);
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
       reject(new MediaCacheSettlementTimeoutError(operation));
     }, MEDIA_CACHE_SETTLEMENT_TIMEOUT_MS);
   });
+  const aborted = signal
+    ? new Promise<never>((_, reject) => {
+        onAbort = () => reject(resolveCacheAbortReason(signal));
+        signal.addEventListener('abort', onAbort, { once: true });
+      })
+    : undefined;
 
   try {
     // Defer the operation to a microtask so the deadline is armed before any
     // synchronous base64 decoding begins.
-    return await Promise.race([Promise.resolve().then(run), timeout]);
+    return await Promise.race([
+      Promise.resolve().then(run),
+      timeout,
+      ...(aborted ? [aborted] : []),
+    ]);
   } finally {
     if (timeoutId !== undefined) {
       clearTimeout(timeoutId);
     }
+    if (onAbort) {
+      signal?.removeEventListener('abort', onAbort);
+    }
   }
 }
 
-/** 将 Blob 压缩到 1MB 以内再转 base64（仅图片类型） */
-export async function blobToBase64Under1MB(blob: Blob): Promise<string> {
-  let target = blob;
-  if (blob.type.startsWith('image/') && blob.size > MAX_REFERENCE_IMAGE_BYTES) {
-    target = await compressImageBlob(blob, 1);
-  }
-  return getDataURL(target);
+function resolveCacheAbortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException('Aborted', 'AbortError');
 }
 
-/** 确保图片为 base64 数据（API 要求），且体积控制在 1MB 内 */
-export async function ensureBase64ForAI(
-  imageData: { type: string; value: string },
-  signal?: AbortSignal
-): Promise<string> {
-  const value = imageData.value;
-  if (value.startsWith('data:')) {
-    const base64Part = value.slice(value.indexOf(',') + 1);
-    const estimatedBytes = (base64Part.length * 3) / 4;
-    if (estimatedBytes <= MAX_REFERENCE_IMAGE_BYTES) return value;
-    const res = await fetch(value, { signal });
-    const blob = await res.blob();
-    return blobToBase64Under1MB(blob);
+function throwIfCacheAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw resolveCacheAbortReason(signal);
   }
-  if (value.startsWith('http://') || value.startsWith('https://')) {
-    const res = await fetch(value, { signal, referrerPolicy: 'no-referrer' });
-    if (!res.ok)
-      throw new Error(`Failed to fetch reference image: ${res.status}`);
-    const blob = await res.blob();
-    return blobToBase64Under1MB(blob);
+}
+
+function isCacheAbort(error: unknown, signal?: AbortSignal): boolean {
+  return (
+    signal?.aborted === true ||
+    (error instanceof Error && error.name === 'AbortError')
+  );
+}
+
+function throwRequiredPersistenceError(error: unknown, stage: string): never {
+  if (error instanceof ImageCachePersistenceError) {
+    throw error;
   }
-  return value;
+  throw new ImageCachePersistenceError(stage);
 }
 
 // 从共享模块重新导出
 export {
-  isAsyncImageModel,
   extractPromptFromMessages,
-  buildImageRequestBody,
-  parseImageResponse,
 } from '../media-api';
 
 // 导入共享模块的工具函数
@@ -253,63 +387,6 @@ export async function pollVideoStatus(
   throw new Error('Video generation timeout');
 }
 
-// 从共享模块导入异步图片生成
-import { generateImageAsync as sharedGenerateImageAsync } from '../media-api';
-
-/**
- * 异步图片生成选项
- */
-interface AsyncImageOptions {
-  onProgress: (progress: number) => void;
-  onSubmitted?: (remoteId: string) => void;
-  signal?: AbortSignal;
-}
-
-/**
- * 异步图片生成：提交任务并轮询结果
- * 此函数现在委托给共享模块的 generateImageAsync
- */
-export async function generateAsyncImage(
-  params: {
-    prompt: string;
-    model: string;
-    size?: string;
-    referenceImages?: string[];
-    maskImage?: string;
-  },
-  config: GeminiConfig,
-  options: AsyncImageOptions
-): Promise<{ url: string; format: string }> {
-  const result = await sharedGenerateImageAsync(
-    {
-      prompt: params.prompt,
-      model: params.model,
-      size: params.size,
-      referenceImages: params.referenceImages,
-      maskImage: params.maskImage,
-    },
-    {
-      apiKey: config.apiKey,
-      baseUrl: config.baseUrl,
-      defaultModel: params.model,
-      authType: config.authType,
-      providerType: config.providerType,
-      extraHeaders: config.extraHeaders,
-      provider: config.provider,
-    },
-    {
-      onProgress: options.onProgress,
-      onSubmitted: options.onSubmitted,
-      signal: options.signal,
-    }
-  );
-
-  return {
-    url: result.url,
-    format: result.format || 'png',
-  };
-}
-
 /**
  * 收敛任务结果里的媒体 URL。
  * - data URL / 原始 base64：落到本地 Cache Storage，并返回稳定虚拟路径
@@ -321,76 +398,161 @@ export async function cacheRemoteUrl(
   taskId: string,
   mediaType: 'image' | 'video' | 'audio',
   format: string,
-  index?: number,
-  options?: {
-    source?: 'AI_GENERATED' | 'PLAYBACK_CACHE';
-    forceRemoteCache?: boolean;
-    extraMetadata?: Record<string, unknown>;
-  }
+  _index?: number,
+  options?: CacheRemoteUrlOptions
 ): Promise<string> {
+  const requirePersistence = options?.requirePersistence === true;
+  const signal = options?.signal;
+  throwIfCacheAborted(signal);
+
   const normalizedUrl =
     mediaType === 'image' ? normalizeImageDataUrl(remoteUrl) : remoteUrl;
 
-  // 已经是本地路径，无需缓存
+  // A task-backed result may only reuse a virtual URL after proving that both
+  // its bytes and metadata are still readable from the unified cache.
   if (isVirtualMediaUrl(normalizedUrl)) {
+    if (requirePersistence) {
+      try {
+        const isPersisted = await withMediaCacheDeadline(
+          'local media verification',
+          () => unifiedCacheService.isCached(normalizedUrl),
+          signal
+        );
+        if (!isPersisted) {
+          throw new ImageCachePersistenceError('本地缓存校验失败');
+        }
+        await withMediaCacheDeadline(
+          'local image media verification',
+          () =>
+            verifyCachedImageMedia(
+              normalizedUrl,
+              mediaType,
+              format,
+              options
+            ),
+          signal
+        );
+      } catch (error) {
+        if (isCacheAbort(error, signal)) {
+          throw error;
+        }
+        throwRequiredPersistenceError(error, '本地缓存校验失败');
+      }
+    }
     return normalizedUrl;
   }
 
-  if (
-    normalizedUrl.startsWith('http://') ||
-    normalizedUrl.startsWith('https://')
-  ) {
-    if (mediaType !== 'audio' && !options?.forceRemoteCache) {
+  const isHttpUrl =
+    normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://');
+  const shouldFetchForPersistence =
+    isHttpUrl ||
+    (requirePersistence &&
+      !isDataURL(normalizedUrl) &&
+      (normalizedUrl.startsWith('/') ||
+        normalizedUrl.startsWith('./') ||
+        normalizedUrl.startsWith('../') ||
+        normalizedUrl.startsWith('blob:')));
+
+  if (shouldFetchForPersistence) {
+    if (
+      isHttpUrl &&
+      mediaType !== 'audio' &&
+      !options?.forceRemoteCache &&
+      !requirePersistence
+    ) {
       return normalizedUrl;
     }
 
-    try {
-      const cacheSource = options?.source || 'AI_GENERATED';
-      if (await unifiedCacheService.isCached(normalizedUrl)) {
-        return normalizedUrl;
-      }
-
-      const response = await fetch(normalizedUrl, {
-        credentials: 'omit',
-        cache: 'no-store',
-        referrerPolicy: 'no-referrer',
-      });
-      if (!response.ok) {
-        return normalizedUrl;
-      }
-
-      const blob = await response.blob();
-      if (blob.size === 0) {
-        return normalizedUrl;
-      }
-
-      await unifiedCacheService.cacheMediaFromBlob(
-        normalizedUrl,
-        blob,
-        mediaType,
-        {
-          taskId,
-          source: cacheSource,
-          ...options?.extraMetadata,
+    const persistRemoteMedia = async (): Promise<string> => {
+      throwIfCacheAborted(signal);
+      try {
+        const cacheSource = options?.source || 'AI_GENERATED';
+        if (await unifiedCacheService.isCached(normalizedUrl)) {
+          await verifyCachedImageMedia(
+            normalizedUrl,
+            mediaType,
+            format,
+            options
+          );
+          return normalizedUrl;
         }
-      );
-      return normalizedUrl;
-    } catch (error) {
-      console.warn(
-        '[cacheRemoteUrl] Remote media cache failed, using original URL:',
-        error
-      );
-      return normalizedUrl;
+
+        const response = await fetch(normalizedUrl, {
+          credentials: 'omit',
+          cache: 'no-store',
+          referrerPolicy: 'no-referrer',
+          ...(signal ? { signal } : {}),
+        });
+        if (!response.ok) {
+          if (requirePersistence) {
+            throw new ImageCachePersistenceError(
+              `远程图片下载失败（HTTP ${response.status}）`
+            );
+          }
+          return normalizedUrl;
+        }
+
+        const blob = await response.blob();
+        if (blob.size === 0) {
+          if (requirePersistence) {
+            throw new ImageCachePersistenceError('远程图片为空');
+          }
+          return normalizedUrl;
+        }
+        reportPersistedImageMedia(mediaType, blob, format, options);
+
+        const cachedUrl = await unifiedCacheService.cacheMediaFromBlob(
+          normalizedUrl,
+          blob,
+          mediaType,
+          {
+            taskId,
+            source: cacheSource,
+            ...options?.extraMetadata,
+          }
+        );
+        if (requirePersistence) {
+          if (!cachedUrl || !(await unifiedCacheService.isCached(cachedUrl))) {
+            throw new ImageCachePersistenceError('远程图片缓存校验失败');
+          }
+          return cachedUrl;
+        }
+        return normalizedUrl;
+      } catch (error) {
+        if (isCacheAbort(error, signal)) {
+          throw error;
+        }
+        if (requirePersistence) {
+          throwRequiredPersistenceError(error, '远程图片缓存失败');
+        }
+        console.warn(
+          '[cacheRemoteUrl] Remote media cache failed, using original URL:',
+          error
+        );
+        return normalizedUrl;
+      }
+    };
+
+    if (requirePersistence) {
+      try {
+        return await withMediaCacheDeadline(
+          'remote image persistence',
+          persistRemoteMedia,
+          signal
+        );
+      } catch (error) {
+        if (isCacheAbort(error, signal)) {
+          throw error;
+        }
+        throwRequiredPersistenceError(error, '远程图片缓存超时');
+      }
     }
+
+    return persistRemoteMedia();
   }
 
-  const suffix = index !== undefined ? `_${index}` : '';
   const inferredFormat = getFileExtension(normalizedUrl);
   const finalFormat = inferredFormat !== 'bin' ? inferredFormat : format;
-  const localUrl =
-    mediaType === 'audio'
-      ? `${AI_GENERATED_AUDIO_URL_PREFIX}${taskId}${suffix}.${finalFormat}`
-      : `/__aitu_cache__/${mediaType}/${taskId}${suffix}.${finalFormat}`;
 
   try {
     // data URL / 原始 base64：直接解码为 Blob，避免通过 fetch(data:)
@@ -399,13 +561,18 @@ export async function cacheRemoteUrl(
       return await withMediaCacheDeadline(
         'inline media persistence',
         async () => {
+          throwIfCacheAborted(signal);
           const blob = dataUrlToBlob(normalizedUrl);
           if (blob.size === 0) {
+            if (requirePersistence) {
+              throw new ImageCachePersistenceError('内联图片为空');
+            }
             console.warn(
               '[cacheRemoteUrl] Empty data URL blob, using original URL'
             );
             return normalizedUrl;
           }
+          reportPersistedImageMedia(mediaType, blob, finalFormat, options);
 
           const contentHash = await calculateBlobChecksum(blob);
           const hashedFormat = getFileExtension('', blob.type);
@@ -422,7 +589,7 @@ export async function cacheRemoteUrl(
             return contentAddressedUrl;
           }
 
-          await unifiedCacheService.cacheMediaFromBlob(
+          const cachedUrl = await unifiedCacheService.cacheMediaFromBlob(
             contentAddressedUrl,
             blob,
             mediaType,
@@ -435,16 +602,32 @@ export async function cacheRemoteUrl(
               },
             }
           );
-          // cacheMediaFromBlob resolves only after Cache Storage and metadata
-          // transactions commit; a second read-back adds another failure point
-          // without strengthening that contract.
+          if (requirePersistence) {
+            if (
+              !cachedUrl ||
+              !(await unifiedCacheService.isCached(cachedUrl))
+            ) {
+              throw new ImageCachePersistenceError('内联图片缓存校验失败');
+            }
+            return cachedUrl;
+          }
           return contentAddressedUrl;
-        }
+        },
+        signal
       );
     }
 
+    if (requirePersistence) {
+      throw new ImageCachePersistenceError('不支持的图片结果地址');
+    }
     return normalizedUrl;
   } catch (error) {
+    if (isCacheAbort(error, signal)) {
+      throw error;
+    }
+    if (requirePersistence) {
+      throwRequiredPersistenceError(error, '图片缓存失败');
+    }
     console.warn('[cacheRemoteUrl] Cache failed, using original URL:', error);
     return normalizedUrl;
   }
@@ -454,22 +637,126 @@ export async function cacheRemoteUrl(
  * 批量缓存多个远程 URL
  */
 export async function cacheRemoteUrls(
-  urls: string[],
+  urls: readonly string[],
   taskId: string,
   mediaType: 'image' | 'video' | 'audio',
   format: string,
-  options?: Parameters<typeof cacheRemoteUrl>[5]
+  options?: CacheRemoteUrlOptions
 ): Promise<string[]> {
-  return Promise.all(
-    urls.map((url, i) =>
-      cacheRemoteUrl(
-        url,
-        taskId,
-        mediaType,
-        format,
-        urls.length > 1 ? i : undefined,
-        options
-      )
-    )
-  );
+  const requirePersistence =
+    options?.requirePersistence ?? mediaType === 'image';
+  const forceRemoteCache = options?.forceRemoteCache ?? requirePersistence;
+  const cacheOptions: CacheRemoteUrlOptions = {
+    ...options,
+    requirePersistence,
+    forceRemoteCache,
+  };
+
+  const uniqueUrls = Array.from(new Set(urls));
+  const run = async () => {
+    options?.telemetry?.increment(
+      'artifactCacheOperations',
+      uniqueUrls.length
+    );
+    return mapImageInvocationWithConcurrency(
+      uniqueUrls,
+      IMAGE_ARTIFACT_CACHE_CONCURRENCY,
+      (url, index) =>
+        cacheRemoteUrl(
+          url,
+          taskId,
+          mediaType,
+          format,
+          uniqueUrls.length > 1 ? index : undefined,
+          cacheOptions
+        ),
+      options?.signal
+    );
+  };
+
+  return options?.telemetry
+    ? options.telemetry.measure('artifactCaching', run)
+    : run();
+}
+
+function resolveImageArtifactCacheFormat(
+  artifact: ImageArtifact
+): ImageArtifactFormat {
+  if (artifact.format) {
+    return artifact.format;
+  }
+  switch (artifact.mimeType) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/webp':
+      return 'webp';
+    case 'image/gif':
+      return 'gif';
+    case 'image/png':
+    default:
+      return 'png';
+  }
+}
+
+/**
+ * Persist canonical image artifacts without collapsing their MIME, format or
+ * dimension metadata into a single task-level value.
+ */
+export async function cacheImageArtifacts(
+  artifacts: readonly ImageArtifact[],
+  taskId: string,
+  options?: CacheRemoteUrlOptions
+): Promise<ImageArtifact[]> {
+  const seen = new Set<string>();
+  const uniqueArtifacts = artifacts.filter((artifact) => {
+    if (seen.has(artifact.url)) {
+      return false;
+    }
+    seen.add(artifact.url);
+    return true;
+  });
+  const cacheOptions: CacheRemoteUrlOptions = {
+    ...options,
+    requirePersistence: options?.requirePersistence ?? true,
+    forceRemoteCache: options?.forceRemoteCache ?? true,
+  };
+  const run = async () => {
+    options?.telemetry?.increment(
+      'artifactCacheOperations',
+      uniqueArtifacts.length
+    );
+    return mapImageInvocationWithConcurrency(
+      uniqueArtifacts,
+      IMAGE_ARTIFACT_CACHE_CONCURRENCY,
+      async (artifact, index) => {
+        let persistedMedia: PersistedImageMedia | undefined;
+        const url = await cacheRemoteUrl(
+          artifact.url,
+          taskId,
+          'image',
+          resolveImageArtifactCacheFormat(artifact),
+          uniqueArtifacts.length > 1 ? index : undefined,
+          {
+            ...cacheOptions,
+            onImageMediaResolved: (media) => {
+              persistedMedia = media;
+            },
+          }
+        );
+        if (cacheOptions.requirePersistence && !persistedMedia) {
+          throw new ImageCachePersistenceError('图片 MIME 校验未完成');
+        }
+        return {
+          ...artifact,
+          url,
+          ...(persistedMedia || {}),
+        };
+      },
+      options?.signal
+    );
+  };
+
+  return options?.telemetry
+    ? options.telemetry.measure('artifactCaching', run)
+    : run();
 }

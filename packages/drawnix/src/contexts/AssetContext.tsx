@@ -63,6 +63,12 @@ import {
   isLegacyCacheUrl,
 } from '../utils/virtual-media-url';
 import { isInternalLibraryExcludedCache } from '../utils/asset-utils';
+import {
+  buildCharacterMeta,
+  getAIGeneratedAssetCleanupTargets,
+  mapImageTaskToAssets,
+  normalizeAssetCategory,
+} from './asset-task-mapper';
 
 /**
  * Asset Provider Props
@@ -127,35 +133,6 @@ function hasAIGeneratedCacheMetadata(item: {
     item.metadata?.taskId &&
       (item.metadata.prompt || item.metadata.model || item.metadata.params)
   );
-}
-
-function normalizeAssetCategory(
-  category: unknown
-): AssetCategoryEnum | undefined {
-  return category === AssetCategoryEnum.CHARACTER
-    ? AssetCategoryEnum.CHARACTER
-    : category === AssetCategoryEnum.GENERAL
-    ? AssetCategoryEnum.GENERAL
-    : undefined;
-}
-
-function buildCharacterMeta(input: {
-  characterName?: unknown;
-  characterPrompt?: unknown;
-  prompt?: unknown;
-}): Asset['characterMeta'] | undefined {
-  const name =
-    typeof input.characterName === 'string' && input.characterName.trim()
-      ? input.characterName.trim()
-      : undefined;
-  const prompt =
-    typeof input.characterPrompt === 'string' && input.characterPrompt.trim()
-      ? input.characterPrompt.trim()
-      : typeof input.prompt === 'string' && input.prompt.trim()
-      ? input.prompt.trim()
-      : undefined;
-
-  return name || prompt ? { ...(name && { name }), ...(prompt && { prompt }) } : undefined;
 }
 
 function getNormalizedClipId(asset: Pick<Asset, 'clipId'>): string | undefined {
@@ -492,12 +469,12 @@ export function AssetProvider({ children }: AssetProviderProps) {
       return [];
     }
 
+    if (task.type === TaskType.IMAGE) {
+      return mapImageTaskToAssets(task);
+    }
+
     const assetType =
-      task.type === TaskType.IMAGE
-        ? AssetTypeEnum.IMAGE
-        : task.type === TaskType.AUDIO
-        ? AssetTypeEnum.AUDIO
-        : AssetTypeEnum.VIDEO;
+      task.type === TaskType.AUDIO ? AssetTypeEnum.AUDIO : AssetTypeEnum.VIDEO;
 
     const mimeType =
       task.type === TaskType.AUDIO
@@ -1119,6 +1096,10 @@ export function AssetProvider({ children }: AssetProviderProps) {
       try {
         const asset = assets.find((a) => a.id === id);
         const cleanupTargets = asset ? getLocalCleanupTargets(asset) : null;
+        const aiCleanupTargets =
+          asset?.source === AssetSourceEnum.AI_GENERATED
+            ? getAIGeneratedAssetCleanupTargets(asset, assets)
+            : null;
 
         if (id.startsWith('unified-cache-')) {
           if (cleanupTargets) {
@@ -1130,10 +1111,12 @@ export function AssetProvider({ children }: AssetProviderProps) {
           }
         } else if (asset?.source === AssetSourceEnum.AI_GENERATED) {
           // AI 生成的素材：删除任务 + 清理缓存
-          taskQueueService.deleteTask(asset.taskId || id);
-          if (asset.url) {
-            await unifiedCacheService.deleteCache(asset.url).catch((e) => {});
-          }
+          taskQueueService.deleteTask(aiCleanupTargets?.taskId || id);
+          await Promise.all(
+            (aiCleanupTargets?.urls || [asset.url]).map((url) =>
+              unifiedCacheService.deleteCache(url).catch(() => undefined)
+            )
+          );
         } else {
           if (cleanupTargets) {
             await Promise.all(
@@ -1161,26 +1144,36 @@ export function AssetProvider({ children }: AssetProviderProps) {
           }
         }
 
-        await audioPlaylistService
-          .removeAssetFromAllPlaylists(id)
-          .catch((playlistError) => {
-            console.error(
-              '[AssetContext] Failed to remove asset from playlists:',
-              playlistError
-            );
-          });
+        await Promise.all(
+          (aiCleanupTargets?.assetIds || [id]).map((assetId) =>
+            audioPlaylistService
+              .removeAssetFromAllPlaylists(assetId)
+              .catch((playlistError) => {
+                console.error(
+                  '[AssetContext] Failed to remove asset from playlists:',
+                  playlistError
+                );
+              })
+          )
+        );
 
         // 更新状态
         setAssets((prev) =>
           prev.filter((a) =>
-            cleanupTargets?.dedupeKey
+            aiCleanupTargets
+              ? !aiCleanupTargets.assetIds.includes(a.id)
+              : cleanupTargets?.dedupeKey
               ? getLocalDedupeKey(a) !== cleanupTargets.dedupeKey
               : a.id !== id
           )
         );
 
         // 如果删除的是当前选中的素材，清除选中状态
-        setSelectedAssetId((prev) => (prev === id ? null : prev));
+        setSelectedAssetId((prev) =>
+          prev === id || (prev && aiCleanupTargets?.assetIds.includes(prev))
+            ? null
+            : prev
+        );
 
         // 检查存储配额
         await checkStorageQuota();
@@ -1232,7 +1225,10 @@ export function AssetProvider({ children }: AssetProviderProps) {
 
         // 区分本地素材、AI 生成素材和缓存素材
         const localIds: string[] = [];
-        const aiIds: string[] = [];
+        const aiCleanupTargets = new Map<
+          string,
+          ReturnType<typeof getAIGeneratedAssetCleanupTargets>
+        >();
         const cacheIds: string[] = [];
         const localUrlSet = new Set<string>();
         const localDedupeKeys = new Set<string>();
@@ -1240,7 +1236,12 @@ export function AssetProvider({ children }: AssetProviderProps) {
         for (const id of ids) {
           const asset = assets.find((a) => a.id === id);
           if (asset?.source === AssetSourceEnum.AI_GENERATED) {
-            aiIds.push(id);
+            const targets = getAIGeneratedAssetCleanupTargets(asset, assets);
+            const cleanupKey =
+              asset.type === AssetTypeEnum.IMAGE && asset.taskId
+                ? `image-task:${targets.taskId}`
+                : `asset:${id}`;
+            aiCleanupTargets.set(cleanupKey, targets);
             continue;
           }
 
@@ -1289,18 +1290,26 @@ export function AssetProvider({ children }: AssetProviderProps) {
         }
 
         // 删除 AI 生成的素材：删除任务 + 清理缓存
-        for (const id of aiIds) {
+        for (const targets of aiCleanupTargets.values()) {
           try {
-            const asset = assets.find((a) => a.id === id);
-            taskQueueService.deleteTask(asset?.taskId || id);
-            if (asset?.url) {
-              await unifiedCacheService.deleteCache(asset.url).catch((e) => {});
-            }
-            await audioPlaylistService.removeAssetFromAllPlaylists(id);
-            successIds.push(id);
+            taskQueueService.deleteTask(targets.taskId);
+            await Promise.all(
+              targets.urls.map((url) =>
+                unifiedCacheService.deleteCache(url).catch(() => undefined)
+              )
+            );
+            await Promise.all(
+              targets.assetIds.map((assetId) =>
+                audioPlaylistService.removeAssetFromAllPlaylists(assetId)
+              )
+            );
+            successIds.push(...targets.assetIds);
           } catch (err) {
-            console.error(`Failed to remove AI asset ${id}:`, err);
-            errors.push({ id, error: err as Error });
+            console.error(
+              `Failed to remove AI task assets ${targets.taskId}:`,
+              err
+            );
+            errors.push({ id: targets.assetIds[0], error: err as Error });
           }
         }
 

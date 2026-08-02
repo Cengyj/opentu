@@ -18,7 +18,6 @@ import {
   getDefaultVideoModel as getSystemDefaultVideoModel,
 } from '../constants/model-config';
 import { getEffectiveVideoDefaultParams } from '../services/video-binding-utils';
-import { buildMJPromptSuffix } from './mj-params';
 import type { ImageDimensions } from '../mcp/types';
 import type { KnowledgeContextRef } from '../types/task.types';
 
@@ -371,14 +370,6 @@ export function parseAIInput(
     prompt = '';
   }
 
-  // Midjourney: append prompt parameters from dropdown
-  if (modelId.startsWith('mj') && options?.params) {
-    const suffix = buildMJPromptSuffix(options.params);
-    if (suffix) {
-      prompt = [prompt, suffix].filter(Boolean).join(' ');
-    }
-  }
-
   // 获取数量（优先级：options.count > parseResult.selectedCount > 1）
   const count = options?.count || parseResult.selectedCount || 1;
 
@@ -394,7 +385,6 @@ export function parseAIInput(
       generationType !== 'audio' &&
       generationType !== 'text' &&
       generationType !== 'agent' &&
-      !modelId.startsWith('mj') &&
       options.params.size
     ) {
       size = normalizeSize(options.params.size);

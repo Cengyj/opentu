@@ -26,12 +26,23 @@ import {
   ToolTransforms,
 } from '../components/tool-element/tool.transforms';
 import { PlaitTool } from '../types/toolbox.types';
-import { ToolCommunicationService, ToolCommunicationHelper } from '../services/tool-communication-service';
-import { ToolMessageType, GenerateImagePayload, GenerateImageResponse, InsertImagePayload } from '../types/tool-communication.types';
+import {
+  ToolCommunicationService,
+  ToolCommunicationHelper,
+} from '../services/tool-communication-service';
+import {
+  ToolMessageType,
+  GenerateImagePayload,
+  GenerateImageResponse,
+  InsertImagePayload,
+} from '../types/tool-communication.types';
 import { taskQueueService } from '../services/task-queue';
 import { TaskType } from '../types/task.types';
+import type { GenerationParams } from '../types/shared/core.types';
 import { geminiSettings } from '../utils/settings-manager';
 import { insertImageFromUrlAndSelect } from '../data/image';
+import { resolveImageTaskModelSelection } from '../services/image-task-model-selection';
+import { getTaskResultImageArtifacts } from '../utils/image-generation-anchor-batch';
 
 const MAX_GENERATE_IMAGE_DEDUPE_KEYS = 500;
 const generateImageRequestDedupeKeys = new Map<string, number>();
@@ -104,8 +115,12 @@ function setupCommunicationHandlers(
         const viewportRect = board.viewport?.viewBox;
         if (viewportRect) {
           insertPoint = [
-            viewportRect.x + viewportRect.width / 2 - (payload.width || 200) / 2,
-            viewportRect.y + viewportRect.height / 2 - (payload.height || 200) / 2,
+            viewportRect.x +
+              viewportRect.width / 2 -
+              (payload.width || 200) / 2,
+            viewportRect.y +
+              viewportRect.height / 2 -
+              (payload.height || 200) / 2,
           ];
         } else {
           insertPoint = [100, 100];
@@ -124,7 +139,10 @@ function setupCommunicationHandlers(
 
       // console.log(`[ToolCommunication] Image inserted and selected from ${toolId}`);
     } catch (error) {
-      console.error(`[ToolCommunication] Failed to insert image from ${toolId}:`, error);
+      console.error(
+        `[ToolCommunication] Failed to insert image from ${toolId}:`,
+        error
+      );
     }
   });
 
@@ -158,7 +176,7 @@ function setupCommunicationHandlers(
 
     try {
       // 构建生成参数（与 ai-image-generation.tsx 一致）
-      const generateParams: any = {
+      const generateParams: GenerationParams = {
         prompt: payload.prompt,
       };
 
@@ -171,26 +189,30 @@ function setupCommunicationHandlers(
       }
 
       // 传递参考图片（如果有）
-      if ((payload as any).uploadedImages && (payload as any).uploadedImages.length > 0) {
-        generateParams.uploadedImages = (payload as any).uploadedImages;
+      if (payload.uploadedImages && payload.uploadedImages.length > 0) {
+        generateParams.uploadedImages = payload.uploadedImages;
         // console.log(`[ToolCommunication] Passing ${generateParams.uploadedImages.length} reference images`);
       }
 
       // 传递批次信息（避免重复检测）
-      if ((payload as any).batchId) {
-        generateParams.batchId = (payload as any).batchId;
-        generateParams.batchIndex = (payload as any).batchIndex;
-        generateParams.batchTotal = (payload as any).batchTotal;
+      if (payload.batchId) {
+        generateParams.batchId = payload.batchId;
+        generateParams.batchIndex = payload.batchIndex;
+        generateParams.batchTotal = payload.batchTotal;
         // 全局唯一序号，确保每个子任务哈希唯一
-        if ((payload as any).globalIndex) {
-          generateParams.globalIndex = (payload as any).globalIndex;
+        if (payload.globalIndex !== undefined) {
+          generateParams.globalIndex = payload.globalIndex;
         }
         // console.log(`[ToolCommunication] Batch info: ${generateParams.batchIndex}/${generateParams.batchTotal} (${generateParams.batchId}), global: ${generateParams.globalIndex}`);
       }
 
       // 获取当前图片模型
       const settings = geminiSettings.get();
-      generateParams.model = settings.imageModelName || 'gemini-2.5-flash-image-vip';
+      const modelSelection = resolveImageTaskModelSelection(
+        settings.imageModelName || 'gemini-2.5-flash-image-vip'
+      );
+      generateParams.model = modelSelection.model;
+      generateParams.modelRef = modelSelection.modelRef;
 
       // 通过 taskQueueService 创建任务（这样任务会出现在全局任务队列中）
       const task = taskQueueService.createTask(generateParams, TaskType.IMAGE);
@@ -208,47 +230,68 @@ function setupCommunicationHandlers(
       ) as HTMLIFrameElement;
 
       if (!iframe?.contentWindow) {
-        console.error(`[ToolCommunication] Iframe not found for ${message.toolId}`);
+        console.error(
+          `[ToolCommunication] Iframe not found for ${message.toolId}`
+        );
         return;
       }
 
       // 监听该任务的状态变化
-      const subscription = taskQueueService.observeTaskUpdates().subscribe(event => {
-        if (event.task.id !== taskId) return;
+      const subscription = taskQueueService
+        .observeTaskUpdates()
+        .subscribe((event) => {
+          if (event.task.id !== taskId) return;
 
-        // 任务完成
-        if (event.type === 'taskUpdated' && event.task.status === 'completed' && event.task.result) {
-          const response: GenerateImageResponse = {
-            success: true,
-            responseId: payload.messageId || message.messageId,
-            result: {
-              url: event.task.result.url,
-              format: event.task.result.format,
-              width: event.task.result.width,
-              height: event.task.result.height,
-            },
-          };
+          // 任务完成
+          if (
+            event.type === 'taskUpdated' &&
+            event.task.status === 'completed' &&
+            event.task.result
+          ) {
+            const artifacts = getTaskResultImageArtifacts(event.task);
+            const primaryArtifact = artifacts[0];
+            const response: GenerateImageResponse = {
+              success: true,
+              responseId: payload.messageId || message.messageId,
+              result: {
+                url: primaryArtifact?.url || event.task.result.url,
+                urls: artifacts.map((artifact) => artifact.url),
+                format:
+                  primaryArtifact?.format || event.task.result.format,
+                width: primaryArtifact?.width || event.task.result.width,
+                height: primaryArtifact?.height || event.task.result.height,
+              },
+            };
 
-          iframe.contentWindow?.postMessage(response, '*');
-          // console.log(`[ToolCommunication] Image generation success sent to ${message.toolId}`);
-          subscription.unsubscribe();
-        }
-        // 任务失败
-        else if (event.type === 'taskUpdated' && event.task.status === 'failed') {
-          const response: GenerateImageResponse = {
-            success: false,
-            responseId: payload.messageId || message.messageId,
-            error: event.task.error?.message || '图片生成失败',
-          };
+            iframe.contentWindow?.postMessage(response, '*');
+            // console.log(`[ToolCommunication] Image generation success sent to ${message.toolId}`);
+            subscription.unsubscribe();
+          }
+          // 任务失败
+          else if (
+            event.type === 'taskUpdated' &&
+            (event.task.status === 'failed' ||
+              event.task.status === 'cancelled')
+          ) {
+            const response: GenerateImageResponse = {
+              success: false,
+              responseId: payload.messageId || message.messageId,
+              error:
+                event.task.status === 'cancelled'
+                  ? '图片生成已取消'
+                  : event.task.error?.message || '图片生成失败',
+            };
 
-          iframe.contentWindow?.postMessage(response, '*');
-          // console.log(`[ToolCommunication] Image generation error sent to ${message.toolId}`);
-          subscription.unsubscribe();
-        }
-      });
-
+            iframe.contentWindow?.postMessage(response, '*');
+            // console.log(`[ToolCommunication] Image generation error sent to ${message.toolId}`);
+            subscription.unsubscribe();
+          }
+        });
     } catch (error: any) {
-      console.error(`[ToolCommunication] Image generation failed for ${message.toolId}:`, error);
+      console.error(
+        `[ToolCommunication] Image generation failed for ${message.toolId}:`,
+        error
+      );
 
       // 发送错误响应到 iframe
       const response: GenerateImageResponse = {
@@ -298,10 +341,13 @@ function isHitToolElement(element: PlaitTool, point: Point): boolean {
 
   // 判断是否在边缘区域（用于 resize）
   const nearLeftEdge = x >= rect.x && x <= rect.x + EDGE_THRESHOLD;
-  const nearRightEdge = x >= rect.x + rect.width - EDGE_THRESHOLD && x <= rect.x + rect.width;
+  const nearRightEdge =
+    x >= rect.x + rect.width - EDGE_THRESHOLD && x <= rect.x + rect.width;
   const nearTopEdge = y >= rect.y && y <= rect.y + EDGE_THRESHOLD;
-  const nearBottomEdge = y >= rect.y + rect.height - EDGE_THRESHOLD && y <= rect.y + rect.height;
-  const nearEdge = nearLeftEdge || nearRightEdge || nearTopEdge || nearBottomEdge;
+  const nearBottomEdge =
+    y >= rect.y + rect.height - EDGE_THRESHOLD && y <= rect.y + rect.height;
+  const nearEdge =
+    nearLeftEdge || nearRightEdge || nearTopEdge || nearBottomEdge;
 
   // 只有点击标题栏或边缘时才算命中（允许拖动和 resize）
   // iframe 内容区域不算命中，让 iframe 可以正常交互
@@ -311,7 +357,10 @@ function isHitToolElement(element: PlaitTool, point: Point): boolean {
 /**
  * 判断矩形选框是否命中工具元素
  */
-function isRectangleHitToolElement(element: PlaitTool, selection: Selection): boolean {
+function isRectangleHitToolElement(
+  element: PlaitTool,
+  selection: Selection
+): boolean {
   const rect = RectangleClient.getRectangleByPoints(element.points);
   const selectionRect = RectangleClient.getRectangleByPoints([
     selection.anchor,
@@ -360,7 +409,9 @@ export const withTool: PlaitPlugin = (board: PlaitBoard) => {
   // 注册 getRectangle 方法
   board.getRectangle = (element: PlaitElement) => {
     if (isToolElement(element)) {
-      return RectangleClient.getRectangleByPoints((element as PlaitTool).points);
+      return RectangleClient.getRectangleByPoints(
+        (element as PlaitTool).points
+      );
     }
     return getRectangle(element);
   };
@@ -428,7 +479,12 @@ export const withTool: PlaitPlugin = (board: PlaitBoard) => {
       });
       // console.log('Tool elements added to clipboard:', toolElements.length);
     }
-    return buildFragment(clipboardContext, rectangle, operationType, originData);
+    return buildFragment(
+      clipboardContext,
+      rectangle,
+      operationType,
+      originData
+    );
   };
 
   // 注册 insertFragment 方法 - 支持粘贴工具元素

@@ -27,6 +27,37 @@ const waitForTaskCompletionMock = vi.fn();
 const waitForInitializationMock = vi.fn(async () => undefined);
 const hasInvocationRouteCredentialsMock = vi.fn(() => true);
 const resolveInvocationPlanFromRouteMock = vi.fn(() => null);
+const imageAdapter = {
+  id: 'gpt-image-adapter',
+  kind: 'image' as const,
+};
+const defaultPlan = {
+  provider: {
+    profileId: 'legacy-default',
+    profileName: 'default',
+    providerType: 'openai-compatible' as const,
+    baseUrl: 'https://gateway.example.com/v1',
+    apiKey: 'test-key',
+    authType: 'bearer' as const,
+  },
+  modelRef: {
+    profileId: 'legacy-default',
+    modelId: 'gpt-image-2',
+  },
+  binding: {
+    id: 'default-gpt-generation',
+    profileId: 'legacy-default',
+    modelId: 'gpt-image-2',
+    operation: 'image' as const,
+    protocol: 'openai.images.generations',
+    requestSchema: 'openai.image.gpt-generation-json',
+    responseSchema: 'openai.image.data',
+    submitPath: '/images/generations',
+    priority: 400,
+    confidence: 'high' as const,
+    source: 'template' as const,
+  },
+};
 const getFallbackExecutorMock = vi.fn(() => ({
   generateImage: generateImageMock,
 }));
@@ -69,6 +100,20 @@ vi.mock('../provider-routing', () => ({
   resolveInvocationPlanFromRoute: resolveInvocationPlanFromRouteMock,
 }));
 
+vi.mock('../model-adapters/registry', () => ({
+  resolveAdapterForPlan: vi.fn(() => imageAdapter),
+}));
+
+vi.mock('../model-adapters/context', () => ({
+  getAdapterContextFromPlan: vi.fn((plan) => ({
+    baseUrl: plan.provider.baseUrl,
+    apiKey: plan.provider.apiKey,
+    authType: plan.provider.authType,
+    binding: plan.binding,
+    provider: plan.provider,
+  })),
+}));
+
 vi.mock('../task-queue-service', () => ({
   taskQueueService: {
     claimTaskForCurrentSession: claimTaskForCurrentSessionMock,
@@ -89,6 +134,7 @@ describe('image-generation-service', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    resolveInvocationPlanFromRouteMock.mockReturnValue(defaultPlan);
     memoryTask = undefined;
     trackExternalTaskMock.mockImplementation((task: Task) => {
       memoryTask = task;
@@ -137,6 +183,33 @@ describe('image-generation-service', () => {
   });
 
   it('persists the full image contract for edit-capable GPT requests', async () => {
+    resolveInvocationPlanFromRouteMock.mockReturnValueOnce({
+      provider: {
+        profileId: 'auto-profile',
+        profileName: 'default',
+        providerType: 'auto',
+        baseUrl: 'https://gateway.example.com/v1',
+        apiKey: 'test-key',
+        authType: 'bearer',
+      },
+      modelRef: {
+        profileId: 'auto-profile',
+        modelId: 'gpt-image-2',
+      },
+      binding: {
+        id: 'auto-gpt-edit',
+        profileId: 'auto-profile',
+        modelId: 'gpt-image-2',
+        operation: 'image',
+        protocol: 'openai.images.edits',
+        requestSchema: 'openai.image.gpt-edit-form',
+        responseSchema: 'openai.image.data',
+        submitPath: '/images/edits',
+        priority: 499,
+        confidence: 'high',
+        source: 'template',
+      },
+    });
     const { generateImage } = await import(
       '../media-generation/image-generation-service'
     );
@@ -156,6 +229,7 @@ describe('image-generation-service', () => {
       outputCompression: 80,
       uploadedImages: [{ url: 'https://example.com/reference.png' }],
       count: 2,
+      params: { n: 9 },
     });
 
     expect(claimTaskForCurrentSessionMock).toHaveBeenCalledWith('task-image-1');
@@ -169,6 +243,10 @@ describe('image-generation-service', () => {
       expect.objectContaining({
         prompt: 'Edit this',
         model: 'gpt-image-2',
+        modelRef: {
+          profileId: 'auto-profile',
+          modelId: 'gpt-image-2',
+        },
         size: '16x9',
         resolution: '2k',
         quality: 'high',
@@ -179,20 +257,26 @@ describe('image-generation-service', () => {
         background: 'transparent',
         outputFormat: 'png',
         outputCompression: 80,
-        uploadedImages: [{ url: 'https://example.com/reference.png' }],
         count: 2,
-        params: {
-          resolution: '2k',
-          quality: 'high',
-          n: 2,
-        },
       }),
       expect.objectContaining({
         operation: 'image',
-        providerProfileId: 'legacy-default',
-        providerType: 'openai-compatible',
+        providerProfileId: 'auto-profile',
+        providerType: 'auto',
         modelId: 'gpt-image-2',
-        binding: null,
+        binding: expect.objectContaining({
+          id: 'auto-gpt-edit',
+          protocol: 'openai.images.edits',
+          requestSchema: 'openai.image.gpt-edit-form',
+          submitPath: '/images/edits',
+        }),
+      })
+    );
+    expect(resolveInvocationPlanFromRouteMock).toHaveBeenCalledWith(
+      'image',
+      'gpt-image-2',
+      expect.objectContaining({
+        preferredRequestSchema: ['openai.image.gpt-edit-form'],
       })
     );
 
@@ -208,11 +292,6 @@ describe('image-generation-service', () => {
           generationMode: 'image_to_image',
           referenceImages: ['https://example.com/reference.png'],
           maskImage: 'https://example.com/mask.png',
-          params: {
-            resolution: '2k',
-            quality: 'high',
-            n: 2,
-          },
         }),
       })
     );
@@ -220,6 +299,17 @@ describe('image-generation-service', () => {
     expect(generateImageMock).toHaveBeenCalledWith(
       expect.objectContaining({
         taskId: 'task-image-1',
+        request: expect.objectContaining({
+          resolution: '2k',
+          quality: 'high',
+          count: 2,
+          params: {},
+        }),
+        resolvedInvocation: expect.objectContaining({
+          plan: expect.objectContaining({
+            binding: expect.objectContaining({ id: 'auto-gpt-edit' }),
+          }),
+        }),
       }),
       expect.objectContaining({
         signal: undefined,

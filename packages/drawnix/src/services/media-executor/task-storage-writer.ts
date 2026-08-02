@@ -8,6 +8,8 @@
 import { normalizeImageDataUrl } from '@aitu/utils';
 import { APP_DB_NAME, APP_DB_STORES } from '../app-database';
 import type { TaskInvocationRouteSnapshot } from '../../types/task.types';
+import type { ImageArtifact } from '../../types/image-artifact.types';
+import { normalizeImageTaskResultArtifactProjection } from '../image-invocation/task-result-artifacts';
 import {
   hasTerminalExecutionPhaseField,
   normalizeTerminalTaskExecutionPhase,
@@ -50,6 +52,15 @@ export interface TaskSaveOptions {
 }
 
 /**
+ * Guards one image-attempt mutation with the `startedAt` value captured when
+ * that attempt was submitted. The option is deliberately ignored for other
+ * task types so their lifecycle semantics remain unchanged.
+ */
+export interface ImageTaskAttemptWriteOptions {
+  expectedStartedAt?: number;
+}
+
+/**
  * SW 端的任务结构（与 SWTask 保持一致）
  * 使用字符串字面量类型以确保与 IndexedDB 存储的数据兼容
  */
@@ -68,6 +79,7 @@ export interface SWTask {
   result?: {
     url: string;
     urls?: string[];
+    imageArtifacts?: ImageArtifact[];
     thumbnailUrls?: string[];
     format: string;
     size: number;
@@ -677,6 +689,17 @@ class TaskStorageWriter {
     return true;
   }
 
+  private isStaleImageAttempt(
+    task: SWTask,
+    options?: ImageTaskAttemptWriteOptions
+  ): boolean {
+    return (
+      task.type === 'image' &&
+      options?.expectedStartedAt !== undefined &&
+      task.startedAt !== options.expectedStartedAt
+    );
+  }
+
   /**
    * 创建新任务
    */
@@ -703,16 +726,23 @@ class TaskStorageWriter {
   /**
    * 更新任务状态
    */
-  async updateStatus(taskId: string, status: SWTaskStatus): Promise<void> {
+  async updateStatus(
+    taskId: string,
+    status: SWTaskStatus,
+    options?: ImageTaskAttemptWriteOptions
+  ): Promise<boolean> {
     return this.enqueueTaskWrite(taskId, () =>
       this.mutateTaskRecord(taskId, `update task ${taskId} status`, (task) => {
         if (!task) {
           throw new TaskStorageTaskNotFoundError(taskId, 'update status');
         }
+        if (this.isStaleImageAttempt(task, options)) {
+          return { result: false };
+        }
         if (
           this.shouldIgnoreLateTerminalMutation(task, status, 'status update')
         ) {
-          return { result: undefined };
+          return { result: false };
         }
 
         const now = Date.now();
@@ -725,7 +755,7 @@ class TaskStorageWriter {
               ? { startedAt: now }
               : {}),
           },
-          result: undefined,
+          result: true,
         };
       })
     );
@@ -737,8 +767,9 @@ class TaskStorageWriter {
   async updateProgress(
     taskId: string,
     progress: number,
-    phase?: string
-  ): Promise<void> {
+    phase?: string,
+    options?: ImageTaskAttemptWriteOptions
+  ): Promise<boolean> {
     return this.enqueueTaskWrite(taskId, () =>
       this.mutateTaskRecord(
         taskId,
@@ -747,11 +778,14 @@ class TaskStorageWriter {
           if (!task) {
             throw new TaskStorageTaskNotFoundError(taskId, 'update progress');
           }
+          if (this.isStaleImageAttempt(task, options)) {
+            return { result: false };
+          }
           if (TERMINAL_TASK_STATUSES.has(task.status)) {
             console.warn(
               `[TaskStorageWriter] Ignoring progress update for terminal task ${task.id} (${task.status})`
             );
-            return { result: undefined };
+            return { result: false };
           }
           return {
             task: {
@@ -760,7 +794,7 @@ class TaskStorageWriter {
               updatedAt: Date.now(),
               ...(phase ? { executionPhase: phase } : {}),
             },
-            result: undefined,
+            result: true,
           };
         }
       )
@@ -772,12 +806,16 @@ class TaskStorageWriter {
    */
   async completeTask(
     taskId: string,
-    result: SWTask['result']
+    result: SWTask['result'],
+    options?: ImageTaskAttemptWriteOptions
   ): Promise<SWTask> {
     return this.enqueueTaskWrite(taskId, () =>
       this.mutateTaskRecord(taskId, `complete task ${taskId}`, (task) => {
         if (!task) {
           throw new TaskStorageTaskNotFoundError(taskId, 'complete task');
+        }
+        if (this.isStaleImageAttempt(task, options)) {
+          return { result: task };
         }
         if (
           this.shouldIgnoreLateTerminalMutation(task, 'completed', 'completion')
@@ -789,9 +827,10 @@ class TaskStorageWriter {
         const normalizedResult =
           task.type === 'image' && result
             ? {
-                ...result,
-                url: normalizeImageDataUrl(result.url),
-                urls: result.urls?.map((url) => normalizeImageDataUrl(url)),
+                ...normalizeImageTaskResultArtifactProjection(
+                  result,
+                  normalizeImageDataUrl
+                ),
                 thumbnailUrl: result.thumbnailUrl
                   ? normalizeImageDataUrl(result.thumbnailUrl)
                   : result.thumbnailUrl,
@@ -817,11 +856,18 @@ class TaskStorageWriter {
   /**
    * 任务失败
    */
-  async failTask(taskId: string, error: SWTask['error']): Promise<SWTask> {
+  async failTask(
+    taskId: string,
+    error: SWTask['error'],
+    options?: ImageTaskAttemptWriteOptions
+  ): Promise<SWTask> {
     return this.enqueueTaskWrite(taskId, () =>
       this.mutateTaskRecord(taskId, `fail task ${taskId}`, (task) => {
         if (!task) {
           throw new TaskStorageTaskNotFoundError(taskId, 'fail task');
+        }
+        if (this.isStaleImageAttempt(task, options)) {
+          return { result: task };
         }
         if (this.shouldIgnoreLateTerminalMutation(task, 'failed', 'failure')) {
           return {
@@ -845,8 +891,9 @@ class TaskStorageWriter {
   async updateRemoteId(
     taskId: string,
     remoteId: string,
-    invocationRoute?: TaskInvocationRouteSnapshot
-  ): Promise<void> {
+    invocationRoute?: TaskInvocationRouteSnapshot,
+    options?: ImageTaskAttemptWriteOptions
+  ): Promise<boolean> {
     return this.enqueueTaskWrite(taskId, () =>
       this.mutateTaskRecord(
         taskId,
@@ -855,11 +902,14 @@ class TaskStorageWriter {
           if (!task) {
             throw new TaskStorageTaskNotFoundError(taskId, 'update remote ID');
           }
+          if (this.isStaleImageAttempt(task, options)) {
+            return { result: false };
+          }
           if (TERMINAL_TASK_STATUSES.has(task.status)) {
             console.warn(
               `[TaskStorageWriter] Ignoring remote ID update for terminal task ${task.id} (${task.status})`
             );
-            return { result: undefined };
+            return { result: false };
           }
           return {
             task: {
@@ -869,7 +919,7 @@ class TaskStorageWriter {
               updatedAt: Date.now(),
               executionPhase: 'polling',
             },
-            result: undefined,
+            result: true,
           };
         }
       )

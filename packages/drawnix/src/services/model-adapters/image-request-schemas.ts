@@ -1,18 +1,3 @@
-export const OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA =
-  'openai.image.gpt-edit-form';
-
-export const GPT_IMAGE_EDIT_REQUEST_SCHEMAS = [
-  OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
-] as const;
-
-export function isGPTImageEditRequestSchema(
-  value?: string | readonly string[] | null
-): boolean {
-  const schemas = Array.isArray(value) ? value : value ? [value] : [];
-
-  return schemas.some((schema) =>
-    GPT_IMAGE_EDIT_REQUEST_SCHEMAS.includes(
-      schema as (typeof GPT_IMAGE_EDIT_REQUEST_SCHEMAS)[number]
-    )
-  );
-}
+// Compatibility export. The canonical image request contract owns operation
+// schema constants so provider routing does not depend on adapter modules.
+export * from '../image-invocation/request-schemas';

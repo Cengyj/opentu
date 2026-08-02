@@ -11,6 +11,7 @@ import {
   TaskResult,
   TaskExecutionPhase,
   TaskStatus,
+  type TaskInvocationRouteSnapshot,
 } from '../types/task.types';
 import {
   audioAPIService,
@@ -21,30 +22,24 @@ import { TASK_TIMEOUT } from '../constants/TASK_CONSTANTS';
 import { analytics } from '../utils/posthog-analytics';
 import { legacyTaskQueueService as taskQueueService } from './task-queue';
 import { unifiedCacheService } from './unified-cache-service';
-import { convertAspectRatioToSize } from '../constants/image-aspect-ratios';
-import { asyncImageAPIService } from './async-image-api-service';
-import {
-  DEFAULT_AUDIO_MODEL_ID,
-  isAsyncImageModel,
-  DEFAULT_IMAGE_MODEL_ID,
-} from '../constants/model-config';
+import { DEFAULT_AUDIO_MODEL_ID } from '../constants/model-config';
 import {
   getAdapterContextFromSettings,
   resolveAdapterForInvocation,
 } from './model-adapters';
-import { GPT_IMAGE_EDIT_REQUEST_SCHEMAS } from './model-adapters';
-import type { ModelRef } from '../utils/settings-manager';
-import type { AdapterContext, ImageModelAdapter } from './model-adapters/types';
+import { type ModelRef } from '../utils/settings-manager';
+import {
+  ImageInvocationError,
+  resumeImageInvocationPolling,
+  type ImageArtifact,
+} from './image-invocation';
+import { cacheImageArtifacts as persistImageArtifacts } from './media-executor/fallback-utils';
 import {
   assertTaskInvocationRouteAvailable,
   createTaskInvocationRouteSnapshot,
+  resolveTaskInvocationPlanFromSnapshot,
   shouldUseStrictTaskInvocationRoute,
 } from './task-invocation-route';
-
-type ImageGenerationMode = 'text_to_image' | 'image_to_image' | 'image_edit';
-type ImageOutputFormat = 'png' | 'jpeg' | 'webp';
-type ImageBackground = 'transparent' | 'opaque' | 'auto';
-type ImageInputFidelity = 'high' | 'low';
 
 function resolveAnalyticsModelName(
   routeModel: string | ModelRef | null | undefined,
@@ -74,101 +69,33 @@ function assertStoredTaskInvocationRouteAvailable(
   }
 }
 
-function logImageAdapterSelection(
+async function cacheImageArtifactsForTask(
   taskId: string,
-  adapter: ImageModelAdapter,
-  modelId: string | undefined,
-  context: AdapterContext
-): void {
-  const binding = context.binding;
-  const imageMetadata = binding?.metadata?.image as
-    | {
-        imageApiCompatibility?: unknown;
-        resolvedImageApiCompatibility?: unknown;
-      }
-    | undefined;
-}
-
-function readParamValue(params: GenerationParams, keys: string[]): unknown {
-  const rawParams = params as Record<string, unknown>;
-  const nestedParams =
-    rawParams.params && typeof rawParams.params === 'object'
-      ? (rawParams.params as Record<string, unknown>)
-      : undefined;
-
-  for (const key of keys) {
-    if (rawParams[key] !== undefined) {
-      return rawParams[key];
-    }
-    if (nestedParams?.[key] !== undefined) {
-      return nestedParams[key];
-    }
+  artifacts: readonly ImageArtifact[],
+  signal: AbortSignal
+): Promise<TaskResult> {
+  const cachedArtifacts = await persistImageArtifacts(artifacts, taskId, {
+    signal,
+  });
+  const primary = cachedArtifacts[0];
+  if (!primary) {
+    throw new ImageInvocationError(
+      'IMAGE_RESULT_INVALID',
+      '图片恢复结果未包含可持久化的 artifact',
+      { stage: 'cache', details: { taskId } }
+    );
   }
+  const cachedUrls = cachedArtifacts.map((artifact) => artifact.url);
 
-  return undefined;
-}
-
-function readStringParam(
-  params: GenerationParams,
-  keys: string[]
-): string | undefined {
-  const value = readParamValue(params, keys);
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function readNumberParam(
-  params: GenerationParams,
-  keys: string[]
-): number | undefined {
-  const value = readParamValue(params, keys);
-  return typeof value === 'number' && Number.isFinite(value)
-    ? value
-    : undefined;
-}
-
-function readAllowedParam<T extends string>(
-  params: GenerationParams,
-  keys: string[],
-  allowed: readonly T[]
-): T | undefined {
-  const value = readStringParam(params, keys);
-  return value && (allowed as readonly string[]).includes(value)
-    ? (value as T)
-    : undefined;
-}
-
-function isImageEditRequest(
-  params: GenerationParams,
-  referenceImages: string[]
-): boolean {
-  const generationMode = readStringParam(params, [
-    'generationMode',
-    'generation_mode',
-  ]);
-
-  return (
-    referenceImages.length > 0 ||
-    generationMode === 'image_edit' ||
-    generationMode === 'image_to_image' ||
-    !!readStringParam(params, ['maskImage', 'mask_image'])
-  );
-}
-
-function resolveImageGenerationMode(
-  params: GenerationParams,
-  isEditRequest: boolean
-): ImageGenerationMode {
-  const generationMode = readAllowedParam<ImageGenerationMode>(
-    params,
-    ['generationMode', 'generation_mode'],
-    ['text_to_image', 'image_to_image', 'image_edit']
-  );
-
-  if (generationMode) {
-    return generationMode;
-  }
-
-  return isEditRequest ? 'image_to_image' : 'text_to_image';
+  return {
+    url: primary.url,
+    urls: cachedUrls.length > 1 ? cachedUrls : undefined,
+    imageArtifacts: cachedArtifacts,
+    format: primary.format || 'png',
+    size: 0,
+    ...(primary.width ? { width: primary.width } : {}),
+    ...(primary.height ? { height: primary.height } : {}),
+  };
 }
 
 /**
@@ -193,26 +120,34 @@ class GenerationAPIService {
   async generate(
     taskId: string,
     params: GenerationParams,
-    type: TaskType
+    type: TaskType,
+    _invocationRoute?: TaskInvocationRouteSnapshot
   ): Promise<TaskResult> {
+    // Queue-backed image submission has a single owner: TaskQueueService ->
+    // IMediaExecutor. Keeping an image submit branch here would let the React
+    // pending-task observer race that owner and duplicate a paid request.
+    // Refresh recovery remains available through resumeAsyncImageGeneration(),
+    // which can only query a persisted remoteId and binding snapshot.
+    if (type === TaskType.IMAGE) {
+      throw new ImageInvocationError(
+        'IMAGE_REQUEST_INVALID',
+        '图片任务必须由统一任务队列执行器提交',
+        {
+          stage: 'planning',
+          details: { taskId, executionOwner: 'task-queue' },
+        }
+      );
+    }
+
     // Create abort controller for this task
     const abortController = new AbortController();
     this.abortControllers.set(taskId, abortController);
 
     const startTime = Date.now();
-    const taskType =
-      type === TaskType.IMAGE
-        ? 'image'
-        : type === TaskType.VIDEO
-        ? 'video'
-        : 'audio';
+    const taskType = type === TaskType.VIDEO ? 'video' : 'audio';
     const modelName =
       params.model ||
-      (taskType === 'image'
-        ? DEFAULT_IMAGE_MODEL_ID
-        : taskType === 'video'
-        ? 'gemini-video'
-        : DEFAULT_AUDIO_MODEL_ID);
+      (taskType === 'video' ? 'gemini-video' : DEFAULT_AUDIO_MODEL_ID);
 
     // Track model call start with enhanced parameters
     const hasRefImage =
@@ -255,9 +190,6 @@ class GenerationAPIService {
 
       // Create generation promise
       const generationPromise = (() => {
-        if (type === TaskType.IMAGE) {
-          return this.generateImage(taskId, params, abortController.signal);
-        }
         if (type === TaskType.VIDEO) {
           return this.generateVideo(taskId, params, abortController.signal);
         }
@@ -296,13 +228,7 @@ class GenerationAPIService {
           error: 'TIMEOUT',
         });
         throw new Error(
-          `${
-            type === TaskType.IMAGE
-              ? '图片'
-              : type === TaskType.VIDEO
-              ? '视频'
-              : '音频'
-          }生成超时`
+          `${type === TaskType.VIDEO ? '视频' : '音频'}生成超时`
         );
       }
 
@@ -333,44 +259,6 @@ class GenerationAPIService {
       // Cleanup abort controller
       this.abortControllers.delete(taskId);
     }
-  }
-
-  /**
-   * Converts aspectRatio to size parameter
-   * @private
-   */
-  private convertAspectRatioToSize(aspectRatio?: string): string | undefined {
-    return convertAspectRatioToSize(aspectRatio);
-  }
-
-  /**
-   * 将尺寸或宽高转为接口需要的比例字符串（如 16:9）
-   */
-  private deriveAspectRatio(params: GenerationParams): string | undefined {
-    const parseSizeToRatio = (size: string): string | undefined => {
-      if (!size.includes('x')) return undefined;
-      const [wStr, hStr] = size.split('x');
-      const w = Number(wStr);
-      const h = Number(hStr);
-      if (!w || !h) return undefined;
-      const gcd = (a: number, b: number): number =>
-        b === 0 ? a : gcd(b, a % b);
-      const g = gcd(w, h);
-      return `${w / g}:${h / g}`;
-    };
-
-    if (params.size) {
-      const ratio = parseSizeToRatio(params.size);
-      if (ratio) return ratio;
-    }
-
-    if (params.width && params.height) {
-      const g = (a: number, b: number): number => (b === 0 ? a : g(b, a % b));
-      const div = g(params.width, params.height);
-      return `${params.width / div}:${params.height / div}`;
-    }
-
-    return undefined;
   }
 
   /**
@@ -410,138 +298,26 @@ class GenerationAPIService {
   }
 
   /**
-   * Generates an image using the image generation API
-   * @private
-   */
-  private async generateImage(
-    taskId: string,
-    params: GenerationParams,
-    signal: AbortSignal
-  ): Promise<TaskResult> {
-    try {
-      const requestedModel = (params as any).model as string | undefined;
-      const requestedModelRef = (params as any).modelRef as
-        | ModelRef
-        | null
-        | undefined;
-      const referenceImages = await this.extractReferenceImages(params);
-      const shouldUseEditSchema = isImageEditRequest(params, referenceImages);
-      const invocationOptions = {
-        preferredRequestSchema: shouldUseEditSchema
-          ? GPT_IMAGE_EDIT_REQUEST_SCHEMAS
-          : undefined,
-      };
-      const adapter = resolveAdapterForInvocation(
-        'image',
-        requestedModel || DEFAULT_IMAGE_MODEL_ID,
-        requestedModelRef || null,
-        invocationOptions
-      );
-
-      if (!adapter || adapter.kind !== 'image') {
-        throw new Error(`No image adapter for model: ${requestedModel}`);
-      }
-
-      // Derive size: use params.size, or convert aspectRatio, or derive ratio for async models
-      let size: string | undefined = params.size;
-      if (!size) {
-        size = this.convertAspectRatioToSize((params as any).aspectRatio);
-      }
-      if (!size && isAsyncImageModel(requestedModel)) {
-        size = this.deriveAspectRatio(params) || '1:1';
-      }
-
-      const adapterContext = getAdapterContextFromSettings(
-        'image',
-        requestedModelRef || requestedModel,
-        invocationOptions
-      );
-      logImageAdapterSelection(taskId, adapter, requestedModel, adapterContext);
-
-      const result = await adapter.generateImage(adapterContext, {
-        prompt: params.prompt,
-        model: requestedModel,
-        modelRef: requestedModelRef || null,
-        size,
-        generationMode: resolveImageGenerationMode(params, shouldUseEditSchema),
-        referenceImages:
-          referenceImages.length > 0 ? referenceImages : undefined,
-        maskImage: readStringParam(params, ['maskImage', 'mask_image']),
-        inputFidelity: readAllowedParam<ImageInputFidelity>(
-          params,
-          ['inputFidelity', 'input_fidelity'],
-          ['high', 'low']
-        ),
-        background: readAllowedParam<ImageBackground>(
-          params,
-          ['background'],
-          ['transparent', 'opaque', 'auto']
-        ),
-        outputFormat: readAllowedParam<ImageOutputFormat>(
-          params,
-          ['outputFormat', 'output_format'],
-          ['png', 'jpeg', 'webp']
-        ),
-        outputCompression: readNumberParam(params, [
-          'outputCompression',
-          'output_compression',
-        ]),
-        params: {
-          resolution: (params as any).resolution,
-          quality: (params as any).quality,
-          response_format: (params as any).response_format,
-          ...(params as any).params,
-          onProgress: (progress: number) => {
-            taskQueueService.updateTaskProgress(taskId, progress);
-            taskQueueService.updateTaskStatus(taskId, TaskStatus.PROCESSING, {
-              executionPhase: TaskExecutionPhase.POLLING,
-            });
-          },
-          onSubmitted: (remoteId: string) => {
-            taskQueueService.updateTaskStatus(taskId, TaskStatus.PROCESSING, {
-              remoteId,
-              invocationRoute: createTaskInvocationRouteSnapshot(
-                'image',
-                requestedModelRef || requestedModel || DEFAULT_IMAGE_MODEL_ID
-              ),
-              executionPhase: TaskExecutionPhase.POLLING,
-            });
-          },
-        },
-      });
-
-      return {
-        url: result.url,
-        urls: result.urls,
-        format: result.format || 'png',
-        size: 0,
-      };
-    } catch (error: any) {
-      console.error('[GenerationAPI] Image generation error:', error);
-      const wrappedError = new Error(error.message || '图片生成失败');
-      if (error.apiErrorBody) {
-        (wrappedError as any).apiErrorBody = error.apiErrorBody;
-      }
-      if (error.httpStatus) {
-        (wrappedError as any).httpStatus = error.httpStatus;
-      }
-      if (error.fullResponse) {
-        (wrappedError as any).fullResponse = error.fullResponse;
-      }
-      throw wrappedError;
-    }
-  }
-
-  /**
    * 恢复异步图片任务的轮询（页面刷新后）
    */
   async resumeAsyncImageGeneration(
     taskId: string,
     remoteId: string,
-    routeModel?: string | ModelRef | null
+    _routeModel?: string | ModelRef | null,
+    _bindingId?: string,
+    externalSignal?: AbortSignal
   ): Promise<TaskResult> {
     const timeout = TASK_TIMEOUT.IMAGE;
     const abortController = new AbortController();
+    const forwardExternalAbort = () =>
+      abortController.abort(externalSignal?.reason);
+    if (externalSignal?.aborted) {
+      forwardExternalAbort();
+    } else {
+      externalSignal?.addEventListener('abort', forwardExternalAbort, {
+        once: true,
+      });
+    }
     this.abortControllers.set(taskId, abortController);
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
@@ -553,36 +329,51 @@ class GenerationAPIService {
     });
 
     try {
-      assertStoredTaskInvocationRouteAvailable(taskId, 'image');
-      const result = await Promise.race([
-        asyncImageAPIService.resumePolling(remoteId, {
+      const storedTask = taskQueueService.getTask(taskId);
+      const snapshotPlan = storedTask
+        ? resolveTaskInvocationPlanFromSnapshot('image', storedTask)
+        : null;
+      if (!storedTask || !snapshotPlan) {
+        throw new ImageInvocationError(
+          'IMAGE_RECOVERY_FAILED',
+          '图片任务缺少完整的调用 binding 快照，无法安全恢复',
+          {
+            stage: 'recovery',
+            details: {
+              taskId,
+              bindingId: storedTask?.invocationRoute?.binding?.id,
+            },
+          }
+        );
+      }
+      const pollingPromise = resumeImageInvocationPolling(
+        snapshotPlan,
+        remoteId,
+        {
           interval: 5000,
-          routeModel,
           signal: abortController.signal,
           onProgress: (progress) => {
             taskQueueService.updateTaskProgress(taskId, progress);
           },
-        }),
-        timeoutPromise,
-      ]);
-
-      const { url, format } = asyncImageAPIService.extractUrlAndFormat(result);
-
-      return {
-        url,
-        format,
-        size: 0,
-      };
+        }
+      );
+      const artifacts = await Promise.race([pollingPromise, timeoutPromise]);
+      return await cacheImageArtifactsForTask(
+        taskId,
+        artifacts,
+        abortController.signal
+      );
     } catch (error: any) {
       const wrappedError = new Error(error.message || '图片生成失败');
-      if (error.apiErrorBody) {
-        (wrappedError as any).apiErrorBody = error.apiErrorBody;
+      if (typeof error.code === 'string') {
+        (wrappedError as any).code = error.code;
       }
       if (error.httpStatus) {
         (wrappedError as any).httpStatus = error.httpStatus;
       }
       throw wrappedError;
     } finally {
+      externalSignal?.removeEventListener('abort', forwardExternalAbort);
       if (timeoutId) {
         clearTimeout(timeoutId);
       }

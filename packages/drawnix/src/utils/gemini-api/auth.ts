@@ -130,18 +130,28 @@ export function promptForApiKey(): Promise<string | null> {
 }
 
 /**
- * 验证并确保配置有效，如果缺少 API Key 则弹窗获取
+ * 验证并确保配置有效。默认保留全局 key/弹窗兼容行为；已经绑定到
+ * Provider Profile 的图片 invocation 必须传 credentialFallback='none'。
  */
 export async function validateAndEnsureConfig(
-  config: GeminiConfig
+  config: GeminiConfig,
+  options: {
+    readonly credentialFallback?: 'global-and-prompt' | 'none';
+  } = {}
 ): Promise<GeminiConfig> {
+  const allowCredentialFallback = options.credentialFallback !== 'none';
+
   // 检查 baseUrl
-  if (!config.baseUrl) {
+  if (!config.baseUrl || (!allowCredentialFallback && !config.baseUrl.trim())) {
     throw new Error('Base URL 是必需的');
   }
 
   // 检查 apiKey，优先从全局设置获取
-  if (!config.apiKey) {
+  if (!config.apiKey || (!allowCredentialFallback && !config.apiKey.trim())) {
+    if (!allowCredentialFallback) {
+      throw new Error('API Key 是必需的');
+    }
+
     // 首先尝试从全局设置获取
     const globalSettings = geminiSettings.get();
     if (globalSettings.apiKey) {

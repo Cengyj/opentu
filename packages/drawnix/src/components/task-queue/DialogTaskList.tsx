@@ -31,6 +31,7 @@ import {
 } from '../shared/media-preview';
 import './dialog-task-list.scss';
 import { HoverTip } from '../shared';
+import { getTaskResultArtifactUrls } from '../../utils/image-generation-anchor-batch';
 
 export interface DialogTaskListProps {
   /** Task IDs to display. If not provided, shows all tasks (subject to taskType filter) */
@@ -212,7 +213,12 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
 
   const handleInsert = async (taskId: string) => {
     const task = tasks.find((t) => t.id === taskId);
-    if ((!task?.result?.url && !task?.result?.urls?.length) || !board) {
+    const imageResultUrls =
+      task?.type === TaskType.IMAGE ? getTaskResultArtifactUrls(task) : [];
+    const hasResult =
+      imageResultUrls.length > 0 ||
+      Boolean(task?.result?.url || task?.result?.urls?.length);
+    if (!task || !hasResult || !board) {
       console.warn('Cannot insert: task result or board not available');
       MessagePlugin.warning('无法插入：白板未就绪');
       return;
@@ -220,18 +226,22 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
 
     try {
       if (task.type === TaskType.IMAGE) {
-        const urls = task.result.urls?.length
-          ? task.result.urls
-          : [task.result.url];
-        for (const url of urls) {
+        for (const url of imageResultUrls) {
           await insertImageFromUrl(board, url);
         }
         taskQueueService.markAsInserted(taskId, 'manual');
         MessagePlugin.success(
-          urls.length > 1 ? '多图已插入到白板' : '图片已插入到白板'
+          imageResultUrls.length > 1
+            ? '多图已插入到白板'
+            : '图片已插入到白板'
         );
       } else if (task.type === TaskType.VIDEO) {
-        await insertVideoFromUrl(board, task.result.url);
+        const videoUrl = task.result?.url;
+        if (!videoUrl) {
+          MessagePlugin.warning('无法插入：视频结果为空');
+          return;
+        }
+        await insertVideoFromUrl(board, videoUrl);
         taskQueueService.markAsInserted(taskId, 'manual');
         MessagePlugin.success('视频已插入到白板');
       }
@@ -341,7 +351,13 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
     const seen = new Set<string>();
     return filteredTasks.filter((t) => {
       if (t.status !== TaskStatus.COMPLETED) return false;
-      if (!t.result?.url && !t.result?.urls?.length) return false;
+      if (
+        t.type === TaskType.IMAGE
+          ? getTaskResultArtifactUrls(t).length === 0
+          : !t.result?.url && !t.result?.urls?.length
+      ) {
+        return false;
+      }
       if (
         t.type !== TaskType.IMAGE &&
         t.type !== TaskType.VIDEO &&
@@ -428,9 +444,12 @@ export const DialogTaskList: React.FC<DialogTaskListProps> = ({
               }));
         items.push(...mediaItems);
       } else {
-        const urls = task.result!.urls?.length
-          ? task.result!.urls
-          : [task.result!.url];
+        const urls =
+          task.type === TaskType.IMAGE
+            ? getTaskResultArtifactUrls(task)
+            : task.result!.urls?.length
+            ? task.result!.urls
+            : [task.result!.url];
         const mediaType =
           task.type === TaskType.VIDEO
             ? ('video' as const)

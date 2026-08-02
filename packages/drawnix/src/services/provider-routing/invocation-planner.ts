@@ -8,6 +8,7 @@ import type {
   ProviderProfileSnapshot,
   ResolvedProviderContext,
 } from './types';
+import { normalizeProviderBindingHttpMethods } from './binding-http-method';
 
 const CONFIDENCE_WEIGHT: Record<ProviderBindingConfidence, number> = {
   high: 3,
@@ -84,23 +85,85 @@ function buildProviderContext(
   };
 }
 
-function findPriorityBinding(
-  bindings: ProviderModelBinding[],
-  profile: ProviderProfileSnapshot
-): ProviderModelBinding | undefined {
-  if (!profile.preferAsyncImageEndpoint) return undefined;
-  return bindings.find(
-    (candidate) =>
-      candidate.operation === 'image' &&
-      candidate.protocol === 'openai.async.media' &&
-      candidate.requestSchema === 'openai.async.image.form'
+function hasSameSelectionRank(
+  left: ProviderModelBinding,
+  right: ProviderModelBinding
+): boolean {
+  return (
+    left.priority === right.priority &&
+    left.confidence === right.confidence &&
+    left.source === right.source
   );
 }
 
+function assertAutoBindingIsUnambiguous(
+  candidates: ProviderModelBinding[],
+  selected: ProviderModelBinding,
+  request: InvocationPlanRequest,
+  modelRef: NormalizedModelRef
+): void {
+  const equallyRanked = candidates.filter((candidate) =>
+    hasSameSelectionRank(candidate, selected)
+  );
+  const executionIdentities = new Set(
+    equallyRanked.map((candidate) =>
+      JSON.stringify([
+        candidate.protocol,
+        candidate.requestSchema,
+        candidate.responseSchema,
+        candidate.submitPath,
+        candidate.submitMethod,
+        candidate.pollPathTemplate || null,
+        candidate.pollMethod || null,
+        candidate.baseUrlStrategy || 'preserve',
+      ])
+    )
+  );
+
+  if (executionIdentities.size <= 1) {
+    return;
+  }
+
+  throw new InvocationPlanningError(
+    `Ambiguous protocol bindings for ${modelRef.profileId}/${
+      modelRef.modelId
+    }/${request.operation}: ${equallyRanked
+      .map((candidate) => candidate.id)
+      .join(', ')}`,
+    {
+      reason: 'AMBIGUOUS_BINDING',
+      details: {
+        profileId: modelRef.profileId,
+        modelId: modelRef.modelId,
+        operation: request.operation,
+        bindingIds: equallyRanked.map((candidate) => candidate.id),
+      },
+    }
+  );
+}
+
+export type InvocationPlanningErrorReason =
+  | 'MISSING_MODEL_REF'
+  | 'PROFILE_NOT_FOUND'
+  | 'BINDING_NOT_FOUND'
+  | 'REQUESTED_BINDING_NOT_FOUND'
+  | 'AMBIGUOUS_BINDING';
+
+export interface InvocationPlanningErrorOptions {
+  readonly reason: InvocationPlanningErrorReason;
+  /** Provider/model/binding identities only. Credentials must never be added. */
+  readonly details?: Readonly<Record<string, unknown>>;
+}
+
 export class InvocationPlanningError extends Error {
-  constructor(message: string) {
+  readonly reason: InvocationPlanningErrorReason;
+  readonly details?: Readonly<Record<string, unknown>>;
+
+  constructor(message: string, options: InvocationPlanningErrorOptions) {
     super(message);
     this.name = 'InvocationPlanningError';
+    this.reason = options.reason;
+    this.details = options.details;
   }
 }
 
@@ -120,7 +183,11 @@ export class InvocationPlanner {
 
     if (!targetModelRef) {
       throw new InvocationPlanningError(
-        `Missing provider-backed model selection for ${request.operation}`
+        `Missing provider-backed model selection for ${request.operation}`,
+        {
+          reason: 'MISSING_MODEL_REF',
+          details: { operation: request.operation },
+        }
       );
     }
 
@@ -129,7 +196,15 @@ export class InvocationPlanner {
     );
     if (!profile) {
       throw new InvocationPlanningError(
-        `Provider profile not found: ${targetModelRef.profileId}`
+        `Provider profile not found: ${targetModelRef.profileId}`,
+        {
+          reason: 'PROFILE_NOT_FOUND',
+          details: {
+            profileId: targetModelRef.profileId,
+            modelId: targetModelRef.modelId,
+            operation: request.operation,
+          },
+        }
       );
     }
 
@@ -141,33 +216,62 @@ export class InvocationPlanner {
           binding.modelId === targetModelRef.modelId &&
           binding.operation === request.operation
       )
+      .map(normalizeProviderBindingHttpMethods)
       .sort(compareBindings);
 
     if (bindings.length === 0) {
       throw new InvocationPlanningError(
-        `No protocol binding for ${targetModelRef.profileId}/${targetModelRef.modelId}/${request.operation}`
+        `No protocol binding for ${targetModelRef.profileId}/${targetModelRef.modelId}/${request.operation}`,
+        {
+          reason: 'BINDING_NOT_FOUND',
+          details: {
+            profileId: targetModelRef.profileId,
+            modelId: targetModelRef.modelId,
+            operation: request.operation,
+          },
+        }
       );
     }
 
     const preferredSchemas = normalizePreferredRequestSchemas(
       request.preferredRequestSchema
     );
-    const priorityBinding = request.bindingId
-      ? undefined
-      : findPriorityBinding(bindings, profile);
+    const preferredBindings =
+      preferredSchemas.length > 0
+        ? bindings.filter((candidate) =>
+            preferredSchemas.includes(candidate.requestSchema)
+          )
+        : [];
     const binding = request.bindingId
       ? bindings.find((candidate) => candidate.id === request.bindingId)
-      : priorityBinding
-      ? priorityBinding
-      : preferredSchemas.length > 0
-      ? bindings.find((candidate) =>
-          preferredSchemas.includes(candidate.requestSchema)
-        ) || bindings[0]
+      : preferredBindings.length > 0
+      ? preferredBindings[0]
       : bindings[0];
 
     if (!binding) {
       throw new InvocationPlanningError(
-        `Requested binding not found: ${request.bindingId}`
+        `Requested binding not found: ${request.bindingId}`,
+        {
+          reason: 'REQUESTED_BINDING_NOT_FOUND',
+          details: {
+            profileId: targetModelRef.profileId,
+            modelId: targetModelRef.modelId,
+            operation: request.operation,
+            bindingId: request.bindingId,
+            bindingIds: bindings.map((candidate) => candidate.id),
+          },
+        }
+      );
+    }
+
+    if (profile.providerType === 'auto' && !request.bindingId) {
+      const ambiguityCandidates =
+        preferredBindings.length > 0 ? preferredBindings : bindings;
+      assertAutoBindingIsUnambiguous(
+        ambiguityCandidates,
+        binding,
+        request,
+        targetModelRef
       );
     }
 

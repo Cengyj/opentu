@@ -1,11 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   clearModelAdapters,
   registerModelAdapter,
   resolveAdapterForBinding,
+  resolveAdapterForInvocation,
   resolveAdapterForModel,
 } from '../model-adapters/registry';
 import { ModelVendor } from '../../constants/model-config';
+import * as providerRouting from '../provider-routing';
 import { inferBindingsForProviderModel } from '../provider-routing';
 import type {
   ImageModelAdapter,
@@ -126,6 +128,7 @@ describe('model adapter registry', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     clearModelAdapters();
   });
 
@@ -249,4 +252,168 @@ describe('model adapter registry', () => {
       'generic-video'
     );
   });
+
+  it.each(['openai-compatible', 'gemini-compatible', 'custom'] as const)(
+    'requires an exact image request schema for planned %s invocations',
+    (providerType) => {
+      vi.spyOn(
+        providerRouting,
+        'resolveInvocationPlanFromRoute'
+      ).mockReturnValue({
+        provider: {
+          profileId: 'provider-image',
+          profileName: 'Image Provider',
+          providerType,
+          baseUrl: 'https://api.example.com/v1',
+          apiKey: 'test-key',
+          authType: 'bearer',
+        },
+        modelRef: {
+          profileId: 'provider-image',
+          modelId: 'gpt-image-2',
+        },
+        binding: createBinding({
+          id: 'unsupported-image-binding',
+          profileId: 'provider-image',
+          modelId: 'gpt-image-2',
+          protocol: 'openai.images.generations',
+          requestSchema: 'vendor.unsupported.image-json',
+          responseSchema: 'vendor.unsupported.image-result',
+          submitPath: '/custom/images',
+        }),
+      });
+
+      expect(
+        resolveAdapterForInvocation('image', 'gpt-image-2', {
+          profileId: 'provider-image',
+          modelId: 'gpt-image-2',
+        })
+      ).toBeUndefined();
+    }
+  );
+
+  it.each(['openai-compatible', 'gemini-compatible', 'custom'] as const)(
+    'keeps the schema-owning default image adapter for planned %s basic-json invocations',
+    (providerType) => {
+      vi.spyOn(
+        providerRouting,
+        'resolveInvocationPlanFromRoute'
+      ).mockReturnValue({
+        provider: {
+          profileId: 'provider-image',
+          profileName: 'Image Provider',
+          providerType,
+          baseUrl: 'https://api.example.com/v1',
+          apiKey: 'test-key',
+          authType: 'bearer',
+        },
+        modelRef: {
+          profileId: 'provider-image',
+          modelId: 'dynamic-image-model',
+        },
+        binding: createBinding({
+          id: 'basic-image-binding',
+          profileId: 'provider-image',
+          modelId: 'dynamic-image-model',
+          protocol: 'openai.images.generations',
+          requestSchema: 'openai.image.basic-json',
+          responseSchema: 'openai.image.data',
+          submitPath: '/custom/images',
+        }),
+      });
+
+      expect(
+        resolveAdapterForInvocation('image', 'dynamic-image-model', {
+          profileId: 'provider-image',
+          modelId: 'dynamic-image-model',
+        })?.id
+      ).toBe('generic-image');
+    }
+  );
+
+  it('does not fall back to model matching when an invocation plan has no adapter', () => {
+    const planSpy = vi
+      .spyOn(providerRouting, 'resolveInvocationPlanFromRoute')
+      .mockReturnValue({
+        provider: {
+          profileId: 'provider-video',
+          profileName: 'Video Provider',
+          providerType: 'auto',
+          baseUrl: 'https://api.example.com/v1',
+          apiKey: 'test-key',
+          authType: 'bearer',
+        },
+        modelRef: {
+          profileId: 'provider-video',
+          modelId: 'omni-flash',
+        },
+        binding: createBinding({
+          id: 'unsupported-binding',
+          profileId: 'provider-video',
+          modelId: 'omni-flash',
+          operation: 'video',
+          protocol: 'vendor.unsupported.video',
+          requestSchema: 'vendor.unsupported.video-json',
+          responseSchema: 'vendor.unsupported.result',
+          submitPath: '/unsupported',
+        }),
+      });
+
+    expect(resolveAdapterForModel('omni-flash', 'video')?.id).toBe(
+      'generic-video'
+    );
+    expect(
+      resolveAdapterForInvocation('video', 'omni-flash', null)
+    ).toBeUndefined();
+
+    planSpy.mockRestore();
+  });
+
+  it('does not select an image adapter from a bare model when no plan exists', () => {
+    vi.spyOn(
+      providerRouting,
+      'resolveInvocationPlanFromRoute'
+    ).mockReturnValue(null);
+
+    expect(
+      resolveAdapterForInvocation('image', 'gpt-image-2', null)
+    ).toBeUndefined();
+  });
+
+  it.each(['openai-compatible', 'gemini-compatible', 'custom'] as const)(
+    'keeps legacy non-image model matching for %s plans with an unmapped binding',
+    (providerType) => {
+      vi.spyOn(
+        providerRouting,
+        'resolveInvocationPlanFromRoute'
+      ).mockReturnValue({
+        provider: {
+          profileId: 'provider-video',
+          profileName: 'Video Provider',
+          providerType,
+          baseUrl: 'https://api.example.com/v1',
+          apiKey: 'test-key',
+          authType: 'bearer',
+        },
+        modelRef: {
+          profileId: 'provider-video',
+          modelId: 'omni-flash',
+        },
+        binding: createBinding({
+          id: 'unsupported-binding',
+          profileId: 'provider-video',
+          modelId: 'omni-flash',
+          operation: 'video',
+          protocol: 'vendor.unsupported.video',
+          requestSchema: 'vendor.unsupported.video-json',
+          responseSchema: 'vendor.unsupported.result',
+          submitPath: '/unsupported',
+        }),
+      });
+
+      expect(resolveAdapterForInvocation('video', 'omni-flash', null)?.id).toBe(
+        'generic-video'
+      );
+    }
+  );
 });

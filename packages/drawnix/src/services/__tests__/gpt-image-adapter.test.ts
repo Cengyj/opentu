@@ -5,11 +5,33 @@ import {
   gptImageAdapter,
   parseGPTImageResponse,
 } from '../model-adapters/gpt-image-adapter';
+import type { ImageGenerationRequest } from '../model-adapters/types';
+import type { ProviderModelBinding } from '../provider-routing';
 
 const tinyPngDataUrl =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 const tinyPngBase64Only =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+function generationBinding(
+  overrides: Partial<ProviderModelBinding> = {}
+): ProviderModelBinding {
+  return {
+    id: 'gpt-generation-binding',
+    profileId: 'openai',
+    modelId: 'gpt-image-2',
+    operation: 'image',
+    protocol: 'openai.images.generations',
+    requestSchema: 'openai.image.gpt-generation-json',
+    responseSchema: 'openai.image.data',
+    submitPath: '/images/generations',
+    submitMethod: 'POST',
+    priority: 320,
+    confidence: 'high',
+    source: 'template',
+    ...overrides,
+  };
+}
 
 describe('gpt-image-adapter', () => {
   it('builds official GPT Image generation JSON without response_format by default', () => {
@@ -17,13 +39,11 @@ describe('gpt-image-adapter', () => {
       model: 'gpt-image-2',
       prompt: 'Draw a clean product photo',
       size: '16x9',
-      params: {
-        resolution: '2k',
-        quality: 'high',
-        output_format: 'webp',
-        output_compression: 80,
-        n: 2,
-      },
+      resolution: '2k',
+      quality: 'high',
+      outputFormat: 'webp',
+      outputCompression: 80,
+      count: 2,
     });
 
     expect(body).toEqual({
@@ -42,9 +62,7 @@ describe('gpt-image-adapter', () => {
       model: 'gpt-image-2',
       prompt: 'Draw a clean product photo',
       size: '4x3',
-      params: {
-        quality: '2k',
-      },
+      quality: '2k',
     });
 
     expect(body).toEqual({
@@ -59,9 +77,7 @@ describe('gpt-image-adapter', () => {
       model: 'gpt-image-2',
       prompt: 'Draw a clean product photo',
       size: '800x600',
-      params: {
-        resolution: '2k',
-      },
+      resolution: '2k',
     });
 
     expect(body).toEqual({
@@ -76,10 +92,8 @@ describe('gpt-image-adapter', () => {
       model: 'gpt-image-1',
       prompt: 'Draw a clean product photo',
       size: '16x9',
-      params: {
-        resolution: '4k',
-        quality: 'high',
-      },
+      resolution: '4k',
+      quality: 'high',
     });
 
     expect(body).toEqual({
@@ -94,9 +108,7 @@ describe('gpt-image-adapter', () => {
     const body = buildGPTImageGenerationBody({
       model: 'gpt-image-2',
       prompt: 'Draw a clean product photo',
-      params: {
-        response_format: 'b64_json',
-      },
+      responseFormat: 'b64_json',
     });
 
     expect(body).toEqual({
@@ -133,18 +145,19 @@ describe('gpt-image-adapter', () => {
     expect(body.get('mask')).toBeInstanceOf(Blob);
   });
 
-  it('builds official GPT Image edit form data without response_format by default', async () => {
+  it('does not mix generation response_format into the GPT edit schema', async () => {
     const body = await buildGPTImageEditFormData({
       model: 'gpt-image-2',
       prompt: 'Change the style',
       referenceImages: [tinyPngDataUrl],
       generationMode: 'image_edit',
+      responseFormat: 'b64_json',
     });
 
     expect(body.has('response_format')).toBe(false);
   });
 
-  it('accepts params.mask_image as a compatible edit mask input', async () => {
+  it('does not reinterpret params.mask_image after normalization', async () => {
     const body = await buildGPTImageEditFormData({
       model: 'gpt-image-2',
       prompt: 'Change the style',
@@ -157,7 +170,7 @@ describe('gpt-image-adapter', () => {
 
     expect(body.getAll('image[]')).toHaveLength(1);
     expect(body.get('image[]')).toBeInstanceOf(Blob);
-    expect(body.get('mask')).toBeInstanceOf(Blob);
+    expect(body.has('mask')).toBe(false);
   });
 
   it('maps GPT Image 2 edit requests through resolution tiers', async () => {
@@ -166,9 +179,7 @@ describe('gpt-image-adapter', () => {
       prompt: 'Change the style',
       size: '800x600',
       referenceImages: [tinyPngDataUrl],
-      params: {
-        resolution: '4k',
-      },
+      resolution: '4k',
     });
 
     expect(body.get('size')).toBe('3312x2480');
@@ -180,9 +191,7 @@ describe('gpt-image-adapter', () => {
       prompt: 'Change the style',
       size: '16x9',
       referenceImages: [tinyPngDataUrl],
-      params: {
-        resolution: '4k',
-      },
+      resolution: '4k',
     });
 
     expect(body.get('size')).toBe('1536x1024');
@@ -276,10 +285,16 @@ describe('gpt-image-adapter', () => {
       'png'
     );
 
-    expect(result.url).toBe(
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
-    );
-    expect(result.format).toBe('png');
+    expect(result).toEqual({
+      artifacts: [
+        {
+          url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          source: 'inline',
+          mimeType: 'image/png',
+          format: 'png',
+        },
+      ],
+    });
   });
 
   it('accepts gateway URL results for compatibility', () => {
@@ -291,8 +306,16 @@ describe('gpt-image-adapter', () => {
       ],
     });
 
-    expect(result.url).toBe('https://example.com/image.webp');
-    expect(result.format).toBe('webp');
+    expect(result).toEqual({
+      artifacts: [
+        {
+          url: 'https://example.com/image.webp',
+          source: 'url',
+          mimeType: 'image/webp',
+          format: 'webp',
+        },
+      ],
+    });
   });
 
   it('sends official GPT Image requests through provider transport', async () => {
@@ -328,6 +351,7 @@ describe('gpt-image-adapter', () => {
           requestSchema: 'openai.image.gpt-generation-json',
           responseSchema: 'openai.image.data',
           submitPath: '/images/generations',
+          submitMethod: 'POST',
           priority: 320,
           confidence: 'high',
           source: 'template',
@@ -336,6 +360,7 @@ describe('gpt-image-adapter', () => {
       {
         model: 'gpt-image-2',
         prompt: 'Draw a clean product photo',
+        operationIntent: 'generation',
         size: '1x1',
         params: {},
       }
@@ -353,6 +378,64 @@ describe('gpt-image-adapter', () => {
       prompt: 'Draw a clean product photo',
       size: '1024x1024',
     });
+  });
+
+  it('uses the binding query-key contract for auto-profile GPT requests', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ url: 'https://example.com/image.png' }],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        )
+    );
+
+    await gptImageAdapter.generateImage(
+      {
+        baseUrl: 'https://gateway.example.com/v1',
+        apiKey: 'secret-key',
+        authType: 'query',
+        fetcher,
+        provider: {
+          profileId: 'provider-auto',
+          profileName: 'Auto Provider',
+          providerType: 'auto',
+          baseUrl: 'https://gateway.example.com/v1',
+          apiKey: 'secret-key',
+          authType: 'query',
+          extraHeaders: { 'X-Tenant': 'tenant-a' },
+        },
+        binding: {
+          id: 'binding',
+          profileId: 'provider-auto',
+          modelId: 'gpt-image-2',
+          operation: 'image',
+          protocol: 'openai.images.generations',
+          requestSchema: 'openai.image.gpt-generation-json',
+          responseSchema: 'openai.image.data',
+          submitPath: '/images/generations',
+          submitMethod: 'POST',
+          priority: 320,
+          confidence: 'high',
+          source: 'template',
+        },
+      },
+      {
+        model: 'gpt-image-2',
+        prompt: 'Draw a clean product photo',
+        operationIntent: 'generation',
+      }
+    );
+
+    const [url, init] = fetcher.mock.calls[0];
+    expect(url).toBe(
+      'https://gateway.example.com/v1/images/generations?api_key=secret-key'
+    );
+    expect(init?.headers).toMatchObject({ 'X-Tenant': 'tenant-a' });
   });
 
   it('sends official GPT Image edit requests to the edits endpoint', async () => {
@@ -389,6 +472,7 @@ describe('gpt-image-adapter', () => {
           requestSchema: 'openai.image.gpt-edit-form',
           responseSchema: 'openai.image.data',
           submitPath: '/images/edits',
+          submitMethod: 'POST',
           priority: 319,
           confidence: 'high',
           source: 'template',
@@ -397,6 +481,7 @@ describe('gpt-image-adapter', () => {
       {
         model: 'gpt-image-2',
         prompt: 'Change the style',
+        operationIntent: 'edit',
         size: '1x1',
         referenceImages: [tinyPngDataUrl],
         generationMode: 'image_edit',
@@ -424,20 +509,33 @@ describe('gpt-image-adapter', () => {
     expect(formData.get('mask')).toBeInstanceOf(Blob);
   });
 
-  it('keeps edit mode on the edits endpoint even with a generation binding fallback', async () => {
+  it('rejects a missing binding without issuing a request', async () => {
+    const fetcher = vi.fn();
+
+    await expect(
+      gptImageAdapter.generateImage(
+        {
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'secret-key',
+          authType: 'bearer',
+          fetcher,
+        },
+        {
+          model: 'gpt-image-2',
+          prompt: 'Do not guess an endpoint',
+          operationIntent: 'generation',
+        }
+      )
+    ).rejects.toThrow('GPT Image adapter 缺少 InvocationPlan.binding');
+
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('does not infer edit mode from adapter payload aliases', async () => {
     const fetcher = vi.fn(async () => {
       return new Response(
-        JSON.stringify({
-          data: [
-            {
-              url: 'https://example.com/out.png',
-            },
-          ],
-        }),
-        {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }
+        JSON.stringify({ data: [{ url: 'https://example.com/out.png' }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
       );
     });
 
@@ -447,29 +545,265 @@ describe('gpt-image-adapter', () => {
         apiKey: 'secret-key',
         authType: 'bearer',
         fetcher,
+        binding: generationBinding(),
+      },
+      {
+        model: 'gpt-image-2',
+        prompt: 'Use the resolved operation',
+        operationIntent: 'generation',
+        referenceImages: [tinyPngDataUrl],
+        generationMode: 'image_edit',
+      }
+    );
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      'https://api.openai.com/v1/images/generations'
+    );
+  });
+
+  it('rejects a request without an upstream operation intent', async () => {
+    const fetcher = vi.fn();
+    const incompleteRequest = {
+      model: 'gpt-image-2',
+      prompt: 'Do not guess the operation',
+    } as ImageGenerationRequest;
+
+    await expect(
+      gptImageAdapter.generateImage(
+        {
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'secret-key',
+          authType: 'bearer',
+          fetcher,
+          binding: generationBinding(),
+        },
+        incompleteRequest
+      )
+    ).rejects.toThrow('GPT Image adapter 缺少已解析 operationIntent');
+
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty binding submitPath without issuing a request', async () => {
+    const fetcher = vi.fn();
+
+    await expect(
+      gptImageAdapter.generateImage(
+        {
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'secret-key',
+          authType: 'bearer',
+          fetcher,
+          binding: generationBinding({ submitPath: '  ' }),
+        },
+        {
+          model: 'gpt-image-2',
+          prompt: 'Do not guess an endpoint',
+          operationIntent: 'generation',
+        }
+      )
+    ).rejects.toThrow('GPT Image adapter binding 缺少 submitPath');
+
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('rejects a binding model mismatch without issuing a request', async () => {
+    const fetcher = vi.fn();
+
+    await expect(
+      gptImageAdapter.generateImage(
+        {
+          baseUrl: 'https://api.openai.com/v1',
+          apiKey: 'secret-key',
+          authType: 'bearer',
+          fetcher,
+          binding: generationBinding({ modelId: 'other-image-model' }),
+        },
+        {
+          model: 'gpt-image-2',
+          prompt: 'Do not cross model identities',
+          operationIntent: 'generation',
+        }
+      )
+    ).rejects.toThrow('GPT Image adapter 请求模型与 binding 不一致');
+
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('does not override an auto invocation binding inside the adapter', async () => {
+    const fetcher = vi.fn();
+
+    await expect(
+      gptImageAdapter.generateImage(
+        {
+          baseUrl: 'https://gateway.example.com/v1',
+          apiKey: 'secret-key',
+          authType: 'bearer',
+          fetcher,
+          provider: {
+            profileId: 'auto-profile',
+            profileName: 'default',
+            providerType: 'auto',
+            baseUrl: 'https://gateway.example.com/v1',
+            apiKey: 'secret-key',
+            authType: 'bearer',
+          },
+          binding: {
+            id: 'generation-binding',
+            profileId: 'auto-profile',
+            modelId: 'gpt-image-2',
+            operation: 'image',
+            protocol: 'openai.images.generations',
+            requestSchema: 'openai.image.gpt-generation-json',
+            responseSchema: 'openai.image.data',
+            submitPath: '/images/generations',
+            submitMethod: 'POST',
+            priority: 500,
+            confidence: 'high',
+            source: 'template',
+          },
+        },
+        {
+          model: 'gpt-image-2',
+          prompt: 'Change the style',
+          operationIntent: 'edit',
+          referenceImages: [tinyPngDataUrl],
+          generationMode: 'image_to_image',
+        }
+      )
+    ).rejects.toThrow('GPT Image 请求意图与已选 binding 不一致');
+
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('rejects an incoherent GPT binding protocol/schema before networking', async () => {
+    const fetcher = vi.fn();
+
+    await expect(
+      gptImageAdapter.generateImage(
+        {
+          baseUrl: 'https://gateway.example.com/v1',
+          apiKey: 'secret-key',
+          authType: 'bearer',
+          fetcher,
+          binding: {
+            id: 'incoherent-binding',
+            profileId: 'auto-profile',
+            modelId: 'gpt-image-2',
+            operation: 'image',
+            protocol: 'openai.images.generations',
+            requestSchema: 'openai.image.gpt-edit-form',
+            responseSchema: 'openai.image.data',
+            submitPath: '/must-not-submit',
+            submitMethod: 'POST',
+            priority: 500,
+            confidence: 'high',
+            source: 'template',
+          },
+        },
+        {
+          model: 'gpt-image-2',
+          prompt: 'Do not submit',
+          operationIntent: 'generation',
+        }
+      )
+    ).rejects.toThrow('GPT Image adapter 不支持 binding schema');
+
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('uses binding submitPath and baseUrlStrategy for GPT generation', async () => {
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ data: [{ url: 'https://example.com/out.png' }] }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+    );
+
+    await gptImageAdapter.generateImage(
+      {
+        baseUrl: 'https://gateway.example.com/v1',
+        apiKey: 'secret-key',
+        authType: 'bearer',
+        fetcher,
         binding: {
-          id: 'binding',
-          profileId: 'openai',
+          id: 'custom-generation-binding',
+          profileId: 'custom-profile',
           modelId: 'gpt-image-2',
           operation: 'image',
           protocol: 'openai.images.generations',
           requestSchema: 'openai.image.gpt-generation-json',
           responseSchema: 'openai.image.data',
-          submitPath: '/images/generations',
-          priority: 320,
+          submitPath: '/tenant/images/custom-generations',
+          submitMethod: 'PATCH',
+          baseUrlStrategy: 'trim-v1',
+          priority: 900,
           confidence: 'high',
-          source: 'template',
+          source: 'discovered',
         },
       },
       {
         model: 'gpt-image-2',
-        prompt: 'Change the style',
-        referenceImages: [tinyPngDataUrl],
-        generationMode: 'image_to_image',
+        prompt: 'Draw a product',
+        operationIntent: 'generation',
       }
     );
 
-    const [url] = fetcher.mock.calls[0];
-    expect(url).toBe('https://api.openai.com/v1/images/edits');
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      'https://gateway.example.com/tenant/images/custom-generations'
+    );
+    expect(fetcher.mock.calls[0]?.[1]?.method).toBe('PATCH');
+  });
+
+  it('forwards abort to GPT edit preprocessing', async () => {
+    const controller = new AbortController();
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      if (String(input) === 'https://example.com/source.png') {
+        expect(controller.signal.aborted).toBe(false);
+        controller.abort(new DOMException('cancel edit', 'AbortError'));
+        throw controller.signal.reason;
+      }
+      return new Response();
+    });
+
+    await expect(
+      gptImageAdapter.generateImage(
+        {
+          baseUrl: 'https://gateway.example.com/v1',
+          apiKey: 'secret-key',
+          authType: 'bearer',
+          fetcher: fetcher as unknown as typeof fetch,
+          binding: {
+            id: 'custom-edit-binding',
+            profileId: 'custom-profile',
+            modelId: 'gpt-image-2',
+            operation: 'image',
+            protocol: 'openai.images.edits',
+            requestSchema: 'openai.image.gpt-edit-form',
+            responseSchema: 'openai.image.data',
+            submitPath: '/tenant/images/custom-edits',
+            submitMethod: 'POST',
+            baseUrlStrategy: 'trim-v1',
+            priority: 900,
+            confidence: 'high',
+            source: 'discovered',
+          },
+        },
+        {
+          model: 'gpt-image-2',
+          prompt: 'Change the style',
+          operationIntent: 'edit',
+          referenceImages: ['https://example.com/source.png'],
+          generationMode: 'image_edit',
+          signal: controller.signal,
+        }
+      )
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledWith('https://example.com/source.png', {
+      signal: controller.signal,
+    });
   });
 });

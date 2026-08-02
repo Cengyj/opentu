@@ -10,12 +10,18 @@ import {
   type ModelConfig,
 } from '../../constants/model-config';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
+import { useImageBindingCapabilityRevision } from '../../hooks/use-image-binding-capability-revision';
 import {
   loadAIInputPreferences,
   loadScopedAIInputModelParams,
   saveAIInputPreferences,
   saveScopedAIInputModelParams,
 } from '../../services/ai-generation-preferences-service';
+import {
+  pruneSelectedImageParams,
+  resolveImageParametersForSelection,
+} from '../../services/image-binding-parameter-capabilities';
+import type { ImageOperationIntent } from '../../services/image-invocation';
 import { getEffectiveVideoCompatibleParams } from '../../services/video-binding-utils';
 import type { GenerationType } from '../../utils/ai-input-parser';
 import { applyForcedSunoParams } from '../../utils/suno-model-aliases';
@@ -104,7 +110,11 @@ function areParamsEqual(
   );
 }
 
-export function useChatDrawerGenerationControls() {
+export function useChatDrawerGenerationControls(
+  imageOperation: ImageOperationIntent
+) {
+  const imageBindingCapabilityRevision =
+    useImageBindingCapabilityRevision();
   const imageModels = useSelectableModels('image');
   const videoModels = useSelectableModels('video');
   const audioModels = useSelectableModels('audio');
@@ -215,6 +225,14 @@ export function useChatDrawerGenerationControls() {
 
   const compatibleParams = useMemo(() => {
     if (generationType === 'agent') return [];
+    if (generationType === 'image') {
+      return resolveImageParametersForSelection(
+        selectedModel,
+        selectedModelRef,
+        imageOperation,
+        imageBindingCapabilityRevision
+      ).compatibleParams;
+    }
     if (generationType === 'video') {
       return getEffectiveVideoCompatibleParams(
         selectedModel,
@@ -243,7 +261,14 @@ export function useChatDrawerGenerationControls() {
     }
 
     return params;
-  }, [generationType, selectedModel, selectedModelRef, selectedParams]);
+  }, [
+    generationType,
+    imageBindingCapabilityRevision,
+    imageOperation,
+    selectedModel,
+    selectedModelRef,
+    selectedParams,
+  ]);
 
   useEffect(() => {
     const currentScopeKey =
@@ -253,7 +278,7 @@ export function useChatDrawerGenerationControls() {
             selectedModel,
             selectedModelRef
           )}`;
-    const baseParams =
+    const persistedParams =
       generationType === 'agent'
         ? {}
         : selectedParamScopeRef.current === currentScopeKey
@@ -264,6 +289,10 @@ export function useChatDrawerGenerationControls() {
             getSelectionKey(selectedModel, selectedModelRef),
             selectedParamsRef.current
           );
+    const baseParams =
+      generationType === 'image'
+        ? pruneSelectedImageParams(persistedParams, compatibleParams)
+        : persistedParams;
     const nextParams: Record<string, string> = {};
 
     const sizeParam = compatibleParams.find((param) => param.id === 'size');
@@ -272,7 +301,7 @@ export function useChatDrawerGenerationControls() {
       !prevSize ||
       !sizeParam?.options ||
       sizeParam.options.some((option) => option.value === prevSize);
-    if (!selectedModel.startsWith('mj') && sizeParam) {
+    if (sizeParam) {
       nextParams.size =
         prevSize && prevSizeIsValid
           ? prevSize
@@ -368,17 +397,22 @@ export function useChatDrawerGenerationControls() {
     [applyModelSelection]
   );
 
-  const handleParamSelect = useCallback((paramId: string, value?: string) => {
-    setSelectedParams((prev) => {
-      const next = { ...prev };
-      if (value === undefined || value === '') {
-        delete next[paramId];
-      } else {
-        next[paramId] = value;
-      }
-      return next;
-    });
-  }, []);
+  const handleParamSelect = useCallback(
+    (paramId: string, value?: string) => {
+      setSelectedParams((prev) => {
+        const next = { ...prev };
+        if (value === undefined || value === '') {
+          delete next[paramId];
+        } else {
+          next[paramId] = value;
+        }
+        return generationType === 'image'
+          ? pruneSelectedImageParams(next, compatibleParams)
+          : next;
+      });
+    },
+    [compatibleParams, generationType]
+  );
 
   return {
     generationType,

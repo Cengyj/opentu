@@ -1187,7 +1187,22 @@ function stepGenerateManual(version) {
   const startTime = Date.now();
 
   if (skipManual) {
-    logWarning('跳过手册生成（--skip-manual 参数）');
+    logWarning('跳过手册重新生成（--skip-manual 参数）');
+    log('    验证已有构建和服务器手册产物...', 'gray');
+    if (
+      !exec(
+        'pnpm run manual:verify --output-dir dist/apps/web/user-manual',
+        { cwd: path.resolve(__dirname, '..') }
+      ) ||
+      !exec(
+        'pnpm run manual:verify --output-dir dist/deploy/server/user-manual',
+        { cwd: path.resolve(__dirname, '..') }
+      )
+    ) {
+      logError('已有用户手册产物不完整，拒绝跳过生成继续部署');
+      return false;
+    }
+    logSuccess('已有用户手册产物完整');
     return true;
   }
 
@@ -1196,7 +1211,6 @@ function stepGenerateManual(version) {
     return true;
   }
 
-  // 手册生成不阻塞部署，失败只警告
   try {
     // 步骤 1: 检查端口 7200 是否已被占用，决定截图策略
     let portInUse = false;
@@ -1276,12 +1290,12 @@ function stepGenerateManual(version) {
       });
       logSuccess('手册 HTML 构建完成');
     } catch (buildError) {
-      logWarning('手册 HTML 构建失败（不影响部署）');
+      logError('手册 HTML 构建失败，停止部署');
       log(`    错误: ${buildError.message}`, 'gray');
       log('    💡 手动排查: pnpm manual:build', 'gray');
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       log(`    ⏱️  手册生成耗时: ${elapsed} 秒`, 'gray');
-      return true; // 不阻塞部署
+      return false;
     }
 
     // 复制手册到 dist 目录（构建后手册不会自动包含）
@@ -1332,23 +1346,37 @@ function stepGenerateManual(version) {
 
       // 统计文件数
       const fileCount = countFilesRecursive(manualDistDir);
+      if (
+        !exec(
+          'pnpm run manual:verify --output-dir dist/apps/web/user-manual',
+          { cwd: path.resolve(__dirname, '..') }
+        ) ||
+        !exec(
+          'pnpm run manual:verify --output-dir dist/deploy/server/user-manual',
+          { cwd: path.resolve(__dirname, '..') }
+        )
+      ) {
+        logError('复制后的用户手册产物不完整，停止部署');
+        return false;
+      }
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
       logSuccess(`用户手册生成完成 (${fileCount} 个文件，耗时 ${elapsed} 秒)`);
       if (!skipNpm) {
         log(`    静态资源将通过 CDN 加载`, 'gray');
       }
     } else {
-      logWarning('手册源目录不存在');
+      logError('手册源目录不存在，停止部署');
+      return false;
     }
 
     return true;
   } catch (error) {
-    logWarning('用户手册生成失败（不影响部署）');
+    logError('用户手册生成失败，停止部署');
     log(`    错误: ${error.message}`, 'gray');
     log('    💡 手动排查: pnpm manual:build', 'gray');
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     log(`    ⏱️  手册生成耗时: ${elapsed} 秒`, 'gray');
-    return true; // 不阻塞部署
+    return false;
   }
 }
 
@@ -1420,15 +1448,15 @@ function stepVerify(version) {
     log(`   ✓ 完整副本（CDN 失败时兜底）`);
   }
 
-  if (!skipManual) {
-    log(`\n📖 用户手册:`, 'green');
-    log(`   部署路径: /user-manual/index.html`);
-    log(`   本地预览: dist/apps/web/user-manual/index.html`);
-    if (!skipNpm) {
-      log(`   静态资源: CDN (截图、GIF 通过 ${cdnProvider} 加载)`);
-    } else {
-      log(`   静态资源: 服务器（跳过 CDN 发布）`);
-    }
+  log(`\n📖 用户手册:`, 'green');
+  log(`   部署路径: /${version}/user-manual/index.html`);
+  log(`   本地预览: dist/apps/web/user-manual/index.html`);
+  if (skipManual) {
+    log(`   产物状态: 使用已验证的现有手册产物`);
+  } else if (!skipNpm) {
+    log(`   静态资源: CDN (截图、GIF 通过 ${cdnProvider} 加载)`);
+  } else {
+    log(`   静态资源: 服务器（跳过 CDN 发布）`);
   }
 
   log('\n🔄 加载顺序:', 'cyan');

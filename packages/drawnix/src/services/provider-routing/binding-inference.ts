@@ -5,28 +5,45 @@ import {
 } from '../../constants/model-config';
 import type { PricingEndpointInfo } from '../../utils/model-pricing-types';
 import type { ImageApiCompatibility } from '../../utils/settings-types';
-import {
-  OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA,
-} from '../model-adapters/image-request-schemas';
+import { OFFICIAL_GPT_IMAGE_EDIT_REQUEST_SCHEMA } from '../image-invocation/request-schemas';
 import { inferAllBindingHintsFromEndpoints } from './endpoint-binding-inference';
+import { normalizeProviderBindingHttpMethods } from './binding-http-method';
 import type { ProviderModelBinding, ProviderProfileSnapshot } from './types';
 
 function buildBindingId(
-  profileId: string,
+  profile: ProviderProfileSnapshot,
   modelId: string,
   operation: ProviderModelBinding['operation'],
   protocol: ProviderModelBinding['protocol'],
   requestSchema: string,
-  baseUrlStrategy?: ProviderModelBinding['baseUrlStrategy']
+  baseUrlStrategy?: ProviderModelBinding['baseUrlStrategy'],
+  submitPath?: string,
+  pollPathTemplate?: string,
+  submitMethod?: ProviderModelBinding['submitMethod'],
+  pollMethod?: ProviderModelBinding['pollMethod']
 ): string {
-  return [
-    profileId,
+  const identity = [
+    profile.id,
     modelId,
     operation,
     protocol,
     requestSchema,
     baseUrlStrategy || 'preserve',
-  ].join(':');
+  ];
+
+  // Auto bindings are new and may contain multiple discovered endpoints for
+  // the same protocol. Keep their execution paths in the identity so the
+  // planner can reject a real ambiguity instead of losing it during dedupe.
+  if (profile.providerType === 'auto') {
+    identity.push(
+      submitPath || '',
+      submitMethod || 'POST',
+      pollPathTemplate || '',
+      pollMethod || (pollPathTemplate ? 'GET' : '')
+    );
+  }
+
+  return identity.join(':');
 }
 
 function buildBinding(
@@ -34,23 +51,39 @@ function buildBinding(
   model: ModelConfig,
   binding: Omit<
     ProviderModelBinding,
-    'id' | 'profileId' | 'modelId' | 'operation'
-  >
+    | 'id'
+    | 'profileId'
+    | 'modelId'
+    | 'operation'
+    | 'submitMethod'
+    | 'pollMethod'
+  > &
+    Partial<
+      Pick<ProviderModelBinding, 'submitMethod' | 'pollMethod'>
+    >
 ): ProviderModelBinding {
-  return {
+  const normalizedBinding = normalizeProviderBindingHttpMethods({
+    ...binding,
+    submitMethod: binding.submitMethod || 'POST',
+    pollMethod:
+      binding.pollMethod || (binding.pollPathTemplate ? 'GET' : undefined),
     id: buildBindingId(
-      profile.id,
+      profile,
       model.id,
       model.type,
       binding.protocol,
       binding.requestSchema,
-      binding.baseUrlStrategy
+      binding.baseUrlStrategy,
+      binding.submitPath,
+      binding.pollPathTemplate,
+      binding.submitMethod,
+      binding.pollMethod
     ),
     profileId: profile.id,
     modelId: model.id,
     operation: model.type,
-    ...binding,
-  };
+  });
+  return normalizedBinding;
 }
 
 function normalizeModelTags(model: ModelConfig): string[] {
@@ -160,15 +193,32 @@ function isGptImageModel(model: ModelConfig): boolean {
   );
 }
 
+function isGptImage2Model(model: ModelConfig): boolean {
+  return model.id === 'gpt-image-2' || model.id === 'gpt-image-2-vip';
+}
+
+function getGptImageSerializationMetadata(model: ModelConfig):
+  | {
+      omitDefaultResponseFormat: true;
+      defaultResolution?: '1k';
+    }
+  | undefined {
+  if (!isGptImageModel(model)) {
+    return undefined;
+  }
+
+  return {
+    omitDefaultResponseFormat: true,
+    ...(isGptImage2Model(model) && { defaultResolution: '1k' }),
+  };
+}
+
 function isSeedanceModel(model: ModelConfig): boolean {
   return model.id.toLowerCase().includes('seedance');
 }
 
-function shouldPreferAsyncImageBinding(
-  profile: ProviderProfileSnapshot,
-  model: ModelConfig
-): boolean {
-  return !!profile.preferAsyncImageEndpoint && model.type === 'image';
+function shouldUseAsyncImageTemplate(model: ModelConfig): boolean {
+  return !isMidjourneyModel(model) && isAsyncImageModel(model.id);
 }
 
 function isHappyHorseModel(model: ModelConfig): boolean {
@@ -295,6 +345,7 @@ function inferTextBindings(
 ): ProviderModelBinding[] {
   const bindings: ProviderModelBinding[] = [];
   const supportsImageInput =
+    profile.providerType === 'auto' ||
     profile.providerType === 'gemini-compatible' ||
     profile.providerType === 'openai-compatible' ||
     profile.providerType === 'custom'
@@ -331,7 +382,10 @@ function inferTextBindings(
     );
   }
 
-  if (profile.providerType === 'openai-compatible') {
+  if (
+    profile.providerType === 'openai-compatible' ||
+    profile.providerType === 'auto'
+  ) {
     bindings.push(
       buildBinding(profile, model, {
         protocol: 'openai.chat.completions',
@@ -385,6 +439,7 @@ function inferImageBindings(
   model: ModelConfig
 ): ProviderModelBinding[] {
   const bindings: ProviderModelBinding[] = [];
+  const useAsyncImageTemplate = shouldUseAsyncImageTemplate(model);
   const isGeminiImageModel =
     isGeminiFamilyModel(model) && !isAsyncImageModel(model.id);
 
@@ -396,6 +451,15 @@ function inferImageBindings(
         responseSchema: 'mj.task.status',
         submitPath: '/mj/submit/imagine',
         pollPathTemplate: '/mj/task/{taskId}/fetch',
+        metadata: {
+          image: {
+            capabilities: {
+              operations: ['generation', 'edit'],
+              referenceImages: true,
+              maskImage: false,
+            },
+          },
+        },
         priority: 620,
         confidence: 'high',
         source: 'template',
@@ -411,6 +475,15 @@ function inferImageBindings(
         responseSchema: 'flux.task.status',
         submitPath: '/flux/v1/{model}',
         pollPathTemplate: '/flux/v1/get_result?id={taskId}',
+        metadata: {
+          image: {
+            capabilities: {
+              operations: ['generation', 'edit'],
+              referenceImages: true,
+              maskImage: false,
+            },
+          },
+        },
         priority: 610,
         confidence: 'high',
         source: 'template',
@@ -425,6 +498,15 @@ function inferImageBindings(
         requestSchema: 'openai.image.seedream-json',
         responseSchema: 'openai.image.data',
         submitPath: '/images/generations',
+        metadata: {
+          image: {
+            capabilities: {
+              operations: ['generation', 'edit'],
+              referenceImages: true,
+              maskImage: false,
+            },
+          },
+        },
         priority: 520,
         confidence: 'high',
         source: 'template',
@@ -432,7 +514,11 @@ function inferImageBindings(
     );
   }
 
-  if (profile.providerType === 'gemini-compatible' && isGeminiImageModel) {
+  if (
+    (profile.providerType === 'gemini-compatible' ||
+      profile.providerType === 'auto') &&
+    isGeminiImageModel
+  ) {
     bindings.push(
       buildBinding(profile, model, {
         protocol: 'google.generateContent',
@@ -440,6 +526,15 @@ function inferImageBindings(
         responseSchema: 'google.generate-content.parts',
         submitPath: '/v1beta/models/{model}:generateContent',
         baseUrlStrategy: 'trim-v1',
+        metadata: {
+          image: {
+            capabilities: {
+              operations: ['generation', 'edit'],
+              referenceImages: true,
+              maskImage: false,
+            },
+          },
+        },
         priority: 480,
         confidence: 'high',
         source: 'template',
@@ -449,12 +544,13 @@ function inferImageBindings(
 
   if (
     profile.providerType === 'openai-compatible' ||
-    profile.providerType === 'custom'
+    profile.providerType === 'custom' ||
+    (profile.providerType === 'auto' &&
+      (isGptImageModel(model) || useAsyncImageTemplate))
   ) {
-    const genericPriority =
-      profile.providerType === 'openai-compatible' ? 320 : 160;
+    const genericPriority = profile.providerType === 'custom' ? 160 : 320;
     const genericConfidence =
-      profile.providerType === 'openai-compatible' ? 'high' : 'medium';
+      profile.providerType === 'custom' ? 'medium' : 'high';
     const imageApiCompatibility = normalizeImageApiCompatibilityMode(
       profile.imageApiCompatibility
     );
@@ -468,8 +564,9 @@ function inferImageBindings(
         resolvedImageApiCompatibility === 'openai-gpt-image'
       ? 'openai.image.gpt-generation-json'
       : 'openai.image.basic-json';
+    const serialization = getGptImageSerializationMetadata(model);
 
-    if (shouldPreferAsyncImageBinding(profile, model)) {
+    if (useAsyncImageTemplate) {
       bindings.push(
         buildBinding(profile, model, {
           protocol: 'openai.async.media',
@@ -477,6 +574,16 @@ function inferImageBindings(
           responseSchema: 'openai.async.task',
           submitPath: '/videos',
           pollPathTemplate: '/videos/{taskId}',
+          metadata: {
+            image: {
+              action: 'generation',
+              capabilities: {
+                operations: ['generation', 'edit'],
+                referenceImages: true,
+                maskImage: true,
+              },
+            },
+          },
           priority: genericPriority + 40,
           confidence: genericConfidence,
           source: 'template',
@@ -484,7 +591,7 @@ function inferImageBindings(
       );
     }
 
-    if (!shouldPreferAsyncImageBinding(profile, model)) {
+    if (!useAsyncImageTemplate || isSeedreamModel(model)) {
       bindings.push(
         buildBinding(profile, model, {
           protocol: 'openai.images.generations',
@@ -496,6 +603,15 @@ function inferImageBindings(
               action: 'generation',
               imageApiCompatibility,
               resolvedImageApiCompatibility,
+              ...(serialization && { serialization }),
+              capabilities: {
+                operations:
+                  requestSchema === 'openai.image.basic-json'
+                    ? ['generation', 'edit']
+                    : ['generation'],
+                referenceImages: requestSchema === 'openai.image.basic-json',
+                maskImage: false,
+              },
             },
           },
           priority: genericPriority,
@@ -506,7 +622,7 @@ function inferImageBindings(
     }
 
     if (
-      !shouldPreferAsyncImageBinding(profile, model) &&
+      !useAsyncImageTemplate &&
       isGptImageModel(model) &&
       resolvedImageApiCompatibility === 'openai-gpt-image'
     ) {
@@ -523,6 +639,11 @@ function inferImageBindings(
               resolvedImageApiCompatibility,
               maxImageCount: 16,
               supportsMask: true,
+              capabilities: {
+                operations: ['edit'],
+                referenceImages: { minCount: 1, maxCount: 16 },
+                maskImage: true,
+              },
             },
           },
           priority: genericPriority - 1,
@@ -630,6 +751,7 @@ function inferVideoBindings(
 
   if (
     profile.providerType === 'openai-compatible' ||
+    profile.providerType === 'auto' ||
     profile.providerType === 'custom'
   ) {
     const soraDownloadMetadata = isSoraModel(model)
@@ -661,9 +783,8 @@ function inferVideoBindings(
                 },
               }
             : soraDownloadMetadata,
-        priority: profile.providerType === 'openai-compatible' ? 320 : 160,
-        confidence:
-          profile.providerType === 'openai-compatible' ? 'high' : 'medium',
+        priority: profile.providerType === 'custom' ? 160 : 320,
+        confidence: profile.providerType === 'custom' ? 'medium' : 'high',
         source: 'template',
       })
     );
@@ -680,7 +801,8 @@ function inferAudioBindings(
 
   if (
     isSunoModel(model) &&
-    (profile.providerType === 'openai-compatible' ||
+    (profile.providerType === 'auto' ||
+      profile.providerType === 'openai-compatible' ||
       profile.providerType === 'custom')
   ) {
     bindings.push(
@@ -716,9 +838,8 @@ function inferAudioBindings(
             supportsLyricsPrompt: true,
           },
         },
-        priority: profile.providerType === 'openai-compatible' ? 320 : 160,
-        confidence:
-          profile.providerType === 'openai-compatible' ? 'high' : 'medium',
+        priority: profile.providerType === 'custom' ? 160 : 320,
+        confidence: profile.providerType === 'custom' ? 'medium' : 'high',
         source: 'template',
       })
     );
@@ -746,6 +867,10 @@ function shouldUseDiscoveredEndpointHintForModel(
   profile: ProviderProfileSnapshot,
   model: ModelConfig
 ): boolean {
+  if (!hint.supportedOperations.includes(model.type)) {
+    return false;
+  }
+
   if (hint.protocol === 'openai.images.edits') {
     return (
       isGptImageModel(model) &&
@@ -754,7 +879,7 @@ function shouldUseDiscoveredEndpointHintForModel(
   }
 
   if (hint.protocol === 'openai.async.media') {
-    return model.type === 'image' && !!profile.preferAsyncImageEndpoint;
+    return model.type === 'image';
   }
 
   if (hint.protocol === 'openai.async.video') {
@@ -773,6 +898,92 @@ function getDiscoveredEndpointPriority(
   }
 
   return 140;
+}
+
+function buildDiscoveredBinding(
+  profile: ProviderProfileSnapshot,
+  model: ModelConfig,
+  hint: ReturnType<typeof inferAllBindingHintsFromEndpoints>[number],
+  existingBindings: ProviderModelBinding[]
+): ProviderModelBinding {
+  // Endpoint discovery proves the concrete path, while an existing
+  // model-scoped template may carry a more precise serializer contract (for
+  // example GPT Image generation JSON versus generic OpenAI image JSON).
+  // Preserve that schema evidence instead of downgrading it merely because
+  // both contracts use the same protocol.
+  const compatibleTemplate = existingBindings.find(
+    (binding) =>
+      binding.operation === model.type &&
+      binding.protocol === hint.protocol &&
+      binding.source === 'template'
+  );
+  const executableHint = {
+    protocol: hint.protocol,
+    requestSchema: hint.requestSchema,
+    responseSchema: hint.responseSchema,
+    submitPath: hint.submitPath,
+    submitMethod: hint.submitMethod,
+    pollPathTemplate: hint.pollPathTemplate,
+    pollMethod: hint.pollMethod,
+    baseUrlStrategy: hint.baseUrlStrategy,
+    metadata: hint.metadata,
+  };
+  const discoveredHint = compatibleTemplate
+    ? {
+        ...executableHint,
+        requestSchema: compatibleTemplate.requestSchema,
+        responseSchema: compatibleTemplate.responseSchema,
+        pollPathTemplate:
+          hint.pollPathTemplate || compatibleTemplate.pollPathTemplate,
+        pollMethod: hint.pollPathTemplate
+          ? hint.pollMethod
+          : compatibleTemplate.pollMethod,
+        baseUrlStrategy:
+          hint.baseUrlStrategy || compatibleTemplate.baseUrlStrategy,
+        metadata: {
+          ...(compatibleTemplate.metadata || {}),
+          ...(hint.metadata || {}),
+          ...((compatibleTemplate.metadata?.image || hint.metadata?.image) && {
+            image: {
+              ...(compatibleTemplate.metadata?.image || {}),
+              ...(hint.metadata?.image || {}),
+            },
+          }),
+        },
+      }
+    : executableHint;
+  const serialization =
+    model.type === 'image' &&
+    (discoveredHint.requestSchema === 'openai.image.basic-json' ||
+      discoveredHint.requestSchema === 'google.generate-content.image-inline')
+      ? getGptImageSerializationMetadata(model)
+      : undefined;
+  const metadata = serialization
+    ? {
+        ...(discoveredHint.metadata || {}),
+        image: {
+          ...(discoveredHint.metadata?.image || {}),
+          serialization: {
+            ...serialization,
+            ...(discoveredHint.metadata?.image?.serialization || {}),
+          },
+        },
+      }
+    : discoveredHint.metadata;
+
+  return buildBinding(profile, model, {
+    ...discoveredHint,
+    metadata,
+    priority:
+      profile.providerType === 'auto' && model.type === 'image'
+        ? 800
+        : getDiscoveredEndpointPriority(hint, model),
+    confidence:
+      profile.providerType === 'auto' && model.type === 'image'
+        ? 'high'
+        : 'medium',
+    source: 'discovered',
+  });
 }
 
 export function inferBindingsForProviderModel(
@@ -811,15 +1022,10 @@ export function inferBindingsForProviderModel(
           b.confidence === 'high' &&
           b.source === 'template'
       );
-      if (!alreadyHasSpecific) {
-        bindings.push(
-          buildBinding(profile, model, {
-            ...hint,
-            priority: getDiscoveredEndpointPriority(hint, model),
-            confidence: 'medium',
-            source: 'discovered',
-          })
-        );
+      const endpointIsAuthoritativeForAutoImage =
+        profile.providerType === 'auto' && model.type === 'image';
+      if (!alreadyHasSpecific || endpointIsAuthoritativeForAutoImage) {
+        bindings.push(buildDiscoveredBinding(profile, model, hint, bindings));
       }
     }
   }

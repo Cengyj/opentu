@@ -1,6 +1,7 @@
 import type { KnowledgeContextRef, Task } from '../types/task.types';
 import type { ModelRef } from './settings-manager';
 import type { AIInputPrefillEventDetail } from '../services/ai-input-ui-events';
+import { getTaskResultArtifactUrls } from './image-generation-anchor-batch';
 
 export interface ImageGenerationReferenceImage {
   url: string;
@@ -235,7 +236,7 @@ export function buildImageTaskPrefillInitialData(
     initialPrompt: readString(params.prompt) || '',
     initialWidth: readFiniteNumber(params.width),
     initialHeight: readFiniteNumber(params.height),
-    initialResultUrl: readString(task.result?.url),
+    initialResultUrl: getTaskResultArtifactUrls(task)[0],
     initialAspectRatio: readString(params.aspectRatio),
     initialImages: getImageTaskReferenceImages(task),
     ...(knowledgeContextRefs.length > 0

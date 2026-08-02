@@ -13,6 +13,7 @@ import {
 } from './types';
 import { buildVisualStructuredPromptSchemaInstruction } from '../../utils/visual-structured-prompt-schema';
 import { extractJsonObject } from '../../utils/llm-json-extractor';
+import type { ImageArtifact } from '../../types/image-artifact.types';
 
 export function sanitizeComicPageCount(value: unknown): number {
   const numericValue =
@@ -311,21 +312,34 @@ export function getComicImageMimeType(format?: string): string | undefined {
 
 export function buildComicPageImageVariantsFromResult(params: {
   taskId?: string;
+  imageArtifacts?: readonly ImageArtifact[];
   url?: string;
   urls?: string[];
   format?: string;
   generatedAt?: number;
 }): ComicPageImageVariant[] {
-  const urls =
+  const persistedArtifacts = (params.imageArtifacts || []).filter(
+    (artifact) => typeof artifact.url === 'string' && artifact.url.length > 0
+  );
+  const legacyUrls =
     Array.isArray(params.urls) && params.urls.length > 0
       ? params.urls
       : params.url
       ? [params.url]
       : [];
-  const mimeType = getComicImageMimeType(params.format);
+  const artifacts: Array<{
+    url: string;
+    mimeType?: string;
+    format?: string;
+  }> = persistedArtifacts.length
+    ? persistedArtifacts
+    : legacyUrls.map((url) => ({
+        url,
+        mimeType: getComicImageMimeType(params.format),
+      }));
 
-  return urls
-    .map((url, index) =>
+  return artifacts
+    .map((artifact, index) =>
       normalizeImageVariant(
         {
           id: params.taskId
@@ -333,8 +347,9 @@ export function buildComicPageImageVariantsFromResult(params: {
               ? params.taskId
               : `${params.taskId}-${index + 1}`
             : undefined,
-          url,
-          mimeType,
+          url: artifact.url,
+          mimeType:
+            artifact.mimeType || getComicImageMimeType(artifact.format),
           generatedAt: params.generatedAt,
           taskId: params.taskId,
         },

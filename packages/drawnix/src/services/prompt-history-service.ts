@@ -9,6 +9,7 @@ import {
   type PromptType,
 } from './prompt-storage-service';
 import { stripKnowledgeContextFromPrompt } from './generation-context-service';
+import { getTaskResultImageArtifacts } from '../utils/image-generation-anchor-batch';
 
 export type PromptHistoryCategory =
   | 'image'
@@ -178,40 +179,55 @@ export function buildPromptHistoryResultPreview(
   task: PromptHistoryTaskSummary,
   category: PromptHistoryCategory
 ): PromptHistoryResultPreview {
+  return buildPromptHistoryResultPreviews(task, category)[0];
+}
+
+function buildPromptHistoryResultPreviews(
+  task: PromptHistoryTaskSummary,
+  category: PromptHistoryCategory
+): PromptHistoryResultPreview[] {
   if (task.status === TaskStatus.FAILED) {
-    return {
+    return [{
       kind: 'error',
       text: task.error?.message || '任务失败',
-    };
+    }];
   }
 
   if (task.status === TaskStatus.CANCELLED) {
-    return {
+    return [{
       kind: 'error',
       text: '任务已取消',
-    };
+    }];
   }
 
   const result = task.result;
   if (!result) {
-    return {
+    return [{
       kind: 'none',
       text: '暂无结果',
-    };
+    }];
   }
 
   if (category === 'image' || category === 'ppt-slide') {
-    const url = result.thumbnailUrls?.[0] || result.thumbnailUrl || result.urls?.[0] || result.url;
-    return url
-      ? { kind: 'image', url, title: result.title }
-      : { kind: 'none', text: '暂无图片预览' };
+    const artifacts = getTaskResultImageArtifacts(task);
+    if (artifacts.length === 0) {
+      return [{ kind: 'none', text: '暂无图片预览' }];
+    }
+    return artifacts.map((artifact, index) => ({
+      kind: 'image' as const,
+      url:
+        result.thumbnailUrls?.[index] ||
+        (index === 0 ? result.thumbnailUrl : undefined) ||
+        artifact.url,
+      title: result.title,
+    }));
   }
 
   if (category === 'video') {
     const url = result.url || result.urls?.[0];
     const posterUrl =
       result.thumbnailUrl || result.thumbnailUrls?.[0] || result.previewImageUrl;
-    return url
+    return [url
       ? {
           kind: 'video',
           url,
@@ -219,7 +235,7 @@ export function buildPromptHistoryResultPreview(
           title: result.title,
           duration: result.duration,
         }
-      : { kind: 'none', text: '暂无视频预览' };
+      : { kind: 'none' as const, text: '暂无视频预览' }];
   }
 
   if (category === 'audio') {
@@ -231,14 +247,14 @@ export function buildPromptHistoryResultPreview(
       result.previewImageUrl ||
       result.thumbnailUrl;
     const title = result.title || firstClip?.title || task.params.title;
-    return {
+    return [{
       kind: 'audio',
       url,
       coverUrl,
       title,
       text: result.lyricsText || result.lyricsTitle,
       duration: firstClip?.duration ?? result.duration,
-    };
+    }];
   }
 
   const text =
@@ -246,13 +262,13 @@ export function buildPromptHistoryResultPreview(
     result.lyricsText ||
     result.title ||
     (result.url ? '结果已生成' : '');
-  return text
+  return [text
     ? {
         kind: 'text',
         text: text.slice(0, 500),
         title: result.title || result.lyricsTitle,
       }
-    : { kind: 'none', text: '暂无文本预览' };
+    : { kind: 'none' as const, text: '暂无文本预览' }];
 }
 
 export function taskSummaryToPromptHistoryRecord(
@@ -291,6 +307,12 @@ export function taskSummaryToPromptHistoryRecord(
     ...knowledgeContextTags,
   ]);
 
+  const resultPreviews = buildPromptHistoryResultPreviews(task, category);
+  const resultPreview = resultPreviews[0] || {
+    kind: 'none' as const,
+    text: '暂无结果',
+  };
+
   return {
     id: `prompt-history-${task.id}`,
     taskId: task.id,
@@ -308,9 +330,9 @@ export function taskSummaryToPromptHistoryRecord(
     model: compactText(task.params.model, 120) || undefined,
     createdAt: task.completedAt || task.createdAt,
     completedAt: task.completedAt,
-    resultPreview: buildPromptHistoryResultPreview(task, category),
-    resultPreviews: [buildPromptHistoryResultPreview(task, category)],
-    resultCount: 1,
+    resultPreview,
+    resultPreviews,
+    resultCount: resultPreviews.filter(shouldKeepPreview).length,
     pinned: promptStorageService.isContentPinned(sentPrompt),
   };
 }
@@ -467,10 +489,8 @@ function aggregatePromptHistoryRecords(
       map.set(key, {
         ...record,
         id: `prompt-history-${key}`,
-        resultPreviews: shouldKeepPreview(record.resultPreview)
-          ? [record.resultPreview]
-          : [],
-        resultCount: shouldKeepPreview(record.resultPreview) ? 1 : 0,
+        resultPreviews: record.resultPreviews.filter(shouldKeepPreview),
+        resultCount: record.resultPreviews.filter(shouldKeepPreview).length,
         pinned: promptStorageService.isContentPinned(record.sentPrompt),
       });
       continue;
@@ -500,8 +520,9 @@ function aggregatePromptHistoryRecords(
     if (record.skillId && !existing.skillId) {
       existing.skillId = record.skillId;
     }
-    if (shouldKeepPreview(record.resultPreview)) {
-      existing.resultPreviews.push(record.resultPreview);
+    const nextPreviews = record.resultPreviews.filter(shouldKeepPreview);
+    if (nextPreviews.length > 0) {
+      existing.resultPreviews.push(...nextPreviews);
       existing.resultCount = existing.resultPreviews.length;
       existing.resultPreview = existing.resultPreviews[0];
     }

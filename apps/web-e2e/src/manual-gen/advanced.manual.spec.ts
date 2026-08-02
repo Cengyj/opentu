@@ -500,10 +500,10 @@ test.describe('进阶功能手册', () => {
         contentType: 'image/png',
       });
     } else {
-      // 如果没有素材，截一个空状态
-      await page.screenshot({ path: 'test-results/manual-screenshots/image-preview-empty.png' });
-      await testInfo.attach('image-preview-empty', {
-        path: 'test-results/manual-screenshots/image-preview-empty.png',
+      // 无素材时也写入文档引用的稳定文件名，避免生成破图。
+      await page.screenshot({ path: 'test-results/manual-screenshots/image-preview.png' });
+      await testInfo.attach('image-preview', {
+        path: 'test-results/manual-screenshots/image-preview.png',
         contentType: 'image/png',
       });
     }

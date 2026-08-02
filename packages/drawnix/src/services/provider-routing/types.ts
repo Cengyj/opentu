@@ -27,7 +27,16 @@ export type ProviderBindingConfidence = 'high' | 'medium' | 'low';
 export type ProviderBindingSource = 'discovered' | 'template' | 'manual';
 
 export type ProviderAuthStrategy = 'bearer' | 'header' | 'query' | 'custom';
+export type ProviderAuthQueryKey = 'key' | 'api_key';
 export type ProviderBaseUrlStrategy = 'preserve' | 'trim-v1';
+export type ProviderHttpMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'PATCH'
+  | 'DELETE'
+  | 'HEAD'
+  | 'OPTIONS';
 export type ProviderVideoDurationMode = 'request-param' | 'model-alias';
 export type ProviderVideoResultMode = 'inline-url' | 'download-content';
 export type ProviderTextImageInputMode =
@@ -61,8 +70,31 @@ export interface ProviderImageBindingMetadata {
   imageApiCompatibility?: ImageApiCompatibility;
   resolvedImageApiCompatibility?: Exclude<ImageApiCompatibility, 'auto'>;
   action?: 'generation' | 'edit';
+  /** Explicit model/binding-scoped request capabilities. */
+  capabilities?: ProviderImageCapabilities;
+  /** Serializer defaults proven by this binding, never inferred in adapters. */
+  serialization?: {
+    omitDefaultResponseFormat?: boolean;
+    defaultResolution?: '1k' | '2k' | '4k';
+  };
+  /** Legacy direct fields retained as a centralized metadata migration edge. */
   maxImageCount?: number;
   supportsMask?: boolean;
+}
+
+export interface ProviderImageCapabilities {
+  operations?: Array<'generation' | 'edit'>;
+  referenceImages?: boolean | { minCount?: number; maxCount?: number };
+  maskImage?: boolean;
+  size?: boolean | string[];
+  aspectRatio?: boolean | string[];
+  resolution?: boolean | string[];
+  quality?: boolean | string[];
+  inputFidelity?: boolean | string[];
+  background?: boolean | string[];
+  outputFormat?: boolean | string[];
+  outputCompression?: boolean | { min?: number; max?: number };
+  count?: boolean | { min?: number; max?: number; integer?: boolean };
 }
 
 export interface ProviderBindingMetadata {
@@ -96,7 +128,6 @@ export interface ProviderProfileSnapshot
     | 'baseUrl'
     | 'apiKey'
     | 'imageApiCompatibility'
-    | 'preferAsyncImageEndpoint'
     | 'extraHeaders'
   > {
   authType: ProviderAuthStrategy;
@@ -121,8 +152,10 @@ export interface ProviderModelBinding {
   requestSchema: string;
   responseSchema: string;
   submitPath: string;
+  submitMethod: ProviderHttpMethod;
   baseUrlStrategy?: ProviderBaseUrlStrategy;
   pollPathTemplate?: string;
+  pollMethod?: ProviderHttpMethod;
   priority: number;
   confidence: ProviderBindingConfidence;
   source: ProviderBindingSource;
@@ -173,6 +206,7 @@ export interface InvocationPlannerRepositories {
 export interface ProviderTransportRequest {
   path: string;
   baseUrlStrategy?: ProviderBaseUrlStrategy;
+  authQueryKey?: ProviderAuthQueryKey;
   method?: string;
   headers?: Record<string, string>;
   query?: Record<string, string | number | boolean | null | undefined>;

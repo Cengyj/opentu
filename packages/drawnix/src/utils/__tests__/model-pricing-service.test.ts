@@ -15,6 +15,7 @@ import type {
   ProviderPricingCache,
   ForPricingApiResponse,
 } from '../model-pricing-types';
+import { IMAGE_ROUTING_EVIDENCE_VERSION } from '../image-routing-evidence';
 
 describe('model-pricing-service', () => {
   afterEach(() => {
@@ -62,7 +63,8 @@ describe('model-pricing-service', () => {
     const sourceSignature = buildPricingSourceSignature(
       'https://foropencode.com/api/pricing',
       'default',
-      0.7
+      0.7,
+      'test-key'
     );
 
     const manualReadyCache: ProviderPricingCache = {
@@ -85,6 +87,7 @@ describe('model-pricing-service', () => {
 
     const legacyCache: ProviderPricingCache = {
       ...manualReadyCache,
+      sourceSignature: sourceSignature.replace(/\ncredential:[^\n]*$/, ''),
       autoRefreshSourceSignature: undefined,
     };
     expect(isPricingCacheEligibleForWarmup(legacyCache, sourceSignature)).toBe(true);
@@ -132,6 +135,9 @@ describe('model-pricing-service', () => {
 
     const cache = await fetchCache(response, 'codex', 0.7);
 
+    expect(cache.routingEvidenceVersion).toBe(
+      IMAGE_ROUTING_EVIDENCE_VERSION
+    );
     expect(cache.groups).toEqual([
       { name: 'default', displayName: '默认分组', ratio: 1 },
       { name: 'codex', displayName: 'Codex 分组', ratio: 1.5 },
@@ -240,6 +246,74 @@ describe('model-pricing-service', () => {
       method: 'POST',
       description: '异步图片任务接口',
       scenario: 'async-image',
+    });
+  });
+
+  it('API Key 轮换后重新拉取同一价格源且不持久化原始凭据', async () => {
+    const pricingUrl = 'https://credential.example.com/api/pricing';
+    const profileId = `credential-rotation-${Date.now()}`;
+    const response: NewApiPricingApiResponse = {
+      success: true,
+      data: [
+        {
+          model_name: 'tenant-image-model',
+          quota_type: 0,
+          model_ratio: 1,
+          completion_ratio: 1,
+          model_price: 0,
+          enable_groups: ['default'],
+          supported_endpoint_types: ['image-generation'],
+        },
+      ],
+      group_ratio: { default: 1 },
+      usable_group: { default: 'Default' },
+      supported_endpoint: {
+        'image-generation': '/v1/images/generations',
+      },
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => response,
+    } as Response);
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(providerPricingCacheSettings, 'update').mockResolvedValue();
+
+    const firstCache = await modelPricingService.fetchAndCache(
+      profileId,
+      pricingUrl,
+      'tenant-key-a',
+      'default',
+      1
+    );
+    const secondCache = await modelPricingService.fetchAndCache(
+      profileId,
+      pricingUrl,
+      'tenant-key-b',
+      'default',
+      1
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(secondCache.sourceSignature).not.toBe(firstCache.sourceSignature);
+    expect(secondCache.sourceSignature).not.toContain('tenant-key-a');
+    expect(secondCache.sourceSignature).not.toContain('tenant-key-b');
+    expect(
+      modelPricingService.getFreshRoutingModelEndpoints({
+        id: profileId,
+        baseUrl: 'https://credential.example.com/v1',
+        apiKey: 'tenant-key-a',
+      })
+    ).toBeNull();
+    expect(
+      modelPricingService.getFreshRoutingModelEndpoints({
+        id: profileId,
+        baseUrl: 'https://credential.example.com/v1',
+        apiKey: 'tenant-key-b',
+      })
+    ).toMatchObject({
+      'tenant-image-model': {
+        'image-generation': { path: '/v1/images/generations' },
+      },
     });
   });
 

@@ -10,7 +10,7 @@ import type { MVRecord, VideoShot, VideoCharacter } from '../types';
 import { updateRecord } from '../storage';
 import { formatMVShotsMarkdown, updateActiveShotsInRecord } from '../utils';
 import { getValidVideoSize } from '../../../constants/video-model-config';
-import { getCompatibleParams, type ParamConfig } from '../../../constants/model-config';
+import type { ParamConfig } from '../../../constants/model-config';
 import {
   getEffectiveVideoCompatibleParams,
   getEffectiveVideoModelConfigForSelection,
@@ -67,6 +67,15 @@ import {
 } from '../../../utils/workflow-generation-utils';
 import { analytics } from '../../../utils/posthog-analytics';
 import { markAssetAsCharacter } from '../../../services/character-asset-metadata-service';
+import {
+  pruneSelectedImageParams,
+  resolveImageParametersForSelection,
+} from '../../../services/image-binding-parameter-capabilities';
+import { useImageBindingCapabilityRevision } from '../../../hooks/use-image-binding-capability-revision';
+import {
+  resolveWorkflowImageOperation,
+  resolveWorkflowImageSubmission,
+} from '../../shared/workflow/image-generation-params';
 
 const STORAGE_KEY_IMAGE_MODEL = 'mv-creator:image-model';
 const STORAGE_KEY_VIDEO_MODEL = 'mv-creator:gen-video-model';
@@ -83,7 +92,7 @@ function areStringMapsEqual(
 
 function normalizeParamsForConfigs(
   params: Record<string, string>,
-  compatibleParams: ParamConfig[]
+  compatibleParams: readonly ParamConfig[]
 ): Record<string, string> {
   return compatibleParams.reduce<Record<string, string>>((acc, param) => {
     const value = params[param.id];
@@ -189,6 +198,10 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
   const batchCreatedVideoTaskIdsRef = useRef(new Set<string>());
 
   const [refImages, setRefImages] = useState<ReferenceImage[]>([]);
+  const refImageUrls = useMemo(
+    () => refImages.map((image) => image.url).filter(Boolean),
+    [refImages]
+  );
   const [knowledgeContextRefs, setKnowledgeContextRefs] = useState<
     KnowledgeContextRef[]
   >([]);
@@ -254,10 +267,18 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     retryCount: 0,
   });
   const [insertGeneratedVideosToCanvas, setInsertGeneratedVideosToCanvas] = useState(false);
+  const imageBindingCapabilityRevision =
+    useImageBindingCapabilityRevision();
 
   const compatibleImageParams = useMemo(
-    () => getCompatibleParams(imageModel),
-    [imageModel]
+    () =>
+      resolveImageParametersForSelection(
+        imageModel,
+        imageModelRef,
+        resolveWorkflowImageOperation(refImageUrls),
+        imageBindingCapabilityRevision
+      ).compatibleParams,
+    [imageBindingCapabilityRevision, imageModel, imageModelRef, refImageUrls]
   );
   const compatibleVideoParams = useMemo(
     () =>
@@ -293,14 +314,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
   );
   const videoSize = splitVideoParams.size;
   const segmentDuration = Number.parseFloat(splitVideoParams.duration) || 8;
-  const imageGenerationExtraParams = useMemo(
-    () =>
-      Object.keys(imageSelectedParams).length > 0
-        ? imageSelectedParams
-        : undefined,
-    [imageSelectedParams]
-  );
-
   useEffect(() => {
     latestRecordRef.current = record;
   }, [record]);
@@ -391,7 +404,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
 
   useEffect(() => {
     const normalizedParams = normalizeParamsForConfigs(
-      imageSelectedParams,
+      pruneSelectedImageParams(imageSelectedParams, compatibleImageParams),
       compatibleImageParams
     );
     if (!areStringMapsEqual(imageSelectedParams, normalizedParams)) {
@@ -437,7 +450,6 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     videoSelectedParams,
   ]);
 
-  const refImageUrls = useMemo(() => refImages.map(img => img.url).filter(Boolean), [refImages]);
   const exportableAssets = useMemo(() => collectWorkflowExportAssets(shots), [shots]);
   const pseudoAnalysis = useMemo(() => ({
     totalDuration: record.selectedClipDuration || 30,
@@ -815,7 +827,18 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
   const selectedImageAspectRatio = getAspectRatioFromImageSizeParam(
     imageSelectedParams.size
   );
-  const imageGenerationSize = imageSelectedParams.size || imageAspectRatio;
+
+  const resolveSubmittedImageRequest = useCallback(
+    (referenceImages: readonly string[]) =>
+      resolveWorkflowImageSubmission({
+        modelId: imageModel,
+        modelRef: imageModelRef,
+        referenceImages,
+        selectedParams: imageSelectedParams,
+        workflowAspectRatio: imageAspectRatio,
+      }),
+    [imageAspectRatio, imageModel, imageModelRef, imageSelectedParams]
+  );
 
   useEffect(() => {
     if (!imageModel) {
@@ -1248,15 +1271,26 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     }
 
     const shotBatchId = `mv_${record.id}_shot${shot.id}_${frameType}`;
+    const submittedImageRequest = resolveSubmittedImageRequest(referenceImages);
     const result = await mcpRegistry.executeTool(
       { name: 'generate_image', arguments: {
-        prompt: prompt.trim(), count: 1, size: imageGenerationSize,
+        prompt: prompt.trim(), count: 1,
+        ...(submittedImageRequest.size
+          ? { size: submittedImageRequest.size }
+          : {}),
         referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
         knowledgeContextRefs,
         batchId: shotBatchId,
         autoInsertToCanvas: false,
-        ...(imageModel ? { model: imageModel, modelRef: imageModelRef } : {}),
-        ...(imageGenerationExtraParams ? { params: imageGenerationExtraParams } : {}),
+        ...(submittedImageRequest.model
+          ? {
+              model: submittedImageRequest.model,
+              modelRef: submittedImageRequest.modelRef,
+            }
+          : {}),
+        ...(submittedImageRequest.params
+          ? { params: submittedImageRequest.params }
+          : {}),
       }},
       { mode: 'queue' }
     );
@@ -1276,7 +1310,14 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
 
     const task = waitResult.task || taskQueueService.getTask(taskId);
     return task?.result?.url || null;
-  }, [record.id, pseudoAnalysis, pseudoProductInfo, knowledgeContextRefs, imageGenerationExtraParams, imageGenerationSize, imageModel, imageModelRef, refImageUrls]);
+  }, [
+    record.id,
+    pseudoAnalysis,
+    pseudoProductInfo,
+    knowledgeContextRefs,
+    refImageUrls,
+    resolveSubmittedImageRequest,
+  ]);
 
   const generateFirstFrameForShot = useCallback((
     shot: VideoShot,
@@ -1435,11 +1476,14 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
             pseudoProductInfo
           );
           try {
+            const submittedImageRequest = resolveSubmittedImageRequest([]);
             const result = await mcpRegistry.executeTool(
               { name: 'generate_image', arguments: {
                 prompt: charPrompt,
                 count: 1,
-                size: imageGenerationSize,
+                ...(submittedImageRequest.size
+                  ? { size: submittedImageRequest.size }
+                  : {}),
                 knowledgeContextRefs,
                 batchId: charBatchId,
                 autoInsertToCanvas: false,
@@ -1448,8 +1492,15 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
                   characterName: char.name,
                   characterPrompt: charPrompt,
                 },
-                ...(imageModel ? { model: imageModel, modelRef: imageModelRef } : {}),
-                ...(imageGenerationExtraParams ? { params: imageGenerationExtraParams } : {}),
+                ...(submittedImageRequest.model
+                  ? {
+                      model: submittedImageRequest.model,
+                      modelRef: submittedImageRequest.modelRef,
+                    }
+                  : {}),
+                ...(submittedImageRequest.params
+                  ? { params: submittedImageRequest.params }
+                  : {}),
               }},
               { mode: 'queue' }
             );
@@ -1791,10 +1842,7 @@ export const GeneratePage: React.FC<GeneratePageProps> = ({
     applyRecordPatch,
     record.id,
     knowledgeContextRefs,
-    imageModel,
-    imageGenerationExtraParams,
-    imageGenerationSize,
-    imageModelRef,
+    resolveSubmittedImageRequest,
     insertGeneratedVideoToCanvas,
     insertGeneratedVideosToCanvas,
     writeShotFirstFrameResult,

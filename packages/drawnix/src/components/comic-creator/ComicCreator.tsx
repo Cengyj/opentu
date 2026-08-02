@@ -26,11 +26,19 @@ import { ModelDropdown } from '../ai-input-bar/ModelDropdown';
 import { ParametersDropdown } from '../ai-input-bar/ParametersDropdown';
 import {
   ModelVendor,
-  getCompatibleParams,
   type ModelConfig,
   type ParamConfig,
 } from '../../constants/model-config';
+import {
+  pruneSelectedImageParams,
+  resolveImageParametersForSelection,
+} from '../../services/image-binding-parameter-capabilities';
+import {
+  normalizeImageRequest,
+  resolveImageOperationIntent,
+} from '../../services/image-invocation';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
+import { useImageBindingCapabilityRevision } from '../../hooks/use-image-binding-capability-revision';
 import {
   createModelRef,
   hasInvocationRouteCredentials,
@@ -74,6 +82,7 @@ import { useWorkflowTaskSync } from '../shared/workflow/useWorkflowTaskSync';
 import { useMediaViewer } from '../../hooks/useMediaViewer';
 import { MediaLibraryModal } from '../media-library';
 import { AssetType, SelectionMode, type Asset } from '../../types/asset.types';
+import { getTaskResultImageArtifacts } from '../../utils/image-generation-anchor-batch';
 import {
   ReferenceImageUpload,
   type ReferenceImage,
@@ -374,7 +383,9 @@ function formatFileSize(size: number): string {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function getDefaultParamValues(params: ParamConfig[]): Record<string, string> {
+function getDefaultParamValues(
+  params: readonly ParamConfig[]
+): Record<string, string> {
   return params.reduce<Record<string, string>>((acc, param) => {
     if (param.id === 'size') {
       const hasDefaultSize = param.options?.some(
@@ -397,31 +408,24 @@ function getDefaultParamValues(params: ParamConfig[]): Record<string, string> {
 
 function normalizeParamsForConfigs(
   params: Record<string, string> | undefined,
-  compatibleParams: ParamConfig[]
+  compatibleParams: readonly ParamConfig[]
 ): Record<string, string> {
   const defaults = getDefaultParamValues(compatibleParams);
-  const next: Record<string, string> = { ...defaults };
-  const source = params || {};
+  return {
+    ...defaults,
+    ...pruneSelectedImageParams(params || {}, compatibleParams),
+  };
+}
 
-  for (const param of compatibleParams) {
-    const value = source[param.id];
-    if (!value) continue;
-
-    if (
-      param.valueType === 'enum' &&
-      param.options?.length &&
-      !param.options.some((option) => option.value === value)
-    ) {
-      continue;
-    }
-
-    next[param.id] = value;
-  }
-
-  if (!next.size) {
-    next.size = DEFAULT_COMIC_IMAGE_SIZE;
-  }
-  return next;
+function resolveComicImageOperation(
+  referenceImages: readonly string[]
+): 'generation' | 'edit' {
+  return resolveImageOperationIntent(
+    normalizeImageRequest({
+      prompt: 'capability-preview',
+      referenceImages,
+    })
+  );
 }
 
 function renumberPages(pages: ComicPage[]): ComicPage[] {
@@ -689,17 +693,42 @@ const ComicCreator: React.FC = () => {
   const [imageModelRef, setImageModelRef] = useState<ModelRef | null>(
     initialImageSelection.modelRef
   );
+  const imageBindingCapabilityRevision =
+    useImageBindingCapabilityRevision();
+  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
+  const referenceImageUrls = useMemo(() => {
+    const urls = referenceImages
+      .map((image) => image.url.trim())
+      .filter(Boolean);
+    return Array.from(new Set(urls));
+  }, [referenceImages]);
+  const imageParameterOperation =
+    resolveComicImageOperation(referenceImageUrls);
   const compatibleImageParams = useMemo(
-    () => getCompatibleParams(imageModel),
-    [imageModel]
+    () =>
+      resolveImageParametersForSelection(
+        imageModel,
+        imageModelRef,
+        imageParameterOperation,
+        imageBindingCapabilityRevision
+      ).compatibleParams,
+    [
+      imageBindingCapabilityRevision,
+      imageModel,
+      imageModelRef,
+      imageParameterOperation,
+    ]
   );
   const [imageParams, setImageParams] = useState<Record<string, string>>(() =>
     normalizeParamsForConfigs(
       undefined,
-      getCompatibleParams(initialImageSelection.modelId)
+      resolveImageParametersForSelection(
+        initialImageSelection.modelId,
+        initialImageSelection.modelRef,
+        'generation'
+      ).compatibleParams
     )
   );
-  const [referenceImages, setReferenceImages] = useState<ReferenceImage[]>([]);
   const [generationMode, setGenerationMode] =
     useState<ComicGenerationMode>('serial');
   const [imageCountPerPage, setImageCountPerPage] = useState(1);
@@ -727,12 +756,6 @@ const ComicCreator: React.FC = () => {
     [scenarioId]
   );
   const selectableTextModels = pdfAttachment ? geminiTextModels : textModels;
-  const referenceImageUrls = useMemo(() => {
-    const urls = referenceImages
-      .map((image) => image.url.trim())
-      .filter(Boolean);
-    return Array.from(new Set(urls));
-  }, [referenceImages]);
   const scenarioGroups = useMemo(() => {
     const groups = new Map<string, typeof COMIC_SCENARIO_PRESETS>();
     for (const preset of COMIC_SCENARIO_PRESETS) {
@@ -817,12 +840,6 @@ const ComicCreator: React.FC = () => {
   ]);
 
   useEffect(() => {
-    setImageParams((prev) =>
-      normalizeParamsForConfigs(prev, compatibleImageParams)
-    );
-  }, [compatibleImageParams]);
-
-  useEffect(() => {
     if (!currentRecord) return;
     setStoryPrompt(currentRecord.sourcePrompt || '');
     setPromptInputMode(currentRecord.sourcePromptMode || 'text');
@@ -840,14 +857,15 @@ const ComicCreator: React.FC = () => {
       setImageModelRef(currentRecord.imageModelRef || null);
     }
     if (currentRecord.imageParams) {
-      setImageParams((prev) =>
-        normalizeParamsForConfigs(
-          { ...prev, ...currentRecord.imageParams },
-          getCompatibleParams(currentRecord.imageModel || imageModel)
-        )
-      );
+      setImageParams((prev) => ({ ...prev, ...currentRecord.imageParams }));
     }
   }, [currentRecord?.id]);
+
+  useEffect(() => {
+    setImageParams((prev) =>
+      normalizeParamsForConfigs(prev, compatibleImageParams)
+    );
+  }, [compatibleImageParams, currentRecord?.id]);
 
   useEffect(() => {
     setReferenceImages([]);
@@ -967,9 +985,14 @@ const ComicCreator: React.FC = () => {
         param_id: paramId,
         param_value: value,
       });
-      setImageParams((prev) => ({ ...prev, [paramId]: value }));
+      setImageParams((prev) =>
+        pruneSelectedImageParams(
+          { ...prev, [paramId]: value },
+          compatibleImageParams
+        )
+      );
     },
-    [imageModel]
+    [compatibleImageParams, imageModel]
   );
 
   useEffect(() => {
@@ -1672,7 +1695,20 @@ const ComicCreator: React.FC = () => {
         error: undefined,
       });
 
-      const size = imageParams.size || DEFAULT_COMIC_IMAGE_SIZE;
+      const taskReferenceImages = previousImageUrl
+        ? Array.from(new Set([...referenceImageUrls, previousImageUrl]))
+        : referenceImageUrls;
+      const taskCompatibleParams = resolveImageParametersForSelection(
+        imageModel,
+        imageModelRef,
+        resolveComicImageOperation(taskReferenceImages)
+      ).compatibleParams;
+      const taskImageParams = pruneSelectedImageParams(
+        imageParams,
+        taskCompatibleParams
+      );
+      const requestSize = taskImageParams.size;
+      const size = requestSize || DEFAULT_COMIC_IMAGE_SIZE;
       const prompt = buildComicImagePrompt({
         commonPrompt: record.commonPrompt,
         pagePrompt: pageItem.prompt,
@@ -1682,9 +1718,6 @@ const ComicCreator: React.FC = () => {
         pageCount: record.pages.length,
         size,
       });
-      const taskReferenceImages = previousImageUrl
-        ? Array.from(new Set([...referenceImageUrls, previousImageUrl]))
-        : referenceImageUrls;
       trackComicCreatorEvent('page_image_generation', {
         status: 'start',
         page_number: pageItem.pageNumber,
@@ -1699,11 +1732,11 @@ const ComicCreator: React.FC = () => {
       const result = await createImageTask({
         prompt,
         knowledgeContextRefs,
-        size,
+        size: requestSize,
         count: imageCountPerPage,
         model: imageModel,
         modelRef: imageModelRef,
-        params: imageParams,
+        params: taskImageParams,
         referenceImages:
           taskReferenceImages.length > 0 ? taskReferenceImages : undefined,
         autoInsertToCanvas: false,
@@ -1756,12 +1789,12 @@ const ComicCreator: React.FC = () => {
           if (!waitResult.success) return [];
           const task =
             waitResult.task || taskQueueService.getTask(completedTaskId);
-          if (!task?.result?.url) return [];
+          if (!task) return [];
+          const imageArtifacts = getTaskResultImageArtifacts(task);
+          if (imageArtifacts.length === 0) return [];
           return buildComicPageImageVariantsFromResult({
             taskId: completedTaskId,
-            url: task.result.url,
-            urls: task.result.urls,
-            format: task.result.format,
+            imageArtifacts,
             generatedAt: task.completedAt || Date.now(),
           });
         }

@@ -14,6 +14,7 @@ import {
   createComicPages,
   parseComicScriptResponse,
 } from './utils';
+import { getTaskResultImageArtifacts } from '../../utils/image-generation-anchor-batch';
 
 type ComicCreatorAction = 'outline' | 'page-image';
 
@@ -165,12 +166,11 @@ export async function syncComicPageImageTask(task: Task): Promise<{
   const nextPages = target.pages.map((page): ComicPage => {
     if (page.id !== pageId) return page;
 
-    if (task.status === TaskStatus.COMPLETED && task.result?.url) {
+    const artifacts = getTaskResultImageArtifacts(task);
+    if (task.status === TaskStatus.COMPLETED && artifacts.length > 0) {
       const variants = buildComicPageImageVariantsFromResult({
         taskId: task.id,
-        url: task.result.url,
-        urls: task.result.urls,
-        format: task.result.format,
+        imageArtifacts: artifacts,
         generatedAt: task.completedAt || Date.now(),
       });
       const nextPage = appendComicPageImageVariants(page, variants);

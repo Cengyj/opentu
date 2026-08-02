@@ -5,6 +5,7 @@
  */
 
 import type { CacheWarning } from '../../../types/cache-warning.types';
+import type { ImageArtifact } from '../../../types/image-artifact.types';
 import type { TaskInvocationRouteSnapshot } from '../../../types/task.types';
 
 // ============================================================================
@@ -53,6 +54,8 @@ export interface GenerationParams {
  */
 export interface TaskResult {
   url: string;
+  urls?: string[];
+  imageArtifacts?: ImageArtifact[];
   format: string;
   size: number;
   width?: number;

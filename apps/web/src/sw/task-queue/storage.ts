@@ -66,6 +66,7 @@ const PENDING_TOOL_REQUESTS_STORE = 'pending-tool-requests';
 const PENDING_DOM_OPERATIONS_STORE = 'pending-dom-operations';
 const TASK_STEP_MAPPINGS_STORE = 'task-step-mappings';
 const PENDING_CANVAS_OPERATIONS_STORE = 'pending-canvas-operations';
+const TERMINAL_TASK_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 // All required stores for integrity check
 const REQUIRED_STORES = [
@@ -78,6 +79,61 @@ const REQUIRED_STORES = [
   TASK_STEP_MAPPINGS_STORE,
   PENDING_CANVAS_OPERATIONS_STORE,
 ];
+
+/**
+ * Re-reads every archival candidate inside the write transaction. A task that
+ * was retried or otherwise changed after candidate selection is therefore not
+ * overwritten by an earlier full-record snapshot.
+ */
+export function archiveTerminalTaskCandidates(
+  db: IDBDatabase,
+  taskIds: readonly string[],
+  now = Date.now()
+): Promise<number> {
+  if (taskIds.length === 0) {
+    return Promise.resolve(0);
+  }
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(TASKS_STORE, 'readwrite');
+    const store = transaction.objectStore(TASKS_STORE);
+    let archivedCount = 0;
+    let candidateIndex = 0;
+
+    const archiveNextCandidate = () => {
+      if (candidateIndex >= taskIds.length) {
+        return;
+      }
+      const taskId = taskIds[candidateIndex];
+      candidateIndex += 1;
+      const request = store.get(taskId);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        const current = request.result as SWTask | undefined;
+        if (
+          !current ||
+          current.archived ||
+          !TERMINAL_TASK_STATUSES.has(current.status as string)
+        ) {
+          archiveNextCandidate();
+          return;
+        }
+        store.put({
+          ...current,
+          archived: true,
+          updatedAt: now,
+        });
+        archivedCount += 1;
+        archiveNextCandidate();
+      };
+    };
+    archiveNextCandidate();
+
+    transaction.oncomplete = () => resolve(archivedCount);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
 
 /**
  * Pending tool request stored in IndexedDB
@@ -1649,27 +1705,16 @@ export class TaskQueueStorage {
       if (toArchiveCount <= 0) return 0;
 
       // 从最旧的开始，归档终态任务
-      const terminalStatuses = ['completed', 'failed', 'cancelled'];
       const toArchive = allTasks
-        .filter((t) => terminalStatuses.includes(t.status as string))
+        .filter((task) => TERMINAL_TASK_STATUSES.has(task.status as string))
         .slice(0, toArchiveCount);
 
       if (toArchive.length === 0) return 0;
 
-      const now = Date.now();
-      return new Promise((resolve, reject) => {
-        const tx = db.transaction(TASKS_STORE, 'readwrite');
-        const store = tx.objectStore(TASKS_STORE);
-        for (const task of toArchive) {
-          task.archived = true;
-          task.updatedAt = now;
-          store.put(task);
-        }
-        tx.oncomplete = () => {
-          resolve(toArchive.length);
-        };
-        tx.onerror = () => reject(tx.error);
-      });
+      return archiveTerminalTaskCandidates(
+        db,
+        toArchive.map((task) => task.id)
+      );
     } catch (error) {
       console.error('[SWStorage] Failed to archive old tasks:', error);
       return 0;

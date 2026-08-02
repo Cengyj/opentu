@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const cacheMediaFromBlob = vi.fn();
 const cachedUrls = new Set<string>();
 const isCached = vi.fn(async (url: string) => cachedUrls.has(url));
+const getCachedBlob = vi.fn(async () => null as Blob | null);
 const calculateBlobChecksum = vi.fn(async () => 'a'.repeat(64));
 
 vi.mock('@aitu/utils', async () => {
@@ -23,6 +24,7 @@ vi.mock('../unified-cache-service', () => ({
   unifiedCacheService: {
     cacheMediaFromBlob,
     isCached,
+    getCachedBlob,
   },
 }));
 
@@ -30,6 +32,8 @@ describe('cacheRemoteUrl', () => {
   beforeEach(() => {
     cacheMediaFromBlob.mockReset();
     isCached.mockClear();
+    getCachedBlob.mockReset();
+    getCachedBlob.mockResolvedValue(null);
     calculateBlobChecksum.mockClear();
     cachedUrls.clear();
     cacheMediaFromBlob.mockImplementation(async (url: string) => {
@@ -158,6 +162,333 @@ describe('cacheRemoteUrl', () => {
     expect(cacheMediaFromBlob).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
+  });
+
+  it('requires durable persistence for task-backed image batches by default', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(new Blob(['image-binary'], { type: 'image/png' }), {
+        status: 200,
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { cacheRemoteUrls } = await import('./fallback-utils');
+    const remoteUrl = 'https://cdn.example.com/generated/task-batch.png';
+
+    const result = await cacheRemoteUrls(
+      [remoteUrl],
+      'task-image-batch',
+      'image',
+      'png'
+    );
+
+    expect(result).toEqual([remoteUrl]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(cacheMediaFromBlob).toHaveBeenCalledWith(
+      remoteUrl,
+      expect.any(Blob),
+      'image',
+      {
+        taskId: 'task-image-batch',
+        source: 'AI_GENERATED',
+      }
+    );
+    expect(isCached).toHaveBeenLastCalledWith(remoteUrl);
+  });
+
+  it('caches each distinct artifact once while preserving first-seen order', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockImplementation(
+        async () =>
+          new Response(new Blob(['image-binary'], { type: 'image/png' }), {
+            status: 200,
+          })
+      )
+    );
+    const { cacheRemoteUrls } = await import('./fallback-utils');
+    const first = 'https://cdn.example.com/generated/first.png';
+    const second = 'https://cdn.example.com/generated/second.png';
+    const third = 'https://cdn.example.com/generated/third.png';
+
+    const result = await cacheRemoteUrls(
+      [second, first, second, third, first],
+      'task-deduplicated-artifacts',
+      'image',
+      'png'
+    );
+
+    expect(result).toEqual([second, first, third]);
+    expect(cacheMediaFromBlob).toHaveBeenCalledTimes(3);
+    expect(cacheMediaFromBlob.mock.calls.map(([url]) => url)).toEqual([
+      second,
+      first,
+      third,
+    ]);
+  });
+
+  it('persists canonical artifacts once without collapsing per-image metadata', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockImplementation(async (input) => {
+        const mimeType = String(input).endsWith('.webp')
+          ? 'image/webp'
+          : 'image/jpeg';
+        return new Response(new Blob(['image-binary'], { type: mimeType }), {
+          status: 200,
+        });
+      })
+    );
+    const { cacheImageArtifacts } = await import('./fallback-utils');
+    const first = {
+      url: 'https://cdn.example.com/generated/first.webp',
+      source: 'url' as const,
+      mimeType: 'image/webp' as const,
+      format: 'webp' as const,
+      width: 1200,
+      height: 800,
+    };
+    const second = {
+      url: 'https://cdn.example.com/generated/second.jpg',
+      source: 'url' as const,
+      mimeType: 'image/jpeg' as const,
+      format: 'jpg' as const,
+      width: 640,
+      height: 640,
+    };
+
+    const result = await cacheImageArtifacts(
+      [first, second, first],
+      'task-canonical-artifacts'
+    );
+
+    expect(result).toEqual([first, second]);
+    expect(cacheMediaFromBlob).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses the persisted Blob MIME instead of a URL or adapter format guess', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(new Blob(['jpeg-binary'], { type: 'image/jpeg' }), {
+          status: 200,
+        })
+      )
+    );
+    const { cacheImageArtifacts } = await import('./fallback-utils');
+
+    const result = await cacheImageArtifacts(
+      [
+        {
+          url: 'https://cdn.example.com/generated/opaque-result.png',
+          source: 'url',
+          mimeType: 'image/png',
+          format: 'png',
+        },
+      ],
+      'task-actual-mime'
+    );
+
+    expect(result).toEqual([
+      {
+        url: 'https://cdn.example.com/generated/opaque-result.png',
+        source: 'url',
+        mimeType: 'image/jpeg',
+        format: 'jpg',
+      },
+    ]);
+  });
+
+  it('rejects a successful HTTP response whose persisted MIME is not an image', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(new Blob(['provider error page'], { type: 'text/html' }), {
+          status: 200,
+        })
+      )
+    );
+    const { cacheImageArtifacts } = await import('./fallback-utils');
+
+    await expect(
+      cacheImageArtifacts(
+        [
+          {
+            url: 'https://cdn.example.com/generated/error-page',
+            source: 'url',
+          },
+        ],
+        'task-invalid-mime'
+      )
+    ).rejects.toMatchObject({
+      code: 'IMAGE_CACHE_PERSISTENCE_FAILED',
+    });
+    expect(cacheMediaFromBlob).not.toHaveBeenCalled();
+  });
+
+  it('rejects a task-backed image batch when the provider URL cannot be downloaded', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response('unavailable', { status: 503 }))
+    );
+
+    const { cacheRemoteUrls } = await import('./fallback-utils');
+
+    await expect(
+      cacheRemoteUrls(
+        ['https://cdn.example.com/generated/unavailable.png'],
+        'task-download-failure',
+        'image',
+        'png'
+      )
+    ).rejects.toMatchObject({
+      name: 'ImageCachePersistenceError',
+      code: 'IMAGE_CACHE_PERSISTENCE_FAILED',
+    });
+    expect(cacheMediaFromBlob).not.toHaveBeenCalled();
+  });
+
+  it('rejects a task-backed image batch when the downloaded blob is empty', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(
+          new Response(new Blob([], { type: 'image/png' }), { status: 200 })
+        )
+    );
+
+    const { cacheRemoteUrls } = await import('./fallback-utils');
+
+    await expect(
+      cacheRemoteUrls(
+        ['https://cdn.example.com/generated/empty.png'],
+        'task-empty-image',
+        'image',
+        'png'
+      )
+    ).rejects.toMatchObject({
+      code: 'IMAGE_CACHE_PERSISTENCE_FAILED',
+    });
+    expect(cacheMediaFromBlob).not.toHaveBeenCalled();
+  });
+
+  it('rejects a task-backed image batch when cache persistence throws', async () => {
+    cacheMediaFromBlob.mockRejectedValueOnce(new Error('storage unavailable'));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(new Blob(['image-binary'], { type: 'image/png' }), {
+          status: 200,
+        })
+      )
+    );
+
+    const { cacheRemoteUrls } = await import('./fallback-utils');
+
+    await expect(
+      cacheRemoteUrls(
+        ['https://cdn.example.com/generated/write-failure.png'],
+        'task-write-failure',
+        'image',
+        'png'
+      )
+    ).rejects.toMatchObject({
+      code: 'IMAGE_CACHE_PERSISTENCE_FAILED',
+    });
+  });
+
+  it('rejects a task-backed image batch when the cache cannot be read back', async () => {
+    cacheMediaFromBlob.mockImplementationOnce(async (url: string) => url);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(new Blob(['image-binary'], { type: 'image/png' }), {
+          status: 200,
+        })
+      )
+    );
+
+    const { cacheRemoteUrls } = await import('./fallback-utils');
+
+    await expect(
+      cacheRemoteUrls(
+        ['https://cdn.example.com/generated/verify-failure.png'],
+        'task-verify-failure',
+        'image',
+        'png'
+      )
+    ).rejects.toMatchObject({
+      code: 'IMAGE_CACHE_PERSISTENCE_FAILED',
+    });
+    expect(isCached).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects instead of returning inline provider data when strict persistence times out', async () => {
+    vi.useFakeTimers();
+    isCached.mockImplementationOnce(() => new Promise<never>(() => undefined));
+
+    const { cacheRemoteUrls } = await import('./fallback-utils');
+    const resultPromise = cacheRemoteUrls(
+      [
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      ],
+      'task-inline-timeout',
+      'image',
+      'png'
+    );
+    const assertion = expect(resultPromise).rejects.toMatchObject({
+      code: 'IMAGE_CACHE_PERSISTENCE_FAILED',
+    });
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await assertion;
+    expect(cacheMediaFromBlob).not.toHaveBeenCalled();
+  });
+
+  it('propagates cancellation while task-backed remote image persistence is pending', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockImplementation(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { cacheRemoteUrls } = await import('./fallback-utils');
+    const resultPromise = cacheRemoteUrls(
+      ['https://cdn.example.com/generated/pending.png'],
+      'task-aborted-cache',
+      'image',
+      'png',
+      { signal: controller.signal }
+    );
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    controller.abort();
+
+    await expect(resultPromise).rejects.toMatchObject({ name: 'AbortError' });
+    expect(cacheMediaFromBlob).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing local image result at the strict task boundary', async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { cacheRemoteUrls } = await import('./fallback-utils');
+
+    await expect(
+      cacheRemoteUrls(
+        ['/__aitu_cache__/image/missing.png'],
+        'task-missing-local',
+        'image',
+        'png'
+      )
+    ).rejects.toMatchObject({
+      code: 'IMAGE_CACHE_PERSISTENCE_FAILED',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('caches remote https audio urls while keeping original URLs', async () => {

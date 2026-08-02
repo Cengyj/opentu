@@ -6,6 +6,29 @@
 import { test, expect } from '../fixtures/test-base';
 
 test.describe('@smoke 核心功能验证', () => {
+  test('应用菜单：用户手册可打开并导航章节', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('.drawnix')).toBeVisible({ timeout: 10000 });
+
+    await page.getByRole('button', { name: /应用菜单/ }).click();
+    const [manualPage] = await Promise.all([
+      page.waitForEvent('popup'),
+      page.getByRole('menuitem', { name: '用户手册' }).click(),
+    ]);
+
+    await expect(manualPage).toHaveURL(/\/user-manual\/index\.html$/);
+    await expect(manualPage).toHaveTitle(/用户手册/);
+    await expect(manualPage.locator('nav.sidebar')).toBeVisible();
+    await expect(manualPage.locator('main.main-content')).toBeVisible();
+    await expect(manualPage.locator('#root')).toHaveCount(0);
+
+    await manualPage.locator('a[href="advanced-settings.html"]').click();
+    await expect(manualPage).toHaveURL(/\/user-manual\/advanced-settings\.html$/);
+    await expect(manualPage).toHaveTitle(/设置.*用户手册/);
+    await expect(manualPage.locator('main.main-content')).toBeVisible();
+    await expect(manualPage.locator('#root')).toHaveCount(0);
+  });
+
   /**
    * 测试1：主画布所有组件和交互
    */

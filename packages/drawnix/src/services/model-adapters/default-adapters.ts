@@ -5,7 +5,6 @@ import {
   extractAudioGenerationResult,
 } from '../audio-api-service';
 import { videoAPIService } from '../video-api-service';
-import { getFileExtension, normalizeImageDataUrl } from '@aitu/utils';
 import {
   DEFAULT_AUDIO_MODEL_ID,
   DEFAULT_IMAGE_MODEL_ID,
@@ -34,10 +33,30 @@ import { registerFluxAdapter } from './flux-adapter';
 import { registerSeedreamAdapter } from './seedream-adapter';
 import { registerSeedanceAdapter } from './seedance-adapter';
 import { registerGPTImageAdapter } from './gpt-image-adapter';
+import { normalizeImageResolutionTier } from './image-size-quality-resolver';
 import {
-  isGPTImage2Model,
-  resolveImageResolutionTier,
-} from './image-size-quality-resolver';
+  parseGeminiImageArtifacts,
+  parseOpenAIImageArtifacts,
+} from '../image-invocation/artifacts';
+import {
+  buildProviderContextFromAdapterContext,
+  requireImageBinding,
+} from './context';
+
+const GEMINI_IMAGE_BINDING_CONTRACTS = [
+  {
+    protocol: 'openai.images.generations',
+    requestSchema: 'openai.image.basic-json',
+  },
+  {
+    protocol: 'openai.async.media',
+    requestSchema: 'openai.async.image.form',
+  },
+  {
+    protocol: 'google.generateContent',
+    requestSchema: 'google.generate-content.image-inline',
+  },
+] as const;
 
 const imageModelIds = [...IMAGE_MODEL_VIP_OPTIONS, ...IMAGE_MODEL_MORE_OPTIONS]
   .map((model) => model.id)
@@ -58,69 +77,13 @@ const videoModelIds = VIDEO_MODELS.map((model) => model.id).filter(
 
 const audioModelIds = AUDIO_MODELS.map((model) => model.id);
 
-function isGptImageModel(model: string): boolean {
-  const lowerId = model.toLowerCase();
-  return lowerId.startsWith('gpt-image') || lowerId.includes('gpt-image');
-}
-
-const extractImageUrl = (
-  response: any,
-  prompt: string
-): { url: string; urls?: string[]; format: string; raw?: unknown } => {
-  if (
-    response?.data &&
-    Array.isArray(response.data) &&
-    response.data.length > 0
-  ) {
-    const imageData = response.data[0];
-    const urls = response.data
-      .map((item: any) => {
-        if (item?.url) return item.url;
-        if (!item?.b64_json) return undefined;
-        const mimeType =
-          typeof item.mime_type === 'string' && item.mime_type.startsWith('image/')
-            ? item.mime_type
-            : 'image/png';
-        return `data:${mimeType};base64,${item.b64_json}`;
-      })
-      .filter(Boolean) as string[];
-    const format = getFileExtension(urls[0]) || 'png';
-    if (imageData.url) {
-      return {
-        url: normalizeImageDataUrl(imageData.url),
-        urls,
-        format: format === 'bin' ? 'png' : format,
-        raw: response,
-      };
-    }
-    if (imageData.b64_json) {
-      const mimeType =
-        typeof imageData.mime_type === 'string' &&
-        imageData.mime_type.startsWith('image/')
-          ? imageData.mime_type
-          : 'image/png';
-      const normalizedUrl = normalizeImageDataUrl(
-        imageData.b64_json,
-        mimeType
-      );
-      return {
-        url: normalizedUrl,
-        urls,
-        format: format === 'bin' ? 'png' : format,
-        raw: response,
-      };
-    }
-  }
-
-  const message = response?.revised_prompt
-    ? String(response.revised_prompt).replace(
-        `Generate an image: ${prompt}: `,
-        ''
-      )
-    : JSON.stringify(response);
-
-  throw new Error(`API 未返回有效的图片数据: ${message}`);
-};
+const extractImageArtifacts = (
+  response: unknown,
+  binding: NonNullable<AdapterContext['binding']>
+) =>
+  binding.protocol === 'google.generateContent'
+    ? parseGeminiImageArtifacts(response)
+    : parseOpenAIImageArtifacts(response);
 
 const toUploadedVideoImages = (
   referenceImages?: string[]
@@ -136,13 +99,12 @@ const toUploadedVideoImages = (
   }));
 };
 
-function shouldUseAsyncImageEndpoint(
-  context: AdapterContext,
-  _model: string
+function isAsyncImageBinding(
+  binding: NonNullable<AdapterContext['binding']>
 ): boolean {
   return (
-    context.binding?.protocol === 'openai.async.media' ||
-    context.binding?.requestSchema === 'openai.async.image.form'
+    binding.protocol === 'openai.async.media' &&
+    binding.requestSchema === 'openai.async.image.form'
   );
 }
 
@@ -165,62 +127,93 @@ export const geminiImageAdapter: ImageModelAdapter = {
   supportedModels: imageModelIds,
   defaultModel: DEFAULT_IMAGE_MODEL_ID,
   async generateImage(context, request: ImageGenerationRequest) {
-    const model = request.model || DEFAULT_IMAGE_MODEL_ID;
+    const binding = requireImageBinding(context, request, {
+      adapterLabel: 'Gemini Image adapter',
+      requirePollPath:
+        context.binding?.protocol === 'openai.async.media' ||
+        context.binding?.requestSchema === 'openai.async.image.form',
+      supportedBindings: GEMINI_IMAGE_BINDING_CONTRACTS,
+    });
+    const model = binding.modelId;
 
-    if (shouldUseAsyncImageEndpoint(context, model)) {
-      const result = await asyncImageAPIService.generateWithPolling(
+    if (isAsyncImageBinding(binding)) {
+      const artifacts = await asyncImageAPIService.generateWithPolling(
         {
           model,
-          modelRef: request.modelRef || null,
           prompt: request.prompt,
           size: request.size,
-          referenceImages: request.referenceImages,
+          referenceImages: request.referenceImages
+            ? [...request.referenceImages]
+            : undefined,
           maskImage: request.maskImage,
         },
         {
-          interval: 5000,
-          onProgress: request.params?.onProgress as
-            | ((progress: number, status?: string) => void)
-            | undefined,
-          onSubmitted: request.params?.onSubmitted as
-            | ((remoteId: string) => void)
-            | undefined,
+          interval: request.pollIntervalMs ?? 5000,
+          maxAttempts: request.pollMaxAttempts,
+          signal: request.signal,
+          onProgress: request.onProgress,
+          onSubmitted: request.onSubmitted,
+          telemetry: request.telemetry,
+          invocation: {
+            provider: buildProviderContextFromAdapterContext(context),
+            binding,
+            fetcher: context.fetcher,
+          },
         }
       );
-      const { url, format } = asyncImageAPIService.extractUrlAndFormat(result);
-      return { url, format, raw: result };
+      return { artifacts };
     }
 
+    const serialization = binding.metadata?.image?.serialization;
     const quality =
-      resolveImageResolutionTier(request.params) ||
-      (isGPTImage2Model(model) ? '1k' : undefined);
-    const responseFormat = request.params?.response_format as
-      | 'url'
-      | 'b64_json'
-      | undefined;
+      normalizeImageResolutionTier(request.resolution) ||
+      normalizeImageResolutionTier(request.quality) ||
+      normalizeImageResolutionTier(serialization?.defaultResolution);
+    const responseFormat = request.responseFormat;
 
-    const imageOptions: Parameters<
-      typeof defaultGeminiClient.generateImage
-    >[1] = {
+    const imageOptions: NonNullable<
+      Parameters<typeof defaultGeminiClient.generateImage>[1]
+    > = {
       size: request.size,
-      image: request.referenceImages,
-      omitDefaultResponseFormat: isGptImageModel(model),
+      image: request.referenceImages ? [...request.referenceImages] : undefined,
+      omitDefaultResponseFormat:
+        serialization?.omitDefaultResponseFormat === true,
       quality,
-      count:
-        typeof request.params?.n === 'number' ? request.params.n : undefined,
+      count: request.count,
       model,
       modelRef: request.modelRef || null,
+      signal: request.signal,
+      invocationConfig: {
+        apiKey: context.apiKey || '',
+        baseUrl: context.baseUrl,
+        modelName: binding.modelId,
+        authType: context.authType,
+        providerType: context.provider?.providerType || 'custom',
+        extraHeaders: context.extraHeaders,
+        protocol: binding.protocol,
+        binding,
+        provider: context.provider || null,
+        fetcher: context.fetcher,
+      },
     };
     if (responseFormat) {
       imageOptions.response_format = responseFormat;
     }
 
-    const result = await defaultGeminiClient.generateImage(
-      request.prompt,
-      imageOptions
-    );
+    request.telemetry?.increment('submitRequests');
+    const submit = () =>
+      defaultGeminiClient.generateImage(request.prompt, imageOptions);
+    const result = request.telemetry
+      ? await request.telemetry.measure('submit', submit)
+      : await submit();
 
-    return extractImageUrl(result, request.prompt);
+    request.telemetry?.increment('responseParses');
+    const parseResult = () => ({
+      artifacts: extractImageArtifacts(result, binding),
+    });
+    return request.telemetry
+      ? request.telemetry.measureSync('responseParsing', parseResult)
+      : parseResult();
   },
 };
 

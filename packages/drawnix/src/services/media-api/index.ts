@@ -13,21 +13,16 @@
 // 类型导出
 export type {
   ApiConfig,
-  ImageApiConfig,
   VideoApiConfig,
-  ImageGenerationParams,
-  ImageGenerationResult,
   VideoGenerationParams,
   VideoGenerationResult,
   VideoStatusResponse,
   AsyncTaskSubmitResponse,
   PollingOptions,
-  AsyncImageOptions,
 } from './types';
 
 // 工具函数导出
 export {
-  isAsyncImageModel,
   normalizeApiBase,
   getExtensionFromUrl,
   sizeToAspectRatio,
@@ -37,15 +32,6 @@ export {
   parseErrorMessage,
   sleep,
 } from './utils';
-
-// 图片 API 导出
-export {
-  buildImageRequestBody,
-  parseImageResponse,
-  generateImageSync,
-  generateImageAsync,
-  resumeAsyncImagePolling,
-} from './image-api';
 
 // 视频 API 导出
 export {

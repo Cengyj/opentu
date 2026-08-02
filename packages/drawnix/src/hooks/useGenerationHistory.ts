@@ -7,12 +7,13 @@
 
 import { useMemo } from 'react';
 import { useTaskQueue } from './useTaskQueue';
-import { TaskType, TaskStatus } from '../types/task.types';
+import { TaskType } from '../types/task.types';
 import {
   ImageHistoryItem,
   VideoHistoryItem,
-  HistoryItem
+  HistoryItem,
 } from '../components/generation-history/generation-history';
+import { buildImageGenerationHistory } from './generation-history-mapper';
 
 /**
  * Hook for accessing generation history
@@ -25,19 +26,7 @@ export function useGenerationHistory() {
 
   // Convert completed image tasks to history items
   const imageHistory = useMemo((): ImageHistoryItem[] => {
-    return completedTasks
-      .filter(task => task.type === TaskType.IMAGE && task.result?.url)
-      .map(task => ({
-        id: task.id,
-        type: 'image' as const,
-        prompt: task.params.prompt,
-        timestamp: task.completedAt || task.createdAt,
-        imageUrl: task.result!.url,
-        width: task.result!.width || 1024,
-        height: task.result!.height || 1024,
-        uploadedImages: task.params.uploadedImages, // 包含参考图片
-      }))
-      .sort((a, b) => b.timestamp - a.timestamp); // Most recent first
+    return buildImageGenerationHistory(completedTasks);
   }, [completedTasks]);
 
   // Convert completed video tasks to history items

@@ -5,6 +5,20 @@
   "projectType": "application",
   "tags": [],
   "targets": {
+    "build-manual": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "inputs": [
+        "{workspaceRoot}/docs/user-manual/**/*",
+        "{workspaceRoot}/scripts/*manual*.ts",
+        "{workspaceRoot}/package.json",
+        "{workspaceRoot}/apps/web/public/version.json"
+      ],
+      "outputs": ["{workspaceRoot}/apps/web/public/user-manual"],
+      "options": {
+        "command": "pnpm run manual:build"
+      }
+    },
     "build-sw": {
       "executor": "nx:run-commands",
       "options": {
@@ -21,6 +35,7 @@
     },
     "serve-app": {
       "executor": "nx:run-commands",
+      "dependsOn": ["build-manual"],
       "options": {
         "command": "vite serve --host 0.0.0.0",
         "cwd": "apps/web"
@@ -41,6 +56,7 @@
     },
     "build-app": {
       "executor": "nx:run-commands",
+      "dependsOn": ["build-manual"],
       "options": {
         "command": "vite build",
         "cwd": "apps/web"

@@ -14,6 +14,10 @@ import type {
   ProviderPricingCache,
   ForPricingApiResponse,
 } from './model-pricing-types';
+import {
+  buildProviderCredentialIdentity,
+  IMAGE_ROUTING_EVIDENCE_VERSION,
+} from './image-routing-evidence';
 
 type PricingListener = () => void;
 type FetchAndCacheOptions = {
@@ -31,6 +35,17 @@ type SharedPricingResponseCacheEntry = {
   fetchedAt: number;
   ttlMs: number;
   response: PricingApiResponse;
+};
+
+type ProfilePricingRequestState = {
+  sequence: number;
+  sourceSignature: string;
+  promoteToAutoRefresh: boolean;
+};
+
+type ProfilePricingRequest = {
+  state: ProfilePricingRequestState;
+  promise: Promise<ProviderPricingCache>;
 };
 
 const DEFAULT_API_HOST = 'foropencode.com';
@@ -55,6 +70,46 @@ function stripPricingUrlSearch(pricingUrl: string): string {
     return `${url.origin}${url.pathname}`;
   } catch {
     return normalized.split('?')[0];
+  }
+}
+
+function buildPricingUrlSourceIdentity(pricingUrl: string): string {
+  const normalized = normalizePricingUrl(pricingUrl);
+  if (!normalized) return normalized;
+
+  const buildIdentity = (baseUrl: string, rawSearch: string): string => {
+    const exactSearch = rawSearch.startsWith('?')
+      ? rawSearch.slice(1)
+      : rawSearch;
+    return exactSearch
+      ? `${baseUrl}\nquery:${buildProviderCredentialIdentity(
+          `query:${exactSearch}`
+        )}`
+      : baseUrl;
+  };
+
+  try {
+    const url = new URL(normalized);
+    const authorityIdentity =
+      url.username || url.password
+        ? `\nauthority:${buildProviderCredentialIdentity(
+            `authority:${url.username}:${url.password}`
+          )}`
+        : '';
+    return buildIdentity(
+      `${url.origin}${url.pathname}${authorityIdentity}`,
+      url.search
+    );
+  } catch {
+    const withoutFragment = normalized.split('#', 1)[0];
+    const queryIndex = withoutFragment.indexOf('?');
+    if (queryIndex < 0) {
+      return withoutFragment;
+    }
+    return buildIdentity(
+      withoutFragment.slice(0, queryIndex),
+      withoutFragment.slice(queryIndex + 1)
+    );
   }
 }
 
@@ -83,9 +138,7 @@ function isBuiltInPricingUrl(pricingUrl: string): boolean {
   try {
     const url = new URL(normalized);
     const hostname = url.hostname.toLowerCase();
-    return (
-      hostname === DEFAULT_API_HOST && url.pathname === '/api/pricing'
-    );
+    return hostname === DEFAULT_API_HOST && url.pathname === '/api/pricing';
   } catch {
     return (
       stripPricingUrlSearch(normalized) ===
@@ -103,9 +156,18 @@ export function getPricingCacheTtlMs(pricingUrl: string): number {
 export function buildPricingSourceSignature(
   pricingUrl: string,
   groupName: string,
-  cnyPerUsd: number
+  cnyPerUsd: number,
+  apiKey: string
 ): string {
-  return `${stripPricingUrlSearch(pricingUrl)}\n${groupName || DEFAULT_GROUP_NAME}\n${round4(cnyPerUsd)}`;
+  return `${buildPricingUrlSourceIdentity(pricingUrl)}\n${
+    groupName || DEFAULT_GROUP_NAME
+  }\n${round4(cnyPerUsd)}\ncredential:${buildProviderCredentialIdentity(
+    apiKey
+  )}`;
+}
+
+function stripPricingCredentialIdentity(sourceSignature: string): string {
+  return sourceSignature.replace(/\ncredential:[^\n]*$/, '');
 }
 
 export function isPricingCacheEligibleForWarmup(
@@ -117,7 +179,11 @@ export function isPricingCacheEligibleForWarmup(
   }
 
   if (typeof cache.autoRefreshSourceSignature === 'string') {
-    return cache.autoRefreshSourceSignature === sourceSignature;
+    return (
+      cache.autoRefreshSourceSignature === sourceSignature ||
+      stripPricingCredentialIdentity(cache.autoRefreshSourceSignature) ===
+        stripPricingCredentialIdentity(sourceSignature)
+    );
   }
 
   if (cache.autoRefreshSourceSignature === null) {
@@ -125,7 +191,12 @@ export function isPricingCacheEligibleForWarmup(
   }
 
   // 兼容旧缓存：历史版本没有显式标记时，保留当前签名的自动刷新能力。
-  return cache.sourceSignature === sourceSignature;
+  return (
+    cache.sourceSignature === sourceSignature ||
+    (typeof cache.sourceSignature === 'string' &&
+      stripPricingCredentialIdentity(cache.sourceSignature) ===
+        stripPricingCredentialIdentity(sourceSignature))
+  );
 }
 
 export function resolveProviderPricingConfig(
@@ -159,14 +230,18 @@ function toFiniteNumber(value: unknown, fallback = 0): number {
 }
 
 function toOptionalFiniteNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function isForPricingResponse(json: PricingApiResponse): json is ForPricingApiResponse {
+function isForPricingResponse(
+  json: PricingApiResponse
+): json is ForPricingApiResponse {
   return (
     isPlainRecord(json.data) &&
     isPlainRecord(json.data.group_info) &&
@@ -200,7 +275,9 @@ function computeModelPrice(
   // quota_type=1: token 计费（用 model_ratio）
   if (gp.quota_type === 1) {
     const inputUsd = round4(gp.model_ratio * 2 * groupRatio);
-    const outputUsd = round4(gp.model_ratio * 2 * gp.model_completion_ratio * groupRatio);
+    const outputUsd = round4(
+      gp.model_ratio * 2 * gp.model_completion_ratio * groupRatio
+    );
     return {
       inputCnyMtok: round4(inputUsd * cnyPerUsd),
       outputCnyMtok: round4(outputUsd * cnyPerUsd),
@@ -298,18 +375,21 @@ function computeNewApiModelPrice(
     const inputUsd = round4(modelRatio * 2 * groupRatio);
     const outputUsd = round4(modelRatio * 2 * completionRatio * groupRatio);
     const cacheRatio =
-      toOptionalFiniteNumber(groupModelPricing?.model_cache_ratio?.[modelName]) ??
-      toOptionalFiniteNumber(model.cache_ratio);
+      toOptionalFiniteNumber(
+        groupModelPricing?.model_cache_ratio?.[modelName]
+      ) ?? toOptionalFiniteNumber(model.cache_ratio);
     const createCacheRatio =
       toOptionalFiniteNumber(
         groupModelPricing?.model_create_cache_ratio?.[modelName]
       ) ?? toOptionalFiniteNumber(model.create_cache_ratio);
     const imageRatio =
-      toOptionalFiniteNumber(groupModelPricing?.model_image_ratio?.[modelName]) ??
-      toOptionalFiniteNumber(model.image_ratio);
+      toOptionalFiniteNumber(
+        groupModelPricing?.model_image_ratio?.[modelName]
+      ) ?? toOptionalFiniteNumber(model.image_ratio);
     const audioRatio =
-      toOptionalFiniteNumber(groupModelPricing?.model_audio_ratio?.[modelName]) ??
-      toOptionalFiniteNumber(model.audio_ratio);
+      toOptionalFiniteNumber(
+        groupModelPricing?.model_audio_ratio?.[modelName]
+      ) ?? toOptionalFiniteNumber(model.audio_ratio);
     const audioCompletionRatio =
       toOptionalFiniteNumber(
         groupModelPricing?.model_audio_completion_ratio?.[modelName]
@@ -319,18 +399,16 @@ function computeNewApiModelPrice(
     return {
       inputCnyMtok: toCnyMtok(inputUsd),
       outputCnyMtok: toCnyMtok(outputUsd),
-      cacheReadCnyMtok: cacheRatio != null
-        ? toCnyMtok(inputUsd * cacheRatio)
-        : null,
-      cacheCreateCnyMtok: createCacheRatio != null
-        ? toCnyMtok(inputUsd * createCacheRatio)
-        : null,
-      imageInputCnyMtok: imageRatio != null
-        ? toCnyMtok(inputUsd * imageRatio)
-        : null,
-      audioInputCnyMtok: audioRatio != null
-        ? toCnyMtok(inputUsd * audioRatio)
-        : null,
+      cacheReadCnyMtok:
+        cacheRatio != null ? toCnyMtok(inputUsd * cacheRatio) : null,
+      cacheCreateCnyMtok:
+        createCacheRatio != null
+          ? toCnyMtok(inputUsd * createCacheRatio)
+          : null,
+      imageInputCnyMtok:
+        imageRatio != null ? toCnyMtok(inputUsd * imageRatio) : null,
+      audioInputCnyMtok:
+        audioRatio != null ? toCnyMtok(inputUsd * audioRatio) : null,
       audioOutputCnyMtok:
         audioRatio != null && audioCompletionRatio != null
           ? toCnyMtok(inputUsd * audioRatio * audioCompletionRatio)
@@ -373,13 +451,17 @@ function normalizeNewApiEndpointInfo(
   const scenario =
     typeof endpoint.scenario === 'string' ? endpoint.scenario.trim() : '';
   const highlights = Array.isArray(endpoint.highlights)
-    ? endpoint.highlights.filter((item): item is string => typeof item === 'string')
+    ? endpoint.highlights.filter(
+        (item): item is string => typeof item === 'string'
+      )
     : undefined;
   const parameters = Array.isArray(endpoint.parameters)
     ? endpoint.parameters
     : undefined;
   const requestTemplate =
-    endpoint.request_template !== undefined ? endpoint.request_template : undefined;
+    endpoint.request_template !== undefined
+      ? endpoint.request_template
+      : undefined;
 
   if (
     !path &&
@@ -404,7 +486,9 @@ function normalizeNewApiEndpointInfo(
     ...(scenario ? { scenario } : {}),
     ...(highlights?.length ? { highlights } : {}),
     ...(parameters?.length ? { parameters } : {}),
-    ...(requestTemplate !== undefined ? { request_template: requestTemplate } : {}),
+    ...(requestTemplate !== undefined
+      ? { request_template: requestTemplate }
+      : {}),
   };
 }
 
@@ -415,10 +499,9 @@ function buildNewApiModelEndpoints(
   const endpointKeys = Array.isArray(model.supported_endpoint_types)
     ? model.supported_endpoint_types.map(String)
     : [];
-  const endpointSources = [
-    model.endpoints,
-    supportedEndpoint,
-  ].filter(Boolean) as Array<Record<string, PricingEndpointInfo | string>>;
+  const endpointSources = [model.endpoints, supportedEndpoint].filter(
+    Boolean
+  ) as Array<Record<string, PricingEndpointInfo | string>>;
 
   if (endpointSources.length === 0) {
     return null;
@@ -428,7 +511,9 @@ function buildNewApiModelEndpoints(
   const keys =
     endpointKeys.length > 0
       ? endpointKeys
-      : Array.from(new Set(endpointSources.flatMap((source) => Object.keys(source))));
+      : Array.from(
+          new Set(endpointSources.flatMap((source) => Object.keys(source)))
+        );
 
   for (const key of keys) {
     for (const source of endpointSources) {
@@ -518,8 +603,7 @@ function resolveNewApiModelEffectiveGroup(
   }
 
   return (
-    groupNames.find((groupName) => enableGroups.includes(groupName)) ||
-    null
+    groupNames.find((groupName) => enableGroups.includes(groupName)) || null
   );
 }
 
@@ -529,10 +613,18 @@ function buildModelPriceParts(price: ModelPrice): string[] {
       (tier) => `${tier.label} ¥${tier.perSecondCny.toFixed(2)}/秒`
     );
   }
-  if (price.billingType === 'per-second' && price.flatCny != null && price.flatCny > 0) {
+  if (
+    price.billingType === 'per-second' &&
+    price.flatCny != null &&
+    price.flatCny > 0
+  ) {
     return [`¥${price.flatCny.toFixed(2)}/秒`];
   }
-  if (price.billingType === 'flat' && price.flatCny != null && price.flatCny > 0) {
+  if (
+    price.billingType === 'flat' &&
+    price.flatCny != null &&
+    price.flatCny > 0
+  ) {
     return [`¥${price.flatCny.toFixed(2)}/次`];
   }
   if (
@@ -589,15 +681,80 @@ export function formatModelPriceDetail(price: ModelPrice): string {
 class ModelPricingService {
   private cacheMap = new Map<string, ProviderPricingCache>();
   private listeners = new Set<PricingListener>();
-  private sharedResponseCacheMap = new Map<string, SharedPricingResponseCacheEntry>();
+  private sharedResponseCacheMap = new Map<
+    string,
+    SharedPricingResponseCacheEntry
+  >();
   private inflightRequestMap = new Map<string, Promise<PricingApiResponse>>();
+  private profileRequestSequenceMap = new Map<string, number>();
+  private inflightProfileRequestMap = new Map<string, ProfilePricingRequest>();
+  private persistenceQueue: Promise<void> = Promise.resolve();
   private version = 0;
 
   constructor() {
     const saved = providerPricingCacheSettings.get();
     if (Array.isArray(saved)) {
-      saved.forEach((c) => this.cacheMap.set(c.profileId, c));
+      saved.forEach((cache) => this.cacheMap.set(cache.profileId, cache));
     }
+    providerPricingCacheSettings.addListener?.(
+      this.handlePersistedCacheSettingsChange
+    );
+  }
+
+  private handlePersistedCacheSettingsChange = (
+    caches: ProviderPricingCache[]
+  ): void => {
+    const nextCacheMap = new Map(
+      caches.map((cache) => [cache.profileId, cache] as const)
+    );
+    if (this.areCacheMapsEqual(nextCacheMap)) {
+      return;
+    }
+
+    const profileIds = new Set([
+      ...this.cacheMap.keys(),
+      ...nextCacheMap.keys(),
+    ]);
+    for (const profileId of profileIds) {
+      if (
+        !this.areCachesEqual(
+          this.cacheMap.get(profileId),
+          nextCacheMap.get(profileId)
+        )
+      ) {
+        this.supersedeProfileRequest(profileId);
+      }
+    }
+
+    this.cacheMap = nextCacheMap;
+    this.notify();
+  };
+
+  private areCachesEqual(
+    currentCache: ProviderPricingCache | undefined,
+    nextCache: ProviderPricingCache | undefined
+  ): boolean {
+    if (!currentCache || !nextCache) {
+      return currentCache === nextCache;
+    }
+    return JSON.stringify(currentCache) === JSON.stringify(nextCache);
+  }
+
+  private areCacheMapsEqual(
+    nextCacheMap: ReadonlyMap<string, ProviderPricingCache>
+  ): boolean {
+    if (this.cacheMap.size !== nextCacheMap.size) {
+      return false;
+    }
+
+    for (const [profileId, nextCache] of nextCacheMap) {
+      const currentCache = this.cacheMap.get(profileId);
+      if (!this.areCachesEqual(currentCache, nextCache)) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   subscribe(listener: PricingListener): () => void {
@@ -611,15 +768,58 @@ class ModelPricingService {
   }
 
   private buildSharedCacheKey(pricingUrl: string, apiKey: string): string {
-    return `${normalizePricingUrl(pricingUrl)}\n${apiKey}`;
+    return `${buildPricingUrlSourceIdentity(
+      pricingUrl
+    )}\ncredential:${buildProviderCredentialIdentity(apiKey)}`;
+  }
+
+  private beginProfileRequest(profileId: string): number {
+    const sequence = (this.profileRequestSequenceMap.get(profileId) || 0) + 1;
+    this.profileRequestSequenceMap.set(profileId, sequence);
+    return sequence;
+  }
+
+  private supersedeProfileRequest(profileId: string): void {
+    this.beginProfileRequest(profileId);
+    this.inflightProfileRequestMap.delete(profileId);
+  }
+
+  private isProfileRequestCurrent(
+    profileId: string,
+    sequence: number
+  ): boolean {
+    return this.profileRequestSequenceMap.get(profileId) === sequence;
+  }
+
+  private async resolveSupersededProfileRequest(
+    profileId: string,
+    sequence: number
+  ): Promise<ProviderPricingCache> {
+    const currentRequest = this.inflightProfileRequestMap.get(profileId);
+    if (currentRequest && currentRequest.state.sequence !== sequence) {
+      return currentRequest.promise;
+    }
+
+    const currentCache = this.cacheMap.get(profileId);
+    if (currentCache) {
+      return currentCache;
+    }
+
+    throw new Error('Pricing cache request was superseded');
   }
 
   private buildSourceSignature(
     pricingUrl: string,
     groupName: string,
-    cnyPerUsd: number
+    cnyPerUsd: number,
+    apiKey: string
   ): string {
-    return buildPricingSourceSignature(pricingUrl, groupName, cnyPerUsd);
+    return buildPricingSourceSignature(
+      pricingUrl,
+      groupName,
+      cnyPerUsd,
+      apiKey
+    );
   }
 
   private isFresh(
@@ -713,12 +913,17 @@ class ModelPricingService {
     const groupRatio = groupInfo?.GroupRatio ?? 1;
 
     const prices: Record<string, ModelPrice> = {};
-    const modelEndpoints: Record<string, Record<string, PricingEndpointInfo>> = {};
+    const modelEndpoints: Record<
+      string,
+      Record<string, PricingEndpointInfo>
+    > = {};
     for (const model of json.data.model_info) {
       const groupPrices = model.price_info?.[effectiveGroup];
       const gp: PricingGroupPrice | undefined = groupPrices?.['default'];
       if (!gp) continue;
-      const firstDocs = Object.values(model.endpoints || {}).find((ep) => ep.docs)?.docs;
+      const firstDocs = Object.values(model.endpoints || {}).find(
+        (ep) => ep.docs
+      )?.docs;
       prices[model.model_name] = {
         ...computeModelPrice(gp, groupRatio, cnyPerUsd),
         description: model.description || undefined,
@@ -731,6 +936,7 @@ class ModelPricingService {
 
     return {
       profileId,
+      routingEvidenceVersion: IMAGE_ROUTING_EVIDENCE_VERSION,
       fetchedAt: Date.now(),
       sourceSignature,
       autoRefreshSourceSignature,
@@ -757,7 +963,10 @@ class ModelPricingService {
     const requestedGroup = groupName || DEFAULT_GROUP_NAME;
 
     const prices: Record<string, ModelPrice> = {};
-    const modelEndpoints: Record<string, Record<string, PricingEndpointInfo>> = {};
+    const modelEndpoints: Record<
+      string,
+      Record<string, PricingEndpointInfo>
+    > = {};
     for (const model of json.data) {
       if (!model.model_name) continue;
       const effectiveGroup = resolveNewApiModelEffectiveGroup(
@@ -795,6 +1004,7 @@ class ModelPricingService {
 
     return {
       profileId,
+      routingEvidenceVersion: IMAGE_ROUTING_EVIDENCE_VERSION,
       fetchedAt: Date.now(),
       sourceSignature,
       autoRefreshSourceSignature,
@@ -846,30 +1056,101 @@ class ModelPricingService {
     options: FetchAndCacheOptions = {}
   ): Promise<ProviderPricingCache> {
     const normalizedPricingUrl = normalizePricingUrl(pricingUrl);
+    const normalizedApiKey = apiKey.trim();
     const ttlMs = getPricingCacheTtlMs(normalizedPricingUrl);
     const sourceSignature = this.buildSourceSignature(
       normalizedPricingUrl,
       groupName,
-      cnyPerUsd
+      cnyPerUsd,
+      normalizedApiKey
     );
     const cached = this.cacheMap.get(profileId);
     if (
       !options.force &&
       cached &&
+      cached.routingEvidenceVersion === IMAGE_ROUTING_EVIDENCE_VERSION &&
       cached.sourceSignature === sourceSignature &&
       this.isFresh(cached.fetchedAt, ttlMs)
     ) {
       return cached;
     }
 
-    const json = await this.fetchPricingResponse(
+    const existingRequest = this.inflightProfileRequestMap.get(profileId);
+    if (existingRequest?.state.sourceSignature === sourceSignature) {
+      if (options.promoteToAutoRefresh) {
+        existingRequest.state.promoteToAutoRefresh = true;
+      }
+      return existingRequest.promise;
+    }
+
+    const requestState: ProfilePricingRequestState = {
+      sequence: this.beginProfileRequest(profileId),
+      sourceSignature,
+      promoteToAutoRefresh: options.promoteToAutoRefresh === true,
+    };
+    const promise = this.performFetchAndCache(
+      profileId,
       normalizedPricingUrl,
-      apiKey,
-      options
+      normalizedApiKey,
+      groupName,
+      cnyPerUsd,
+      options,
+      cached,
+      requestState
     );
+    this.inflightProfileRequestMap.set(profileId, {
+      state: requestState,
+      promise,
+    });
+
+    try {
+      return await promise;
+    } finally {
+      const currentRequest = this.inflightProfileRequestMap.get(profileId);
+      if (currentRequest?.state.sequence === requestState.sequence) {
+        this.inflightProfileRequestMap.delete(profileId);
+      }
+    }
+  }
+
+  private async performFetchAndCache(
+    profileId: string,
+    normalizedPricingUrl: string,
+    apiKey: string,
+    groupName: string,
+    cnyPerUsd: number,
+    options: FetchAndCacheOptions,
+    cachedAtStart: ProviderPricingCache | undefined,
+    requestState: ProfilePricingRequestState
+  ): Promise<ProviderPricingCache> {
+    const sourceSignature = requestState.sourceSignature;
+
+    let json: PricingApiResponse;
+    try {
+      json = await this.fetchPricingResponse(
+        normalizedPricingUrl,
+        apiKey,
+        options
+      );
+    } catch (error) {
+      if (!this.isProfileRequestCurrent(profileId, requestState.sequence)) {
+        return this.resolveSupersededProfileRequest(
+          profileId,
+          requestState.sequence
+        );
+      }
+      throw error;
+    }
+    if (!this.isProfileRequestCurrent(profileId, requestState.sequence)) {
+      return this.resolveSupersededProfileRequest(
+        profileId,
+        requestState.sequence
+      );
+    }
+
     const autoRefreshSourceSignature =
-      options.promoteToAutoRefresh ||
-      isPricingCacheEligibleForWarmup(cached, sourceSignature)
+      requestState.promoteToAutoRefresh ||
+      isPricingCacheEligibleForWarmup(cachedAtStart, sourceSignature)
         ? sourceSignature
         : null;
     const cache = this.buildProviderCache(
@@ -882,8 +1163,14 @@ class ModelPricingService {
     );
 
     this.cacheMap.set(profileId, cache);
-    this.persist();
     this.notify();
+    await this.persist();
+    if (!this.isProfileRequestCurrent(profileId, requestState.sequence)) {
+      return this.resolveSupersededProfileRequest(
+        profileId,
+        requestState.sequence
+      );
+    }
     return cache;
   }
 
@@ -891,7 +1178,10 @@ class ModelPricingService {
     return this.cacheMap.get(profileId) ?? null;
   }
 
-  getModelPrice(profileId: string | undefined | null, modelId: string): ModelPrice | null {
+  getModelPrice(
+    profileId: string | undefined | null,
+    modelId: string
+  ): ModelPrice | null {
     if (!profileId) return null;
     return this.cacheMap.get(profileId)?.prices[modelId] ?? null;
   }
@@ -904,13 +1194,46 @@ class ModelPricingService {
     return this.cacheMap.get(profileId)?.modelEndpoints?.[modelId] ?? null;
   }
 
-  getGroups(profileId: string): PricingGroup[] {
-    return this.cacheMap.get(profileId)?.groups ?? [];
+  getFreshRoutingModelEndpoints(
+    profile: Pick<
+      ProviderProfile,
+      'id' | 'baseUrl' | 'apiKey' | 'pricingUrl' | 'pricingGroup' | 'cnyPerUsd'
+    >,
+    now = Date.now()
+  ): ProviderPricingCache['modelEndpoints'] | null {
+    const cache = this.cacheMap.get(profile.id);
+    const pricingConfig = resolveProviderPricingConfig(profile);
+    if (!cache || !pricingConfig) {
+      return null;
+    }
+
+    const sourceSignature = this.buildSourceSignature(
+      pricingConfig.pricingUrl,
+      pricingConfig.pricingGroup,
+      pricingConfig.cnyPerUsd,
+      profile.apiKey
+    );
+    if (
+      cache.routingEvidenceVersion !== IMAGE_ROUTING_EVIDENCE_VERSION ||
+      cache.sourceSignature !== sourceSignature ||
+      !profile.apiKey.trim() ||
+      !this.isFresh(
+        cache.fetchedAt,
+        getPricingCacheTtlMs(pricingConfig.pricingUrl),
+        now
+      )
+    ) {
+      return null;
+    }
+
+    return cache.modelEndpoints ?? null;
   }
 
   removeCache(profileId: string): void {
-    if (this.cacheMap.delete(profileId)) {
-      this.persist();
+    const removed = this.cacheMap.delete(profileId);
+    this.supersedeProfileRequest(profileId);
+    if (removed) {
+      void this.persist();
       this.notify();
     }
   }
@@ -930,7 +1253,8 @@ class ModelPricingService {
         const sourceSignature = this.buildSourceSignature(
           pricingConfig.pricingUrl,
           pricingConfig.pricingGroup,
-          pricingConfig.cnyPerUsd
+          pricingConfig.cnyPerUsd,
+          profile.apiKey
         );
         const cached = this.cacheMap.get(profile.id);
         if (!isPricingCacheEligibleForWarmup(cached, sourceSignature)) {
@@ -951,9 +1275,17 @@ class ModelPricingService {
       });
   }
 
-  private persist(): void {
-    const caches = Array.from(this.cacheMap.values());
-    void providerPricingCacheSettings.update(caches);
+  private persist(): Promise<void> {
+    const persistence = this.persistenceQueue.then(() =>
+      providerPricingCacheSettings.update(Array.from(this.cacheMap.values()))
+    );
+    this.persistenceQueue = persistence.catch((error) => {
+      console.warn(
+        '[ModelPricingService] Failed to persist pricing cache:',
+        error instanceof Error ? error.name : 'UnknownError'
+      );
+    });
+    return this.persistenceQueue;
   }
 }
 

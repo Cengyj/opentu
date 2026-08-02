@@ -53,10 +53,19 @@ import { buildInlineDataPart } from '../utils/gemini-api/message-utils';
 import { unifiedCacheService } from './unified-cache-service';
 import { buildGenerateContentConfig } from './analysis-core';
 import {
+  createTaskInvocationRouteSnapshotFromPlan,
   createTaskInvocationRouteSnapshotFromTask,
   mergeTaskInvocationRoute,
+  resolveTaskInvocationRouteModel,
 } from './task-invocation-route';
 import { callGoogleGenerateContentWithLog } from '../utils/gemini-api/logged-calls';
+import {
+  normalizeImageRequest,
+  resolveNormalizedImageInvocation,
+  type NormalizedImageRequest,
+  type ResolvedImageInvocation,
+} from './image-invocation';
+import { resolveImageArtifactsFromTaskResult } from '../types/image-artifact.types';
 import { executeVideoAnalysis } from './video-analysis-service';
 import {
   formatShotsMarkdown,
@@ -185,6 +194,9 @@ function preserveMonotonicStorageFlags(
 }
 
 function getTaskResultCount(task: Task): number {
+  if (task.type === TaskType.IMAGE) {
+    return resolveImageArtifactsFromTaskResult(task.result).length;
+  }
   if (Array.isArray(task.result?.urls) && task.result.urls.length > 0) {
     return task.result.urls.length;
   }
@@ -363,16 +375,9 @@ function normalizeComparableMediaUrl(value: string): string {
 }
 
 function getTaskResultUrls(task: Task): string[] {
-  const urls = new Set<string>();
-  if (task.result?.url) {
-    urls.add(task.result.url);
-  }
-  task.result?.urls?.forEach((url) => {
-    if (url) {
-      urls.add(url);
-    }
-  });
-  return Array.from(urls);
+  return resolveImageArtifactsFromTaskResult(task.result).map(
+    (artifact) => artifact.url
+  );
 }
 
 function imageTaskMatchesUrl(task: Task, imageUrl: string): boolean {
@@ -454,6 +459,8 @@ class TaskQueueService {
   private tasks: Map<string, Task>;
   private taskUpdates$: Subject<TaskEvent>;
   private executingTasks = new Set<string>();
+  /** Active queue-owned image attempt keyed by its persisted `startedAt`. */
+  private executingImageAttempts = new Map<string, number>();
   /**
    * Task IDs created or explicitly retried by this page session.
    *
@@ -552,12 +559,18 @@ class TaskQueueService {
     });
   }
 
-  private shouldSkipExecutionWriteback(taskId: string): boolean {
+  private shouldSkipExecutionWriteback(
+    taskId: string,
+    imageAttemptStartedAt?: number
+  ): boolean {
     const task = this.tasks.get(taskId);
     return (
       !task ||
       isTrackedTerminalTaskStatus(task.status) ||
-      this.blockedTaskIds.has(taskId)
+      this.blockedTaskIds.has(taskId) ||
+      (imageAttemptStartedAt !== undefined &&
+        task.type === TaskType.IMAGE &&
+        task.startedAt !== imageAttemptStartedAt)
     );
   }
 
@@ -741,20 +754,38 @@ class TaskQueueService {
    * Execute task using executor (for legacy/fallback mode)
    * This is called automatically after task creation
    */
-  private async executeTask(task: Task): Promise<void> {
+  private async executeTask(
+    task: Task,
+    preparedImageRequest?: NormalizedImageRequest,
+    preparedImageInvocation?: ResolvedImageInvocation
+  ): Promise<void> {
+    const imageAttemptStartedAt =
+      task.type === TaskType.IMAGE ? task.startedAt : undefined;
+    const runningImageAttemptStartedAt = this.executingImageAttempts.get(
+      task.id
+    );
+    const startsNewImageAttempt =
+      task.type === TaskType.IMAGE &&
+      imageAttemptStartedAt !== undefined &&
+      runningImageAttemptStartedAt !== undefined &&
+      runningImageAttemptStartedAt !== imageAttemptStartedAt;
+
     // 防止同一任务被重复执行（双重调用防护）
-    if (this.executingTasks.has(task.id)) {
+    if (this.executingTasks.has(task.id) && !startsNewImageAttempt) {
       console.warn(
         `[TaskQueueService] Task ${task.id} is already executing, skipping duplicate`
       );
       return;
     }
     this.executingTasks.add(task.id);
+    if (imageAttemptStartedAt !== undefined) {
+      this.executingImageAttempts.set(task.id, imageAttemptStartedAt);
+    }
     const abortController = new AbortController();
     this.taskAbortControllers.set(task.id, abortController);
     const { signal } = abortController;
     try {
-      if (this.shouldSkipExecutionWriteback(task.id)) {
+      if (this.shouldSkipExecutionWriteback(task.id, imageAttemptStartedAt)) {
         return;
       }
 
@@ -767,11 +798,13 @@ class TaskQueueService {
           : task.type === TaskType.CHAT
           ? 'text'
           : 'image';
+      const credentialRouteModel =
+        task.type === TaskType.IMAGE
+          ? resolveTaskInvocationRouteModel(task)
+          : task.params.modelRef || task.params.model;
       if (
-        !hasInvocationRouteCredentials(
-          routeType,
-          task.params.modelRef || task.params.model
-        )
+        !preparedImageInvocation &&
+        !hasInvocationRouteCredentials(routeType, credentialRouteModel)
       ) {
         console.warn(
           '[TaskQueueService] No API configuration, cannot execute task'
@@ -785,6 +818,9 @@ class TaskQueueService {
       task = await this.resolveTaskKnowledgeContext(
         await this.restoreStrippedTaskParams(task)
       );
+      if (this.shouldSkipExecutionWriteback(task.id, imageAttemptStartedAt)) {
+        return;
+      }
 
       if (task.type === TaskType.AUDIO) {
         const requestedModel = task.params.model as string | undefined;
@@ -1007,6 +1043,9 @@ class TaskQueueService {
 
       // Get executor
       const executor = await executorFactory.getExecutor();
+      if (this.shouldSkipExecutionWriteback(task.id, imageAttemptStartedAt)) {
+        return;
+      }
 
       // 实时进度回调：executor 执行期间同步更新内存中的 task 状态
       // 注意：必须创建新对象存入 Map，不能原地修改旧对象
@@ -1014,8 +1053,13 @@ class TaskQueueService {
       // React.memo 比较 prev.task.progress === next.task.progress 时永远相等
       const executionOptions = {
         signal,
+        ...(imageAttemptStartedAt !== undefined
+          ? { imageAttemptStartedAt }
+          : {}),
         onProgress: (progress: { progress: number; phase?: string }) => {
-          if (this.shouldSkipExecutionWriteback(task.id)) {
+          if (
+            this.shouldSkipExecutionWriteback(task.id, imageAttemptStartedAt)
+          ) {
             return;
           }
 
@@ -1044,79 +1088,34 @@ class TaskQueueService {
       // Execute based on task type
       switch (task.type) {
         case TaskType.IMAGE: {
-          // 从 params.params 中提取额外参数，并补齐新图像契约字段
-          const extraParams = {
-            ...(((task.params as any).params || {}) as Record<string, unknown>),
-          };
-          if (task.params.resolution !== undefined) {
-            extraParams.resolution = task.params.resolution;
-          }
-          if (
-            task.params.quality !== undefined &&
-            extraParams.quality === undefined
-          ) {
-            extraParams.quality = task.params.quality;
-          }
-          if (
-            typeof task.params.count === 'number' &&
-            Number.isFinite(task.params.count) &&
-            extraParams.n === undefined
-          ) {
-            extraParams.n = task.params.count;
-          }
+          const imageRouteModel = resolveTaskInvocationRouteModel(task);
+          const imageModelRef =
+            typeof imageRouteModel === 'string' ? null : imageRouteModel;
+          const imageModel =
+            typeof imageRouteModel === 'string'
+              ? imageRouteModel
+              : imageRouteModel?.modelId || task.params.model;
+          const baseImageRequest =
+            preparedImageRequest ||
+            normalizeImageRequest({
+              ...task.params,
+              taskId: task.id,
+            });
+          const imageRequest: NormalizedImageRequest = Object.freeze({
+            ...baseImageRequest,
+            model: imageModel,
+            modelRef: imageModelRef,
+            bindingId: task.invocationRoute?.binding?.id,
+            signal,
+          });
           imageOutcome = await executor.generateImage(
             {
               taskId: task.id,
-              prompt: task.params.prompt,
-              model: task.params.model,
-              modelRef: task.params.modelRef || null,
-              size: task.params.size,
-              resolution: task.params.resolution as
-                | '1k'
-                | '2k'
-                | '4k'
-                | undefined,
-              generationMode: task.params.generationMode as
-                | 'text_to_image'
-                | 'image_to_image'
-                | 'image_edit'
-                | undefined,
-              referenceImages: task.params.referenceImages as
-                | string[]
-                | undefined,
-              maskImage: task.params.maskImage as string | undefined,
-              inputFidelity: task.params.inputFidelity as
-                | 'high'
-                | 'low'
-                | undefined,
-              background: task.params.background as
-                | 'transparent'
-                | 'opaque'
-                | 'auto'
-                | undefined,
-              outputFormat: task.params.outputFormat as
-                | 'png'
-                | 'jpeg'
-                | 'webp'
-                | undefined,
-              outputCompression: task.params.outputCompression as
-                | number
-                | undefined,
-              count: task.params.count as number | undefined,
-              uploadedImages: task.params.uploadedImages as
-                | Array<{ url?: string }>
-                | undefined,
-              quality: (task.params.quality ?? extraParams.quality) as
-                | 'auto'
-                | 'low'
-                | 'medium'
-                | 'high'
-                | '1k'
-                | '2k'
-                | '4k'
-                | undefined,
-              params: extraParams,
-              assetMetadata: task.params.assetMetadata,
+              request: imageRequest,
+              invocationRoute: task.invocationRoute,
+              ...(preparedImageInvocation
+                ? { resolvedInvocation: preparedImageInvocation }
+                : {}),
             },
             executionOptions
           );
@@ -1242,7 +1241,7 @@ class TaskQueueService {
           throw new Error(`Unsupported task type: ${task.type}`);
       }
 
-      if (this.shouldSkipExecutionWriteback(task.id)) {
+      if (this.shouldSkipExecutionWriteback(task.id, imageAttemptStartedAt)) {
         return;
       }
 
@@ -1313,7 +1312,7 @@ class TaskQueueService {
         this.emitEvent('taskUpdated', finalTask);
       }
     } catch (error: any) {
-      if (this.shouldSkipExecutionWriteback(task.id)) {
+      if (this.shouldSkipExecutionWriteback(task.id, imageAttemptStartedAt)) {
         return;
       }
 
@@ -1342,7 +1341,14 @@ class TaskQueueService {
         this.taskAbortControllers.delete(task.id);
       }
       this.repersistCancelledTask(task.id);
-      this.executingTasks.delete(task.id);
+      if (imageAttemptStartedAt === undefined) {
+        this.executingTasks.delete(task.id);
+      } else if (
+        this.executingImageAttempts.get(task.id) === imageAttemptStartedAt
+      ) {
+        this.executingImageAttempts.delete(task.id);
+        this.executingTasks.delete(task.id);
+      }
     }
   }
 
@@ -2069,6 +2075,16 @@ class TaskQueueService {
     const sanitizedParams = normalizeGenerationParamsKnowledgeContext(
       sanitizeGenerationParams(params)
     );
+    const taskId = generateTaskId();
+    const preparedImageRequest =
+      type === TaskType.IMAGE
+        ? normalizeImageRequest({ ...sanitizedParams, taskId })
+        : undefined;
+    const preparedImageInvocation =
+      preparedImageRequest?.modelRef?.profileId &&
+      preparedImageRequest.modelRef.modelId
+        ? resolveNormalizedImageInvocation(preparedImageRequest)
+        : undefined;
 
     // Character extraction is owned by useTaskExecutor because it also persists
     // the created character record. Other task types execute in this service.
@@ -2078,7 +2094,7 @@ class TaskQueueService {
     // character tasks from PENDING and advances them to PROCESSING itself.
     const now = Date.now();
     const task: Task = {
-      id: generateTaskId(),
+      id: taskId,
       type,
       status: usesDedicatedTaskExecutor
         ? TaskStatus.PENDING
@@ -2099,7 +2115,16 @@ class TaskQueueService {
         progress: 0,
       }),
     };
-    const invocationRoute = createTaskInvocationRouteSnapshotFromTask(task);
+    const invocationRoute = preparedImageInvocation
+      ? createTaskInvocationRouteSnapshotFromPlan(
+          'image',
+          preparedImageInvocation.plan
+        )
+      : createTaskInvocationRouteSnapshotFromTask(
+          task,
+          undefined,
+          preparedImageRequest
+        );
     if (invocationRoute) {
       task.invocationRoute = invocationRoute;
     }
@@ -2131,7 +2156,11 @@ class TaskQueueService {
             );
             return;
           }
-          this.executeTask(task).catch((error) => {
+          this.executeTask(
+            task,
+            preparedImageRequest,
+            preparedImageInvocation
+          ).catch((error) => {
             console.error('[TaskQueueService] Task execution error:', error);
           });
         },
@@ -2170,15 +2199,17 @@ class TaskQueueService {
     status: TaskStatus,
     updates?: Partial<Task>,
     persistenceOptions: TaskSaveOptions = {}
-  ): void {
-    this.updateTaskStatusInternal(
+  ): Promise<boolean> | undefined {
+    const persistence = this.updateTaskStatusInternal(
       taskId,
       status,
       updates,
       persistenceOptions
-    )?.catch((error) => {
+    );
+    persistence?.catch((error) => {
       console.error('[TaskQueueService] Failed to persist task:', error);
     });
+    return persistence;
   }
 
   private updateTaskStatusInternal(
@@ -2467,11 +2498,20 @@ class TaskQueueService {
     // so the dedicated executor that owns character persistence can consume
     // the taskUpdated event.
     const now = Date.now();
+    const retryStartedAt =
+      task.type === TaskType.IMAGE
+        ? Math.max(now, (task.startedAt || 0) + 1)
+        : now;
     trackTaskAnalytics('generation_retry_after_failure', task, {
       previousStatus: task.status,
       previousErrorCode: task.error?.code,
       previousErrorMessage: task.error?.message,
     });
+    if (task.type === TaskType.IMAGE) {
+      this.taskAbortControllers
+        .get(taskId)
+        ?.abort(new DOMException('Superseded by image retry', 'AbortError'));
+    }
     this.blockedTaskIds.delete(taskId);
     this.currentSessionTaskIds.add(taskId);
     const retryPersistence = this.updateTaskStatusInternal(
@@ -2480,7 +2520,7 @@ class TaskQueueService {
       {
         error: undefined,
         result: undefined,
-        startedAt: usesDedicatedTaskExecutor ? undefined : now,
+        startedAt: usesDedicatedTaskExecutor ? undefined : retryStartedAt,
         completedAt: undefined, // Clear completion time
         remoteId: undefined, // Clear remote ID for fresh submission
         executionPhase: usesDedicatedTaskExecutor
@@ -2647,6 +2687,14 @@ class TaskQueueService {
     const task = this.tasks.get(outcome.taskId);
     if (!task) {
       return undefined;
+    }
+
+    if (
+      outcome.status === 'stale' ||
+      (outcome.attemptStartedAt !== undefined &&
+        task.startedAt !== outcome.attemptStartedAt)
+    ) {
+      return task;
     }
 
     // Cancellation and an already different terminal decision are

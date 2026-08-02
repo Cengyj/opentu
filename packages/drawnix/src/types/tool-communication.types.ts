@@ -148,6 +148,15 @@ export interface GenerateImagePayload {
 
   /** 消息 ID（用于响应） */
   messageId?: string;
+
+  /** 工具提供的参考图片 */
+  uploadedImages?: Array<{ url?: string }>;
+
+  /** 批量请求身份，用于避免重复执行 */
+  batchId?: string;
+  batchIndex?: number;
+  batchTotal?: number;
+  globalIndex?: number;
 }
 
 /**
@@ -164,6 +173,9 @@ export interface GenerateImageResponse {
   result?: {
     /** 图片 URL */
     url: string;
+
+    /** 供应商一次返回多张图片时的有序 URL 列表 */
+    urls?: string[];
 
     /** 格式 */
     format?: string;

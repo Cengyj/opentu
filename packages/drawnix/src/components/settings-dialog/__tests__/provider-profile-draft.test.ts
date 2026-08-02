@@ -21,7 +21,7 @@ describe('createProviderProfileDraft', () => {
     });
   });
 
-  it('defaults new profiles to OpenAI GPT Image compatibility', async () => {
+  it('defaults new profiles to automatic protocol routing', async () => {
     const { createProviderProfileDraft } = await import(
       '../provider-profile-draft'
     );
@@ -30,7 +30,7 @@ describe('createProviderProfileDraft', () => {
       id: 'profile-3',
       name: '供应商 3',
       homepageUrl: '',
-      providerType: 'openai-compatible',
+      providerType: 'auto',
       authType: 'bearer',
       imageApiCompatibility: 'openai-gpt-image',
       enabled: true,

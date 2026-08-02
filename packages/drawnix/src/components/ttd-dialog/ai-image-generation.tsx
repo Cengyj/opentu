@@ -64,13 +64,12 @@ import {
   type ModelRef,
 } from '../../utils/settings-manager';
 import { promptForApiKey } from '../../utils/gemini-api';
-import { buildMJPromptSuffix } from '../../utils/mj-params';
 import {
-  getCompatibleParams,
   getSizeOptionsForModel,
   type ModelConfig,
 } from '../../constants/model-config';
 import { useSelectableModels } from '../../hooks/use-runtime-models';
+import { useImageBindingCapabilityRevision } from '../../hooks/use-image-binding-capability-revision';
 import { getPinnedSelectableModel } from '../../utils/runtime-model-discovery';
 import {
   findMatchingSelectableModel,
@@ -78,6 +77,16 @@ import {
   getSelectionKey,
 } from '../../utils/model-selection';
 import { KnowledgeNoteContextSelector } from '../shared';
+import {
+  normalizeImageRequest,
+  resolveImageOperationIntent,
+} from '../../services/image-invocation';
+import {
+  areImageParamSelectionsEqual,
+  isImageBindingParameterSupported,
+  pruneSelectedImageParams,
+  resolveImageParametersForSelection,
+} from '../../services/image-binding-parameter-capabilities';
 
 interface AIImageGenerationProps {
   initialPrompt?: string;
@@ -134,7 +143,7 @@ function applyAspectRatioToParams(
   params: Record<string, string>,
   nextAspectRatio?: string
 ): Record<string, string> {
-  if (modelId.startsWith('mj') || !nextAspectRatio) {
+  if (!nextAspectRatio) {
     return params;
   }
 
@@ -263,6 +272,45 @@ const AIImageGeneration = ({
   const [error, setError] = useState<string | null>(null);
   const [uploadedImages, setUploadedImages] =
     useState<ReferenceImage[]>(initialImages);
+  const imageOperationIntent = useMemo(
+    () =>
+      resolveImageOperationIntent(
+        normalizeImageRequest({
+          prompt: 'capability-preview',
+          uploadedImages,
+          maskImage:
+            uploadedImages.length === 1
+              ? uploadedImages[0].maskImage
+              : undefined,
+        })
+      ),
+    [uploadedImages]
+  );
+  const imageBindingCapabilityRevision =
+    useImageBindingCapabilityRevision();
+  const bindingParameterState = useMemo(() => {
+    return resolveImageParametersForSelection(
+      currentModel,
+      currentModelRef,
+      imageOperationIntent,
+      imageBindingCapabilityRevision
+    );
+  }, [
+    currentModel,
+    currentModelRef,
+    imageBindingCapabilityRevision,
+    imageOperationIntent,
+  ]);
+  const compatibleImageParams = bindingParameterState.compatibleParams;
+  const hasCompatibleParams = compatibleImageParams.length > 0;
+  const bindingSupportsSize = isImageBindingParameterSupported(
+    bindingParameterState,
+    'size'
+  );
+  const bindingSupportsAspectRatio = isImageBindingParameterSupported(
+    bindingParameterState,
+    'aspectRatio'
+  );
 
   // 任务列表面板状态 - 使用像素宽度
   const [isTaskListVisible, setIsTaskListVisible] = useState(true);
@@ -287,11 +335,6 @@ const AIImageGeneration = ({
       setPromptHistoryVersion((version) => version + 1);
     });
   }, []);
-
-  const isMJModel = currentModel.startsWith('mj');
-  const hasCompatibleParams = React.useMemo(() => {
-    return getCompatibleParams(currentModel).length > 0;
-  }, [currentModel]);
 
   // Track if we're in manual edit mode (from handleEditTask) to prevent props from overwriting
   const [isManualEdit, setIsManualEdit] = useState(false);
@@ -368,7 +411,9 @@ const AIImageGeneration = ({
     const propsKey = JSON.stringify({
       prompt: initialPrompt,
       images: initialImages?.map((img) => img.url),
-      knowledgeContextRefs: initialKnowledgeContextRefs.map((ref) => ref.noteId),
+      knowledgeContextRefs: initialKnowledgeContextRefs.map(
+        (ref) => ref.noteId
+      ),
       elementIds: initialSelectedElementIds,
       width: initialWidth,
       height: initialHeight,
@@ -546,10 +591,11 @@ const AIImageGeneration = ({
   ]);
 
   useEffect(() => {
-    if (!hasCompatibleParams && Object.keys(mjSelectedParams).length > 0) {
-      setMjSelectedParams({});
-    }
-  }, [hasCompatibleParams, mjSelectedParams]);
+    setMjSelectedParams((previous) => {
+      const next = pruneSelectedImageParams(previous, compatibleImageParams);
+      return areImageParamSelectionsEqual(previous, next) ? previous : next;
+    });
+  }, [compatibleImageParams]);
 
   useEffect(() => {
     saveAIImageToolPreferences({
@@ -730,10 +776,6 @@ const AIImageGeneration = ({
         }
       }
 
-      if (isMJModel) {
-        setError(null);
-      }
-
       try {
         const finalWidth =
           typeof width === 'string' ? parseInt(width) || 1024 : width;
@@ -741,7 +783,12 @@ const AIImageGeneration = ({
           typeof height === 'string' ? parseInt(height) || 1024 : height;
         // Convert File objects to base64 data URLs for serialization
         const convertedImages = await convertImagesToSerializable();
-        const uploadedImageParams = stripMaskFromReferenceImages(convertedImages);
+        const uploadedImageParams =
+          stripMaskFromReferenceImages(convertedImages);
+        const submittedParams = pruneSelectedImageParams(
+          mjSelectedParams,
+          compatibleImageParams
+        );
 
         // 如果数量大于1，使用批量生成
         if (effectiveCount > 1) {
@@ -751,23 +798,18 @@ const AIImageGeneration = ({
           const currentImageModel =
             currentModel || resolveInvocationRoute('image').modelId;
 
-          const finalPrompt = currentImageModel.startsWith('mj')
-            ? [prompt.trim(), buildMJPromptSuffix(mjSelectedParams)]
-                .filter(Boolean)
-                .join(' ')
-            : (prompt || '').trim();
+          const finalPrompt = (prompt || '').trim();
 
-          // 非 MJ 模型的额外参数（如 seedream_quality）透传给 adapter
+          // Binding-scoped 参数统一透传，具体 serializer 只读取自己的字段。
           const extraParams =
-            !currentImageModel.startsWith('mj') &&
-            Object.keys(mjSelectedParams).length > 0
-              ? mjSelectedParams
+            Object.keys(submittedParams).length > 0
+              ? submittedParams
               : undefined;
 
           // 如果参数中有 size，优先使用参数中的 size
-          const finalSize = extraParams?.size
-            ? extraParams.size
-            : convertAspectRatioToSize(aspectRatio);
+          const finalSize = bindingSupportsSize
+            ? extraParams?.size || convertAspectRatioToSize(aspectRatio)
+            : undefined;
           const maskEditParams = buildMaskEditTaskParams(convertedImages);
 
           for (let i = 0; i < effectiveCount; i++) {
@@ -776,8 +818,8 @@ const AIImageGeneration = ({
               knowledgeContextRefs,
               width: finalWidth,
               height: finalHeight,
-              aspectRatio,
-              size: finalSize,
+              ...(bindingSupportsAspectRatio ? { aspectRatio } : {}),
+              ...(finalSize ? { size: finalSize } : {}),
               model: currentImageModel,
               modelRef: currentModelRef || null,
               uploadedImages: uploadedImageParams,
@@ -831,23 +873,18 @@ const AIImageGeneration = ({
         const currentImageModel =
           currentModel || resolveInvocationRoute('image').modelId;
 
-        const finalPrompt = currentImageModel.startsWith('mj')
-          ? [prompt.trim(), buildMJPromptSuffix(mjSelectedParams)]
-              .filter(Boolean)
-              .join(' ')
-          : (prompt || '').trim();
+        const finalPrompt = (prompt || '').trim();
 
-        // 非 MJ 模型的额外参数（如 seedream_quality）透传给 adapter
+        // Binding-scoped 参数统一透传，具体 serializer 只读取自己的字段。
         const extraParams =
-          !currentImageModel.startsWith('mj') &&
-          Object.keys(mjSelectedParams).length > 0
-            ? mjSelectedParams
+          Object.keys(submittedParams).length > 0
+            ? submittedParams
             : undefined;
 
         // 如果参数中有 size，优先使用参数中的 size
-        const finalSize = extraParams?.size
-          ? extraParams.size
-          : convertAspectRatioToSize(aspectRatio);
+        const finalSize = bindingSupportsSize
+          ? extraParams?.size || convertAspectRatioToSize(aspectRatio)
+          : undefined;
         const maskEditParams = buildMaskEditTaskParams(convertedImages);
 
         // 创建任务参数（单个任务也保留 batchId，便于关联外部工作流和批次元数据）
@@ -856,8 +893,8 @@ const AIImageGeneration = ({
           knowledgeContextRefs,
           width: finalWidth,
           height: finalHeight,
-          aspectRatio,
-          size: finalSize,
+          ...(bindingSupportsAspectRatio ? { aspectRatio } : {}),
+          ...(finalSize ? { size: finalSize } : {}),
           model: currentImageModel,
           modelRef: currentModelRef || null,
           // 保存上传的图片（已转换为可序列化的格式）
@@ -1026,6 +1063,7 @@ const AIImageGeneration = ({
                 <ParametersDropdown
                   selectedParams={mjSelectedParams}
                   onParamChange={handleMJParamChange}
+                  compatibleParams={compatibleImageParams}
                   modelId={currentModel}
                   language={language}
                   disabled={isGenerating}

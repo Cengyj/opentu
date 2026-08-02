@@ -283,6 +283,63 @@ describe('TaskStorageWriter persistence guards', () => {
     });
   });
 
+  it('derives legacy url fields from canonical image artifacts at completion', async () => {
+    const { taskStorageWriter } = await import('./task-storage-writer');
+    const taskId = 'canonical-artifact-projection';
+    await taskStorageWriter.saveTask(
+      imageTask(taskId, 'processing', 1)
+    );
+
+    const completed = await taskStorageWriter.completeTask(taskId, {
+      url: '/__aitu_cache__/image/stale-primary.png',
+      urls: ['/__aitu_cache__/image/stale-primary.png'],
+      imageArtifacts: [
+        {
+          url: '/__aitu_cache__/image/canonical-first.webp',
+          source: 'url',
+          mimeType: 'image/webp',
+          format: 'webp',
+        },
+        {
+          url: '/__aitu_cache__/image/canonical-second.jpg',
+          source: 'url',
+          mimeType: 'image/jpeg',
+          format: 'jpg',
+        },
+        {
+          url: '/__aitu_cache__/image/canonical-first.webp',
+          source: 'url',
+          mimeType: 'image/webp',
+          format: 'webp',
+        },
+      ],
+      format: 'png',
+      size: 0,
+    });
+
+    expect(completed.result).toMatchObject({
+      url: '/__aitu_cache__/image/canonical-first.webp',
+      urls: [
+        '/__aitu_cache__/image/canonical-first.webp',
+        '/__aitu_cache__/image/canonical-second.jpg',
+      ],
+      imageArtifacts: [
+        expect.objectContaining({
+          url: '/__aitu_cache__/image/canonical-first.webp',
+          mimeType: 'image/webp',
+        }),
+        expect.objectContaining({
+          url: '/__aitu_cache__/image/canonical-second.jpg',
+          mimeType: 'image/jpeg',
+        }),
+      ],
+    });
+    expect(completed.result?.imageArtifacts).toHaveLength(2);
+
+    const persisted = await taskStorageWriter.getTask(taskId);
+    expect(persisted?.result).toEqual(completed.result);
+  });
+
   it('preserves completion when it arrives before the initial task save finishes', async () => {
     const { taskStorageWriter } = await import('./task-storage-writer');
     const writerInternals = taskStorageWriter as unknown as {
@@ -499,6 +556,112 @@ describe('TaskStorageWriter persistence guards', () => {
     expect(winningTask.result).toBeUndefined();
     await expect(taskStorageWriter.getTask(taskId)).resolves.toMatchObject({
       status: 'cancelled',
+    });
+  });
+
+  it('rejects every stale image-attempt mutation while the current attempt completes normally', async () => {
+    const { taskStorageWriter } = await import('./task-storage-writer');
+    const { completeImageExecution, failImageExecution } = await import(
+      './image-execution-outcome'
+    );
+    const taskId = 'image-attempt-write-guard';
+    const currentStartedAt = 200;
+    const staleAttempt = { expectedStartedAt: 100 };
+    const currentAttempt = { expectedStartedAt: currentStartedAt };
+
+    await taskStorageWriter.saveTask({
+      ...imageTask(taskId, 'processing', currentStartedAt),
+      startedAt: currentStartedAt,
+      executionPhase: 'submitting',
+    });
+
+    await expect(
+      taskStorageWriter.updateStatus(taskId, 'processing', staleAttempt)
+    ).resolves.toBe(false);
+    await expect(
+      taskStorageWriter.updateProgress(taskId, 80, 'polling', staleAttempt)
+    ).resolves.toBe(false);
+    await expect(
+      taskStorageWriter.updateRemoteId(
+        taskId,
+        'stale-remote-id',
+        undefined,
+        staleAttempt
+      )
+    ).resolves.toBe(false);
+
+    const staleCompletion = await completeImageExecution(
+      taskId,
+      {
+        url: '/__aitu_cache__/image/content-stale.png',
+        format: 'png',
+        size: 0,
+      },
+      staleAttempt.expectedStartedAt
+    );
+    const staleFailure = await failImageExecution(
+      taskId,
+      { code: 'STALE_FAILURE', message: 'must be ignored' },
+      staleAttempt.expectedStartedAt
+    );
+    expect(staleCompletion).toMatchObject({
+      taskId,
+      status: 'stale',
+      attemptStartedAt: staleAttempt.expectedStartedAt,
+    });
+    expect(staleFailure).toMatchObject({
+      taskId,
+      status: 'stale',
+      attemptStartedAt: staleAttempt.expectedStartedAt,
+    });
+
+    await expect(
+      taskStorageWriter.updateProgress(taskId, 40, 'polling', currentAttempt)
+    ).resolves.toBe(true);
+    await expect(
+      taskStorageWriter.updateRemoteId(
+        taskId,
+        'current-remote-id',
+        undefined,
+        currentAttempt
+      )
+    ).resolves.toBe(true);
+    await expect(
+      completeImageExecution(
+        taskId,
+        {
+          url: '/__aitu_cache__/image/content-current.png',
+          format: 'png',
+          size: 0,
+        },
+        currentAttempt.expectedStartedAt
+      )
+    ).resolves.toMatchObject({
+      status: 'completed',
+      attemptStartedAt: currentStartedAt,
+      result: { url: '/__aitu_cache__/image/content-current.png' },
+    });
+
+    await completeImageExecution(
+      taskId,
+      {
+        url: '/__aitu_cache__/image/content-stale-after-retry.png',
+        format: 'png',
+        size: 0,
+      },
+      staleAttempt.expectedStartedAt
+    );
+    await failImageExecution(
+      taskId,
+      { code: 'STALE_AFTER_RETRY', message: 'must still be ignored' },
+      staleAttempt.expectedStartedAt
+    );
+
+    await expect(taskStorageWriter.getTask(taskId)).resolves.toMatchObject({
+      status: 'completed',
+      startedAt: currentStartedAt,
+      remoteId: 'current-remote-id',
+      result: { url: '/__aitu_cache__/image/content-current.png' },
     });
   });
 

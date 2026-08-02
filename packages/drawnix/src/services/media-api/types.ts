@@ -33,39 +33,11 @@ export interface ApiConfig {
 }
 
 /**
- * 图片 API 配置（扩展自基础配置）
- */
-export interface ImageApiConfig extends ApiConfig {
-  /** 默认模型名称 */
-  defaultModel?: string;
-}
-
-/**
  * 视频 API 配置（扩展自基础配置）
  */
 export interface VideoApiConfig extends ApiConfig {
   /** 默认模型名称 */
   defaultModel?: string;
-}
-
-/**
- * 图片生成参数
- */
-export interface ImageGenerationParams {
-  prompt: string;
-  model?: string;
-  /** 尺寸字符串，如 '1024x1024' */
-  size?: string;
-  /** 宽高比，如 '1:1', '16:9' */
-  aspectRatio?: string;
-  /** 参考图片 URL 或 base64 数组 */
-  referenceImages?: string[];
-  /** 图片编辑蒙版 URL 或 base64 */
-  maskImage?: string;
-  /** 质量设置 */
-  quality?: '1k' | '2k' | '4k' | string;
-  /** 生成数量 */
-  n?: number;
 }
 
 /**
@@ -82,18 +54,6 @@ export interface VideoGenerationParams {
   referenceImages?: string[];
   /** 额外参数（如 sora_mode） */
   params?: Record<string, unknown>;
-}
-
-/**
- * 图片生成结果
- */
-export interface ImageGenerationResult {
-  /** 主图片 URL */
-  url: string;
-  /** 多图时的所有 URL */
-  urls?: string[];
-  /** 图片格式 */
-  format?: string;
 }
 
 /**
@@ -118,7 +78,13 @@ export interface VideoGenerationResult {
 export interface VideoStatusResponse {
   id: string;
   model?: string;
-  status: 'queued' | 'in_progress' | 'completed' | 'failed' | 'succeeded' | 'error';
+  status:
+    | 'queued'
+    | 'in_progress'
+    | 'completed'
+    | 'failed'
+    | 'succeeded'
+    | 'error';
   progress?: number;
   video_url?: string;
   url?: string;
@@ -151,12 +117,4 @@ export interface PollingOptions {
   interval?: number;
   /** 最大尝试次数，默认 1080（90分钟） */
   maxAttempts?: number;
-}
-
-/**
- * 异步图片生成选项
- */
-export interface AsyncImageOptions extends PollingOptions {
-  /** 提交成功后的回调，返回远程任务 ID */
-  onSubmitted?: (remoteId: string) => void;
 }

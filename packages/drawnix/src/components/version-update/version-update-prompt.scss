@@ -19,9 +19,22 @@
     gap: 12px;
   }
 
+  &__message {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
   &__text {
     font-size: 14px;
     color: var(--td-text-color-primary);
+  }
+
+  &__hint {
+    max-width: 520px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--td-text-color-secondary);
   }
 
   @keyframes slideIn {

@@ -80,7 +80,7 @@ export interface ParametersDropdownProps {
     options?: { keepOpen?: boolean }
   ) => void;
   /** 预先计算好的兼容参数列表（可选，传入则跳过内部计算） */
-  compatibleParams?: ParamConfig[];
+  compatibleParams?: readonly ParamConfig[];
   /** 当前选中的模型 ID */
   modelId: string;
   /** 语言 */
@@ -311,7 +311,9 @@ export const ParametersDropdown: React.FC<ParametersDropdownProps> = ({
                 type="button"
                 disabled={disabled}
               >
-                <span className="parameters-dropdown__label">{triggerLabel}</span>
+                <span className="parameters-dropdown__label">
+                  {triggerLabel}
+                </span>
                 <ChevronDown
                   size={14}
                   className={`parameters-dropdown__icon ${
@@ -450,7 +452,9 @@ export const ParametersDropdown: React.FC<ParametersDropdownProps> = ({
                                   <button
                                     type="button"
                                     className="parameters-dropdown__field-action"
-                                    onClick={() => handleRandomParamValue(param)}
+                                    onClick={() =>
+                                      handleRandomParamValue(param)
+                                    }
                                     onMouseDown={(event) =>
                                       event.stopPropagation()
                                     }

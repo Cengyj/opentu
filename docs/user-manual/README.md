@@ -23,7 +23,14 @@ pnpm manual:screenshots
 
 # 2. 只编译 HTML（会自动复制 E2E 截图）
 pnpm manual:build
+
+# 3. 只验证现有产物是否与全部 MDX 页面一一对应
+pnpm manual:verify
 ```
+
+`pnpm exec nx serve web` 和 `pnpm exec nx build web` 会自动先生成并校验手册，
+无需单独提交 `apps/web/public/user-manual/` 生成目录。生成过程在临时目录完成，
+只有全部页面通过完整性校验后才替换现有产物。
 
 ## 目录结构
 

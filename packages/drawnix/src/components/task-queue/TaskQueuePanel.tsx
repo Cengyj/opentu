@@ -70,6 +70,7 @@ import {
 import { requestAIInputPrefill } from '../../services/ai-input-ui-events';
 import './task-queue.scss';
 import { HoverTip } from '../shared';
+import { getTaskResultArtifactUrls } from '../../utils/image-generation-anchor-batch';
 
 const { TabPanel } = Tabs;
 
@@ -86,6 +87,9 @@ export interface TaskQueuePanelProps {
 }
 
 function getTaskResultCount(task: Task): number {
+  if (task.type === TaskType.IMAGE) {
+    return getTaskResultArtifactUrls(task).length;
+  }
   if (Array.isArray(task.result?.urls) && task.result.urls.length > 0) {
     return task.result.urls.length;
   }
@@ -568,7 +572,10 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
       MessagePlugin.warning('无法插入：白板未就绪');
       return;
     }
+    const imageResultUrls =
+      task.type === TaskType.IMAGE ? getTaskResultArtifactUrls(task) : [];
     if (
+      imageResultUrls.length === 0 &&
       !task.result?.url &&
       !task.result?.urls?.length &&
       !isLyricsTask(task)
@@ -600,14 +607,13 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
     try {
       const taskResult = task.result!;
       if (task.type === TaskType.IMAGE) {
-        const urls = taskResult.urls?.length
-          ? taskResult.urls
-          : [taskResult.url];
-        for (const url of urls) {
+        for (const url of imageResultUrls) {
           await insertImageFromUrl(board, normalizeImageDataUrl(url));
         }
         MessagePlugin.success(
-          urls.length > 1 ? '多图已插入到白板' : '图片已插入到白板'
+          imageResultUrls.length > 1
+            ? '多图已插入到白板'
+            : '图片已插入到白板'
         );
       } else if (task.type === TaskType.VIDEO) {
         // 插入视频到白板
@@ -799,7 +805,9 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
     return filteredTasks.filter((t) => {
       if (
         t.status !== TaskStatus.COMPLETED ||
-        (!t.result?.url && !t.result?.urls?.length) ||
+        (t.type === TaskType.IMAGE
+          ? getTaskResultArtifactUrls(t).length === 0
+          : !t.result?.url && !t.result?.urls?.length) ||
         (t.type !== TaskType.IMAGE &&
           t.type !== TaskType.VIDEO &&
           !(t.type === TaskType.AUDIO && t.result?.resultKind !== 'lyrics'))
@@ -885,9 +893,12 @@ export const TaskQueuePanel: React.FC<TaskQueuePanelProps> = ({
               }));
         items.push(...mediaItems);
       } else {
-        const urls = task.result!.urls?.length
-          ? task.result!.urls
-          : [task.result!.url];
+        const urls =
+          task.type === TaskType.IMAGE
+            ? getTaskResultArtifactUrls(task)
+            : task.result!.urls?.length
+            ? task.result!.urls
+            : [task.result!.url];
         const mediaType =
           task.type === TaskType.VIDEO
             ? ('video' as const)

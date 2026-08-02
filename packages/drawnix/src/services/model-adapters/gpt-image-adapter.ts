@@ -8,8 +8,10 @@ import {
   resolveOfficialGPTImageEditSize,
   resolveOfficialGPTImageSize,
 } from './image-size-quality-resolver';
-import { sendAdapterRequest } from './context';
+import { requireImageBinding, sendAdapterRequest } from './context';
 import { registerModelAdapter } from './registry';
+import { parseOpenAIImageArtifacts } from '../image-invocation/artifacts';
+import { createImageProviderRejectionError } from '../image-invocation/errors';
 import type {
   ImageGenerationRequest,
   ImageGenerationResult,
@@ -20,57 +22,11 @@ const GPT_IMAGE_OUTPUT_FORMATS = new Set(['png', 'jpeg', 'webp']);
 const GPT_IMAGE_BACKGROUND_VALUES = new Set(['transparent', 'opaque', 'auto']);
 const GPT_IMAGE_MODERATION_VALUES = new Set(['low', 'auto']);
 const GPT_IMAGE_INPUT_FIDELITY_VALUES = new Set(['high', 'low']);
-const GPT_IMAGE_RESPONSE_FORMAT_VALUES = new Set(['url', 'b64_json']);
 
-function getStringParam(
-  params: Record<string, unknown> | undefined,
-  key: string
-): string | undefined {
-  const value = params?.[key];
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-function getNumberParam(
-  params: Record<string, unknown> | undefined,
-  key: string
-): number | undefined {
-  const value = params?.[key];
-  return typeof value === 'number' && Number.isFinite(value)
-    ? value
-    : undefined;
-}
-
-function getStringFieldOrParam(
-  fieldValue: string | undefined,
-  params: Record<string, unknown> | undefined,
-  key: string
-): string | undefined {
-  return fieldValue && fieldValue.trim()
-    ? fieldValue.trim()
-    : getStringParam(params, key);
-}
-
-function getNumberFieldOrParam(
-  fieldValue: number | undefined,
-  params: Record<string, unknown> | undefined,
-  key: string
-): number | undefined {
-  return typeof fieldValue === 'number' && Number.isFinite(fieldValue)
-    ? fieldValue
-    : getNumberParam(params, key);
-}
-
-function setAllowedStringParam(
-  body: Record<string, unknown>,
-  params: Record<string, unknown> | undefined,
-  key: string,
-  allowed: Set<string>
-): void {
-  const value = getStringParam(params, key);
-  if (value && allowed.has(value)) {
-    body[key] = value;
-  }
-}
+type GPTImageSerializationRequest = Omit<
+  ImageGenerationRequest,
+  'operationIntent'
+>;
 
 function setAllowedStringValue(
   body: Record<string, unknown>,
@@ -83,44 +39,30 @@ function setAllowedStringValue(
   }
 }
 
-function getGPTImageResponseFormat(
-  params: Record<string, unknown> | undefined
-): 'url' | 'b64_json' | undefined {
-  const value = getStringParam(params, 'response_format');
-  return value && GPT_IMAGE_RESPONSE_FORMAT_VALUES.has(value)
-    ? (value as 'url' | 'b64_json')
-    : undefined;
-}
-
 function applyCommonGPTImageOptions(
   body: Record<string, unknown>,
-  request: ImageGenerationRequest,
+  request: GPTImageSerializationRequest,
   mode: 'generation' | 'edit' = 'generation'
 ): void {
-  const params = request.params;
-  const requestedSize = getStringParam(params, 'size') || request.size;
+  const resolutionOptions = {
+    resolution: request.resolution,
+    quality: request.quality,
+  };
   const size =
     mode === 'edit'
-      ? resolveOfficialGPTImageEditSize(request.model, requestedSize, params)
-      : resolveOfficialGPTImageSize(request.model, requestedSize, params);
-  const quality = resolveOfficialGPTImageQuality(params);
-  const n = getNumberParam(params, 'n') ?? getNumberParam(params, 'count');
-  const outputCompression = getNumberFieldOrParam(
-    request.outputCompression,
-    params,
-    'output_compression'
-  );
-  const user = getStringParam(params, 'user');
-  const outputFormat = getStringFieldOrParam(
-    request.outputFormat,
-    params,
-    'output_format'
-  );
-  const background = getStringFieldOrParam(
-    request.background,
-    params,
-    'background'
-  );
+      ? resolveOfficialGPTImageEditSize(
+          request.model,
+          request.size,
+          resolutionOptions
+        )
+      : resolveOfficialGPTImageSize(
+          request.model,
+          request.size,
+          resolutionOptions
+        );
+  const quality = resolveOfficialGPTImageQuality({ quality: request.quality });
+  const n = request.count;
+  const outputCompression = request.outputCompression;
 
   if (size) {
     body.size = size;
@@ -135,8 +77,8 @@ function applyCommonGPTImageOptions(
   ) {
     body.output_compression = outputCompression;
   }
-  if (user) {
-    body.user = user;
+  if (request.user) {
+    body.user = request.user;
   }
   if (quality) {
     body.quality = quality;
@@ -145,25 +87,25 @@ function applyCommonGPTImageOptions(
   setAllowedStringValue(
     body,
     'output_format',
-    outputFormat,
+    request.outputFormat,
     GPT_IMAGE_OUTPUT_FORMATS
   );
   setAllowedStringValue(
     body,
     'background',
-    background,
+    request.background,
     GPT_IMAGE_BACKGROUND_VALUES
   );
-  setAllowedStringParam(
+  setAllowedStringValue(
     body,
-    params,
     'moderation',
+    request.moderation,
     GPT_IMAGE_MODERATION_VALUES
   );
 }
 
 export function buildGPTImageGenerationBody(
-  request: ImageGenerationRequest
+  request: GPTImageSerializationRequest
 ): Record<string, unknown> {
   if (!request.model) {
     throw new Error('GPT Image 请求缺少模型 ID');
@@ -173,9 +115,8 @@ export function buildGPTImageGenerationBody(
     model: request.model,
     prompt: request.prompt,
   };
-  const responseFormat = getGPTImageResponseFormat(request.params);
-  if (responseFormat) {
-    body.response_format = responseFormat;
+  if (request.responseFormat) {
+    body.response_format = request.responseFormat;
   }
 
   applyCommonGPTImageOptions(body, request, 'generation');
@@ -207,8 +148,10 @@ function getBlobExtension(blob: Blob, source: string): string {
 async function imageInputToBlob(
   value: string,
   filenamePrefix: string,
-  fetcher: typeof fetch = fetch
+  fetcher: typeof fetch = fetch,
+  signal?: AbortSignal
 ): Promise<{ blob: Blob; filename: string }> {
+  throwIfAborted(signal);
   const normalized = normalizeImageDataUrl(value, 'image/png');
 
   if (normalized.startsWith('data:')) {
@@ -219,7 +162,9 @@ async function imageInputToBlob(
     };
   }
 
-  const response = await fetcher(normalized);
+  const response = signal
+    ? await fetcher(normalized, { signal })
+    : await fetcher(normalized);
   if (!response.ok) {
     throw new Error(
       `GPT Image 编辑图片读取失败: ${response.status} ${response.statusText}`
@@ -237,9 +182,11 @@ async function imageInputToBlob(
 }
 
 export async function buildGPTImageEditFormData(
-  request: ImageGenerationRequest,
-  fetcher?: typeof fetch
+  request: GPTImageSerializationRequest,
+  fetcher?: typeof fetch,
+  signal?: AbortSignal
 ): Promise<FormData> {
+  throwIfAborted(signal);
   if (!request.model) {
     throw new Error('GPT Image 编辑请求缺少模型 ID');
   }
@@ -249,28 +196,15 @@ export async function buildGPTImageEditFormData(
     throw new Error('GPT Image 编辑请求缺少参考图片');
   }
 
-  const params = request.params;
-  const inputFidelity = getStringFieldOrParam(
-    request.inputFidelity,
-    params,
-    'input_fidelity'
-  );
-  const maskImage =
-    getStringFieldOrParam(request.maskImage, params, 'maskImage') ||
-    getStringParam(params, 'mask_image');
   const fields: Record<string, unknown> = {
     model: request.model,
     prompt: request.prompt,
   };
-  const responseFormat = getGPTImageResponseFormat(params);
-  if (responseFormat) {
-    fields.response_format = responseFormat;
-  }
 
   setAllowedStringValue(
     fields,
     'input_fidelity',
-    inputFidelity,
+    request.inputFidelity,
     GPT_IMAGE_INPUT_FIDELITY_VALUES
   );
   applyCommonGPTImageOptions(fields, request, 'edit');
@@ -281,19 +215,25 @@ export async function buildGPTImageEditFormData(
   }
 
   for (let index = 0; index < referenceImages.length; index += 1) {
+    const referenceImage = referenceImages[index];
+    if (!referenceImage) {
+      continue;
+    }
     const { blob, filename } = await imageInputToBlob(
-      referenceImages[index]!,
+      referenceImage,
       `image-${index + 1}`,
-      fetcher
+      fetcher,
+      signal
     );
     formData.append('image[]', blob, filename);
   }
 
-  if (maskImage) {
+  if (request.maskImage) {
     const { blob, filename } = await imageInputToBlob(
-      maskImage,
+      request.maskImage,
       'mask',
-      fetcher
+      fetcher,
+      signal
     );
     formData.append('mask', blob, filename);
   }
@@ -301,104 +241,68 @@ export async function buildGPTImageEditFormData(
   return formData;
 }
 
-function isGPTImageEditRequest(
-  request: ImageGenerationRequest,
-  requestSchema?: string
+function resolveGPTImageEditMode(
+  binding: { requestSchema: string; protocol: string },
+  request: ImageGenerationRequest
 ): boolean {
-  const hasReferenceImages =
-    (request.referenceImages && request.referenceImages.length > 0) ||
-    request.maskImage;
-  if (!hasReferenceImages) {
-    return false;
+  if (
+    request.operationIntent !== 'generation' &&
+    request.operationIntent !== 'edit'
+  ) {
+    throw new Error('GPT Image adapter 缺少已解析 operationIntent');
   }
-  if (requestSchema === 'openai.image.gpt-edit-form') {
-    return true;
+
+  const bindingIsEdit =
+    binding.protocol === 'openai.images.edits' &&
+    binding.requestSchema === 'openai.image.gpt-edit-form';
+
+  const bindingIsGeneration =
+    binding.protocol === 'openai.images.generations' &&
+    binding.requestSchema === 'openai.image.gpt-generation-json';
+
+  if (!bindingIsEdit && !bindingIsGeneration) {
+    throw new Error(
+      `GPT Image adapter 不支持 binding schema: ${
+        binding.requestSchema || 'unknown'
+      }`
+    );
   }
-  return (
-    request.generationMode === 'image_edit' ||
-    request.generationMode === 'image_to_image'
-  );
+
+  if ((request.operationIntent === 'edit') !== bindingIsEdit) {
+    throw new Error(
+      `GPT Image 请求意图与已选 binding 不一致: ${
+        binding.requestSchema || 'unknown'
+      }`
+    );
+  }
+
+  return bindingIsEdit;
 }
 
-function resolveGPTImagePath(
-  context: { binding?: { submitPath?: string; requestSchema?: string } | null },
-  isEditRequest: boolean
-): string {
-  const binding = context.binding;
-
-  if (isEditRequest) {
-    return binding?.requestSchema === 'openai.image.gpt-edit-form' &&
-      binding.submitPath
-      ? binding.submitPath
-      : '/images/edits';
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) {
+    return;
   }
 
-  if (binding?.submitPath && binding.submitPath !== '/images/edits') {
-    return binding.submitPath;
+  if (signal.reason instanceof Error) {
+    throw signal.reason;
   }
 
-  return '/images/generations';
-}
-
-function normalizeImageValue(
-  value: unknown,
-  fallbackFormat?: string
-): string | undefined {
-  if (typeof value !== 'string' || !value.trim()) {
-    return undefined;
-  }
-
-  const mimeType = fallbackFormat ? `image/${fallbackFormat}` : 'image/png';
-  return normalizeImageDataUrl(value, mimeType);
+  throw new DOMException('Aborted', 'AbortError');
 }
 
 export function parseGPTImageResponse(
   response: unknown,
   fallbackFormat?: string
 ): ImageGenerationResult {
-  const data = response as {
-    data?: Array<Record<string, unknown>>;
-    output_format?: string;
+  const defaultMimeType = fallbackFormat
+    ? fallbackFormat.startsWith('image/')
+      ? fallbackFormat
+      : `image/${fallbackFormat}`
+    : undefined;
+  return {
+    artifacts: parseOpenAIImageArtifacts(response, { defaultMimeType }),
   };
-  const formatHint =
-    typeof data?.output_format === 'string'
-      ? data.output_format
-      : fallbackFormat;
-
-  if (Array.isArray(data?.data)) {
-    const urls = data.data
-      .map((item) =>
-        normalizeImageValue(item.b64_json || item.url, formatHint || 'png')
-      )
-      .filter(Boolean) as string[];
-    const firstUrl = urls[0];
-
-    if (firstUrl) {
-      const format = getFileExtension(firstUrl) || formatHint || 'png';
-      return {
-        url: firstUrl,
-        urls,
-        format: format === 'bin' ? formatHint || 'png' : format,
-        raw: response,
-      };
-    }
-  }
-
-  throw new Error('GPT Image API 未返回有效的图片数据');
-}
-
-async function readErrorMessage(response: Response): Promise<string> {
-  const data = await response.json().catch(() => null);
-  if (typeof data?.error === 'string') {
-    return data.error;
-  }
-  if (typeof data?.error?.message === 'string') {
-    return data.error.message;
-  }
-  if (typeof data?.message === 'string') {
-    return data.message;
-  }
-  return `GPT Image request failed: ${response.status}`;
 }
 
 export const gptImageAdapter: ImageModelAdapter = {
@@ -412,22 +316,17 @@ export const gptImageAdapter: ImageModelAdapter = {
   ],
   defaultModel: 'gpt-image-2',
   async generateImage(context, request) {
-    console.debug('[gpt-image-adapter] generateImage called', {
-      bindingProtocol: context.binding?.protocol,
-      bindingRequestSchema: context.binding?.requestSchema,
-      bindingSubmitPath: context.binding?.submitPath,
-      generationMode: request.generationMode,
-      hasReferenceImages: !!(request.referenceImages && request.referenceImages.length > 0),
-      referenceImagesCount: request.referenceImages?.length ?? 0,
-      hasMaskImage: !!request.maskImage,
+    throwIfAborted(request.signal);
+    const binding = requireImageBinding(context, request, {
+      adapterLabel: 'GPT Image adapter',
     });
-    const isEditRequest = isGPTImageEditRequest(
-      request,
-      context.binding?.requestSchema
-    );
-    console.debug('[gpt-image-adapter] isEditRequest:', isEditRequest);
+    const isEditRequest = resolveGPTImageEditMode(binding, request);
     const editFormData = isEditRequest
-      ? await buildGPTImageEditFormData(request, context.fetcher)
+      ? await buildGPTImageEditFormData(
+          request,
+          context.fetcher,
+          request.signal
+        )
       : null;
     const generationBody = isEditRequest
       ? null
@@ -437,23 +336,39 @@ export const gptImageAdapter: ImageModelAdapter = {
       : typeof generationBody?.output_format === 'string'
       ? generationBody.output_format
       : undefined;
-    const response = await sendAdapterRequest(context, {
-      path: resolveGPTImagePath(context, isEditRequest),
-      method: 'POST',
-      headers: isEditRequest
-        ? undefined
-        : {
-            'Content-Type': 'application/json',
-          },
-      body: editFormData || JSON.stringify(generationBody),
-    });
+    request.telemetry?.increment('submitRequests');
+    const submit = () =>
+      sendAdapterRequest(context, {
+        path: binding.submitPath,
+        baseUrlStrategy: binding.baseUrlStrategy,
+        method: binding.submitMethod,
+        headers: isEditRequest
+          ? undefined
+          : {
+              'Content-Type': 'application/json',
+            },
+        body: editFormData || JSON.stringify(generationBody),
+        signal: request.signal,
+      });
+    const response = request.telemetry
+      ? await request.telemetry.measure('submit', submit)
+      : await submit();
 
     if (!response.ok) {
-      throw new Error(await readErrorMessage(response));
+      throw await createImageProviderRejectionError(response, {
+        bindingId: binding.id,
+        label: 'GPT Image 请求失败',
+      });
     }
 
-    const result = await response.json();
-    return parseGPTImageResponse(result, outputFormat);
+    request.telemetry?.increment('responseParses');
+    const parseResponse = async () => {
+      const result = await response.json();
+      return parseGPTImageResponse(result, outputFormat);
+    };
+    return request.telemetry
+      ? request.telemetry.measure('responseParsing', parseResponse)
+      : parseResponse();
   },
 };
 

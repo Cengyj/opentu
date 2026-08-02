@@ -11,37 +11,20 @@ import type {
   MCPExecuteOptions,
   MCPTaskResult,
 } from '../types';
-import type { LayoutStyle, GridConfig } from '../../types/photo-wall.types';
+import type { LayoutStyle } from '../../types/photo-wall.types';
 import {
   LAYOUT_STYLES,
   GRID_IMAGE_DEFAULTS,
-  GRID_IMAGE_PROMPT_TEMPLATE,
 } from '../../types/photo-wall.types';
-import { taskQueueService } from '../../services/task-queue';
-import { TaskType } from '../../types/task.types';
-import { getCurrentImageModel } from './image-generation';
+import {
+  createGridImageTask as createGridImageCanvasTask,
+  type GridImageParams,
+} from '../../services/canvas-operations/grid-image';
 
 /**
  * 宫格图工具参数
  */
-export interface GridImageToolParams {
-  /** 主题描述 */
-  theme: string;
-  /** 网格行数（默认 3） */
-  rows?: number;
-  /** 网格列数（默认 3） */
-  cols?: number;
-  /** 布局风格（默认散落） */
-  layoutStyle?: LayoutStyle;
-  /** 图片尺寸（默认 1x1） */
-  imageSize?: string;
-  /** 分辨率档位（默认 2k） */
-  imageQuality?: '1k' | '2k' | '4k';
-  /** 参考图片 URL 列表 */
-  referenceImages?: string[];
-  /** AI 模型 */
-  model?: string;
-}
+export type GridImageToolParams = GridImageParams;
 
 /**
  * 获取布局风格描述
@@ -50,141 +33,6 @@ function getLayoutStyleDescription(): string {
   return LAYOUT_STYLES.map(
     (s) => `- ${s.style}（${s.labelZh}）：${s.description}`
   ).join('\n');
-}
-
-/**
- * 构建宫格图生图提示词
- */
-function buildGridImagePrompt(theme: string, gridConfig: GridConfig): string {
-  const template = GRID_IMAGE_PROMPT_TEMPLATE.zh;
-  return template(theme, gridConfig.rows, gridConfig.cols);
-}
-
-/**
- * 创建宫格图任务（queue 模式）
- * 复用图片生成的任务队列，添加宫格图特有参数
- */
-function executeQueue(
-  params: GridImageToolParams,
-  options: MCPExecuteOptions
-): MCPTaskResult {
-  const {
-    theme,
-    rows = GRID_IMAGE_DEFAULTS.gridConfig.rows,
-    cols = GRID_IMAGE_DEFAULTS.gridConfig.cols,
-    layoutStyle = GRID_IMAGE_DEFAULTS.layoutStyle,
-    imageSize = GRID_IMAGE_DEFAULTS.imageSize,
-    imageQuality = GRID_IMAGE_DEFAULTS.imageQuality,
-    referenceImages,
-    model,
-  } = params;
-
-  // 获取实际使用的模型
-  const actualModel = model || getCurrentImageModel();
-
-  if (!theme || typeof theme !== 'string') {
-    return {
-      success: false,
-      error: '缺少必填参数 theme（主题描述）',
-      type: 'error',
-    };
-  }
-
-  // 验证参数范围
-  const validRows = Math.min(Math.max(2, rows), 5);
-  const validCols = Math.min(Math.max(2, cols), 5);
-
-  const gridConfig: GridConfig = { rows: validRows, cols: validCols };
-
-  // 构建生图提示词
-  const prompt = buildGridImagePrompt(theme, gridConfig);
-
-  // 将参考图片转换为 uploadedImages 格式
-  const uploadedImages = referenceImages?.map((url, index) => ({
-    type: 'url' as const,
-    url,
-    name: `reference-${index + 1}`,
-  }));
-
-  // console.log('[GridImageTool] Creating grid image task with params:', {
-  //   theme,
-  //   gridConfig,
-  //   layoutStyle,
-  //   imageSize,
-  //   imageQuality,
-  //   referenceImages: referenceImages?.length || 0,
-  // });
-
-  try {
-    let task;
-
-    // 如果是重试，复用原有任务
-    if (options.retryTaskId) {
-      // console.log('[GridImageTool] Retrying existing task:', options.retryTaskId);
-      taskQueueService.retryTask(options.retryTaskId);
-      task = taskQueueService.getTask(options.retryTaskId);
-      if (!task) {
-        throw new Error(`重试任务不存在: ${options.retryTaskId}`);
-      }
-    } else {
-      // 创建宫格图任务（使用 IMAGE 类型复用图片生成能力）
-      // 任务完成后由 useAutoInsertToCanvas 使用 splitAndInsertImages 处理分割和布局
-      task = taskQueueService.createTask(
-        {
-          prompt,
-          size: imageSize,
-          model: actualModel,
-          // 参考图片
-          uploadedImages:
-            uploadedImages && uploadedImages.length > 0
-              ? uploadedImages
-              : undefined,
-          params: {
-            resolution: imageQuality,
-          },
-          // 宫格图特有参数，用于任务完成后的处理
-          gridImageRows: validRows,
-          gridImageCols: validCols,
-          gridImageLayoutStyle: layoutStyle as
-            | 'scattered'
-            | 'grid'
-            | 'circular',
-          // 保存原始主题，用于显示
-          originalTheme: theme,
-          // 批量参数
-          batchId: options.batchId,
-          globalIndex: options.globalIndex || 1,
-          // 自动插入画布
-          autoInsertToCanvas: true,
-        },
-        TaskType.IMAGE
-      );
-    }
-
-    // console.log('[GridImageTool] Created/retried grid image task:', task.id);
-
-    return {
-      success: true,
-      data: {
-        taskId: task.id,
-        theme,
-        gridConfig,
-        layoutStyle,
-        prompt: prompt.substring(0, 100) + '...',
-      },
-      type: 'image', // 使用 image 类型以便 UI 正确显示
-      taskId: task.id,
-      task,
-    };
-  } catch (error: any) {
-    console.error('[GridImageTool] Failed to create task:', error);
-
-    return {
-      success: false,
-      error: error.message || '创建宫格图任务失败',
-      type: 'error',
-    };
-  }
 }
 
 /**
@@ -258,6 +106,15 @@ ${getLayoutStyleDescription()}
       model: {
         type: 'string',
         description: '图片生成模型名称（可选，默认使用当前设置的模型）',
+      },
+      modelRef: {
+        type: 'object',
+        description: '图片模型所属供应商与模型的稳定引用',
+        properties: {
+          profileId: { type: 'string' },
+          modelId: { type: 'string' },
+        },
+        required: ['profileId', 'modelId'],
       },
     },
     required: ['theme'],
@@ -345,9 +202,9 @@ ${getLayoutStyleDescription()}
   ): Promise<MCPResult> => {
     // 宫格图只支持 queue 模式，因为需要任务完成后的后处理
     // taskQueueService 会根据 SW 可用性自动选择正确的服务
-    return executeQueue(
+    return createGridImageCanvasTask(
       params as unknown as GridImageToolParams,
-      options || {}
+      options
     );
   },
 };
@@ -359,8 +216,5 @@ export function createGridImageTask(
   params: GridImageToolParams,
   options?: Omit<MCPExecuteOptions, 'mode'>
 ): MCPTaskResult {
-  return gridImageTool.execute(params as unknown as Record<string, unknown>, {
-    ...options,
-    mode: 'queue',
-  }) as unknown as MCPTaskResult;
+  return createGridImageCanvasTask(params, options);
 }

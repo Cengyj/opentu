@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { createReleaseId } = require('./release-identity.cjs');
 
 function getCurrentVersion() {
   const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf8'));
@@ -145,16 +146,32 @@ function createVersionFile(version, commits) {
     changelog = uniqueChangelog;
   }
 
+  const buildTime = process.env.OPENTU_BUILD_TIME || new Date().toISOString();
+  let gitCommit = process.env.GITHUB_SHA || 'unknown';
+  if (gitCommit === 'unknown') {
+    try {
+      gitCommit = execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim();
+    } catch {
+      // buildTime still provides a unique release identity outside Git checkouts
+    }
+  }
+  const releaseId = createReleaseId({
+    version,
+    explicitReleaseId: process.env.OPENTU_RELEASE_ID,
+    gitCommit,
+    buildTime,
+  });
   const versionInfo = {
     version: version,
-    buildTime: new Date().toISOString(),
-    gitCommit: process.env.GITHUB_SHA || 'unknown',
+    releaseId,
+    buildTime,
+    gitCommit,
     changelog: changelog
   };
 
   const versionPath = path.join(__dirname, '../apps/web/public/version.json');
   fs.writeFileSync(versionPath, JSON.stringify(versionInfo, null, 2));
-  console.log(`✅ 版本信息文件已创建: ${version} (包含 ${changelog.length} 条更新日志)`);
+  console.log(`✅ 版本信息文件已创建: ${version} (${releaseId}, 包含 ${changelog.length} 条更新日志)`);
 }
 
 // 获取上一个版本号

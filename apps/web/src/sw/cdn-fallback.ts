@@ -9,11 +9,6 @@
  * 4. 本地服务器（回退）
  */
 
-// 开发模式检测
-const isDevelopment =
-  typeof location !== 'undefined' &&
-  (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
-
 export type CDNName = 'jsdelivr' | 'local';
 
 export interface CDNPreference {
@@ -600,10 +595,9 @@ export async function fetchFromCDNWithFallback(
   localOrigin: string,
   options: FetchFallbackOptions = {}
 ): Promise<{ response: Response; source: string; targetUrl: string } | null> {
-  if (isDevelopment) {
-    return null;
-  }
-
+  // Build-mode policy belongs to the service-worker orchestrator. A localhost
+  // hostname is also a valid production deployment address and must retain
+  // the same CDN -> local-origin recovery behavior as any other origin.
   await ensureCDNPreferenceLoaded();
 
   const {

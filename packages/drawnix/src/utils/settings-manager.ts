@@ -11,6 +11,10 @@ import type { GeminiConfig } from './gemini-api/types';
 import type { VideoAPIConfig } from './config-indexeddb-writer';
 import type { ProviderPricingCache } from './model-pricing-types';
 import {
+  IMAGE_ROUTING_EVIDENCE_VERSION,
+  isProviderCatalogImageRoutingEvidenceCurrent,
+} from './image-routing-evidence';
+import {
   DEFAULT_PROVIDER_IMAGE_API_COMPATIBILITY,
   type AppSettings,
   type GeminiSettings,
@@ -196,11 +200,14 @@ class SettingsManager {
   private settings: AppSettings;
   private listeners: Map<string, Set<AnySettingsListener>> = new Map();
   private cryptoAvailable = false;
+  private cryptoInitializationPromise: Promise<void>;
   private initializationPromise: Promise<void> | null = null;
   private shouldPersistSettingsAfterInitialization = false;
+  private storagePersistenceQueue: Promise<void> = Promise.resolve();
 
   private constructor() {
     this.settings = this.loadSettings();
+    this.cryptoInitializationPromise = this.initializeCrypto();
     this.initializationPromise = this.initializeAsync();
   }
 
@@ -220,7 +227,7 @@ class SettingsManager {
    */
   private async initializeAsync(): Promise<void> {
     try {
-      await this.initializeCrypto();
+      await this.cryptoInitializationPromise;
       // 加密功能初始化完成后，解密已加载的敏感数据
       await this.decryptSensitiveDataForLoading(this.settings);
       this.initializeFromUrl();
@@ -229,7 +236,10 @@ class SettingsManager {
         await this.saveToStorage();
       } else {
         // 初始化完成后，同步配置到 IndexedDB，供 SW 读取
-        await this.syncToIndexedDB();
+        const indexedDBSnapshot = this.createIndexedDBConfigSnapshot();
+        await this.enqueueStoragePersistence(() =>
+          this.syncToIndexedDB(indexedDBSnapshot)
+        );
       }
       // console.log('SettingsManager initialization completed');
     } catch (error) {
@@ -322,6 +332,7 @@ class SettingsManager {
     providerType?: ProviderType | string | null
   ): ProviderType {
     if (
+      providerType === 'auto' ||
       providerType === 'openai-compatible' ||
       providerType === 'gemini-compatible' ||
       providerType === 'custom'
@@ -490,7 +501,7 @@ class SettingsManager {
       imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
         profile?.imageApiCompatibility
       ),
-      preferAsyncImageEndpoint: profile?.preferAsyncImageEndpoint === true,
+      extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
       enabled: true,
       capabilities: { ...DEFAULT_PROVIDER_CAPABILITIES },
     };
@@ -526,7 +537,6 @@ class SettingsManager {
       imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
         profile?.imageApiCompatibility
       ),
-      preferAsyncImageEndpoint: profile?.preferAsyncImageEndpoint === true,
       extraHeaders: this.normalizeStringRecord(profile?.extraHeaders),
       enabled: profile?.enabled !== false,
       capabilities: this.normalizeCapabilities(profile?.capabilities),
@@ -612,7 +622,6 @@ class SettingsManager {
           imageApiCompatibility: this.normalizeStoredImageApiCompatibility(
             profile.imageApiCompatibility
           ),
-          preferAsyncImageEndpoint: profile.preferAsyncImageEndpoint === true,
           extraHeaders: this.normalizeStringRecord(profile.extraHeaders),
           enabled: profile.enabled !== false,
           capabilities: this.normalizeCapabilities(profile.capabilities),
@@ -645,20 +654,31 @@ class SettingsManager {
         return;
       }
 
+      const discoveredModels = Array.isArray(draft.discoveredModels)
+        ? draft.discoveredModels.filter(
+            (item): item is ModelConfig => !!item && typeof item === 'object'
+          )
+        : [];
+      const selectedModelIds = Array.isArray(draft.selectedModelIds)
+        ? draft.selectedModelIds.filter(
+            (id): id is string => typeof id === 'string'
+          )
+        : [];
+      const routingEvidenceVersion =
+        typeof draft.routingEvidenceVersion === 'number' &&
+        Number.isFinite(draft.routingEvidenceVersion)
+          ? draft.routingEvidenceVersion
+          : discoveredModels.length === 0 && selectedModelIds.length === 0
+          ? IMAGE_ROUTING_EVIDENCE_VERSION
+          : undefined;
+
       result.set(draft.profileId.trim(), {
         profileId: draft.profileId.trim(),
+        routingEvidenceVersion,
         discoveredAt:
           typeof draft.discoveredAt === 'number' ? draft.discoveredAt : null,
-        discoveredModels: Array.isArray(draft.discoveredModels)
-          ? draft.discoveredModels.filter(
-              (item): item is ModelConfig => !!item && typeof item === 'object'
-            )
-          : [],
-        selectedModelIds: Array.isArray(draft.selectedModelIds)
-          ? draft.selectedModelIds.filter(
-              (id): id is string => typeof id === 'string'
-            )
-          : [],
+        discoveredModels,
+        selectedModelIds,
         sourceBaseUrl:
           typeof draft.sourceBaseUrl === 'string'
             ? draft.sourceBaseUrl
@@ -666,6 +686,67 @@ class SettingsManager {
         signature:
           typeof draft.signature === 'string' ? draft.signature : undefined,
         error: typeof draft.error === 'string' ? draft.error : null,
+      });
+    });
+
+    return [...result.values()];
+  }
+
+  private normalizeProviderPricingCaches(
+    caches: unknown
+  ): ProviderPricingCache[] {
+    if (!Array.isArray(caches)) {
+      return [];
+    }
+
+    const result = new Map<string, ProviderPricingCache>();
+    caches.forEach((cache) => {
+      if (!cache || typeof cache !== 'object' || Array.isArray(cache)) {
+        return;
+      }
+
+      const draft = cache as Partial<ProviderPricingCache>;
+      const profileId =
+        typeof draft.profileId === 'string' ? draft.profileId.trim() : '';
+      if (!profileId) {
+        return;
+      }
+
+      const routingEvidenceVersion =
+        typeof draft.routingEvidenceVersion === 'number' &&
+        Number.isFinite(draft.routingEvidenceVersion)
+          ? draft.routingEvidenceVersion
+          : undefined;
+      result.set(profileId, {
+        profileId,
+        routingEvidenceVersion,
+        fetchedAt:
+          typeof draft.fetchedAt === 'number' &&
+          Number.isFinite(draft.fetchedAt)
+            ? draft.fetchedAt
+            : 0,
+        sourceSignature:
+          typeof draft.sourceSignature === 'string'
+            ? draft.sourceSignature
+            : undefined,
+        autoRefreshSourceSignature:
+          typeof draft.autoRefreshSourceSignature === 'string' ||
+          draft.autoRefreshSourceSignature === null
+            ? draft.autoRefreshSourceSignature
+            : undefined,
+        groups: Array.isArray(draft.groups) ? draft.groups : [],
+        prices:
+          draft.prices &&
+          typeof draft.prices === 'object' &&
+          !Array.isArray(draft.prices)
+            ? draft.prices
+            : {},
+        modelEndpoints:
+          draft.modelEndpoints &&
+          typeof draft.modelEndpoints === 'object' &&
+          !Array.isArray(draft.modelEndpoints)
+            ? draft.modelEndpoints
+            : undefined,
       });
     });
 
@@ -768,6 +849,9 @@ class SettingsManager {
       providerCatalogs: this.normalizeProviderCatalogs(
         mergedSettings.providerCatalogs
       ),
+      providerPricingCache: this.normalizeProviderPricingCaches(
+        mergedSettings.providerPricingCache
+      ),
       migrations: this.normalizeSettingsMigrations(mergedSettings.migrations),
       invocationPresets: this.normalizeInvocationPresets(
         mergedSettings.invocationPresets
@@ -845,6 +929,7 @@ class SettingsManager {
     ) {
       providerCatalogs.unshift({
         profileId: LEGACY_DEFAULT_PROVIDER_PROFILE_ID,
+        routingEvidenceVersion: IMAGE_ROUTING_EVIDENCE_VERSION,
         discoveredAt: null,
         discoveredModels: [],
         selectedModelIds: [],
@@ -860,6 +945,7 @@ class SettingsManager {
     ) {
       providerCatalogs.push({
         profileId: FOR_CODEX_PROVIDER_PROFILE_ID,
+        routingEvidenceVersion: IMAGE_ROUTING_EVIDENCE_VERSION,
         discoveredAt: null,
         discoveredModels: [],
         selectedModelIds: [],
@@ -1107,53 +1193,85 @@ class SettingsManager {
   /**
    * 保存设置到本地存储
    */
-  private async saveToStorage(): Promise<void> {
+  private saveToStorage(): Promise<void> {
+    if (typeof window === 'undefined') return Promise.resolve();
+
+    const settingsSnapshot = this.cloneValue(this.settings);
+    const indexedDBSnapshot = this.createIndexedDBConfigSnapshot();
+    return this.enqueueStoragePersistence(() =>
+      this.persistSettingsSnapshot(settingsSnapshot, indexedDBSnapshot)
+    );
+  }
+
+  private enqueueStoragePersistence(
+    operation: () => Promise<void>
+  ): Promise<void> {
+    const persistence = this.storagePersistenceQueue.then(operation);
+    this.storagePersistenceQueue = persistence.catch(() => undefined);
+    return persistence;
+  }
+
+  private async persistSettingsSnapshot(
+    settingsSnapshot: AppSettings,
+    indexedDBSnapshot: {
+      geminiConfig: GeminiConfig;
+      videoConfig: VideoAPIConfig;
+    }
+  ): Promise<void> {
     if (typeof window === 'undefined') return;
 
     try {
-      // 创建设置副本用于存储
-      const settingsToSave = JSON.parse(JSON.stringify(this.settings));
-
+      await this.cryptoInitializationPromise;
       // 加密敏感数据
-      await this.encryptSensitiveDataForStorage(settingsToSave);
+      await this.encryptSensitiveDataForStorage(settingsSnapshot);
 
       // 使用单个 key 存储序列化的设置
-      const settingsJson = JSON.stringify(settingsToSave);
+      const settingsJson = JSON.stringify(settingsSnapshot);
       localStorage.setItem(DRAWNIX_SETTINGS_KEY, settingsJson);
 
       // 同步到 IndexedDB，供 SW 读取（必须等待完成，确保首次输入 API Key 后 SW 能立即拿到配置）
-      await this.syncToIndexedDB();
+      await this.syncToIndexedDB(indexedDBSnapshot);
     } catch (error) {
       console.warn('Failed to save settings to localStorage:', error);
     }
+  }
+
+  private createIndexedDBConfigSnapshot(): {
+    geminiConfig: GeminiConfig;
+    videoConfig: VideoAPIConfig;
+  } {
+    const imageRoute = this.resolveInvocationRoute('image');
+    const videoRoute = this.resolveInvocationRoute('video');
+
+    return {
+      geminiConfig: {
+        apiKey: imageRoute.apiKey,
+        baseUrl: imageRoute.baseUrl,
+        modelName: imageRoute.modelId,
+      },
+      videoConfig: {
+        apiKey: videoRoute.apiKey,
+        baseUrl: videoRoute.baseUrl,
+        model: videoRoute.modelId,
+      },
+    };
   }
 
   /**
    * 同步配置到 IndexedDB
    * 将当前设置转换为 SW 需要的配置格式并写入 IndexedDB
    */
-  private async syncToIndexedDB(): Promise<void> {
+  private async syncToIndexedDB(snapshot: {
+    geminiConfig: GeminiConfig;
+    videoConfig: VideoAPIConfig;
+  }): Promise<void> {
     if (typeof window === 'undefined') return;
 
     try {
-      const imageRoute = this.resolveInvocationRoute('image');
-      const videoRoute = this.resolveInvocationRoute('video');
-
-      // 构建 GeminiConfig（与 SW 期望的格式一致）
-      const geminiConfig: GeminiConfig = {
-        apiKey: imageRoute.apiKey,
-        baseUrl: imageRoute.baseUrl,
-        modelName: imageRoute.modelId,
-      };
-
-      // 构建 VideoAPIConfig（与 SW 期望的格式一致）
-      const videoConfig: VideoAPIConfig = {
-        apiKey: videoRoute.apiKey,
-        baseUrl: videoRoute.baseUrl,
-        model: videoRoute.modelId,
-      };
-
-      await configIndexedDBWriter.saveConfig(geminiConfig, videoConfig);
+      await configIndexedDBWriter.saveConfig(
+        snapshot.geminiConfig,
+        snapshot.videoConfig
+      );
     } catch (error) {
       // IndexedDB 写入失败不影响正常流程
       console.warn(
@@ -1272,8 +1390,9 @@ class SettingsManager {
     target[lastKey] = newValue;
 
     this.settings = this.normalizeSettings(this.settings);
+    const newSettings = this.cloneValue(this.settings);
+    this.notifySettingsChange(oldSettings, newSettings, '');
     await this.saveToStorage();
-    this.notifySettingsChange(oldSettings, this.settings, '');
   }
 
   /**
@@ -1284,8 +1403,9 @@ class SettingsManager {
     this.settings = this.normalizeSettings(
       this.deepMerge(this.settings, updates)
     );
+    const newSettings = this.cloneValue(this.settings);
+    this.notifySettingsChange(oldSettings, newSettings, '');
     await this.saveToStorage();
-    this.notifySettingsChange(oldSettings, this.settings, '');
   }
 
   /**
@@ -1398,8 +1518,9 @@ class SettingsManager {
   public async resetSettings(): Promise<void> {
     const oldSettings = this.cloneValue(this.settings);
     this.settings = this.normalizeSettings(this.createDefaultSettings());
+    const newSettings = this.cloneValue(this.settings);
+    this.notifySettingsChange(oldSettings, newSettings, '');
     await this.saveToStorage();
-    this.notifySettingsChange(oldSettings, this.settings, '');
     // console.log('Settings reset to default');
   }
 
@@ -1490,6 +1611,13 @@ class SettingsManager {
     }
     const catalog = this.getProviderCatalogById(profileId);
     if (!catalog) {
+      return [];
+    }
+    if (
+      routeType === 'image' &&
+      profile.providerType === 'auto' &&
+      !isProviderCatalogImageRoutingEvidenceCurrent(catalog, profile)
+    ) {
       return [];
     }
 
@@ -1839,6 +1967,12 @@ export const providerPricingCacheSettings = {
     settingsManager.getSetting<ProviderPricingCache[]>('providerPricingCache'),
   update: async (caches: ProviderPricingCache[]) => {
     await settingsManager.updateSetting('providerPricingCache', caches);
+  },
+  addListener: (listener: SettingsListener<ProviderPricingCache[]>) => {
+    settingsManager.addListener('providerPricingCache', listener);
+  },
+  removeListener: (listener: SettingsListener<ProviderPricingCache[]>) => {
+    settingsManager.removeListener('providerPricingCache', listener);
   },
 };
 

@@ -65,6 +65,7 @@ function compactTask(task: Task, syncVersion: number): CompactTask {
     compactResult = {
       url: task.result.url,
       urls: task.result.urls,
+      imageArtifacts: task.result.imageArtifacts,
       format: task.result.format,
       size: task.result.size,
       resultKind: task.result.resultKind,
@@ -114,6 +115,71 @@ function compactTask(task: Task, syncVersion: number): CompactTask {
     savedToLibrary: task.savedToLibrary,
     insertedToCanvas: task.insertedToCanvas,
     syncVersion,
+  };
+}
+
+/**
+ * Restore a compact sync record without inventing canonical artifacts for
+ * legacy pages that only contain the url/urls compatibility projection.
+ */
+export function restoreTaskFromCompact(compact: CompactTask): Task {
+  return {
+    id: compact.id,
+    type: compact.type as TaskType,
+    status: compact.status as TaskStatus,
+    params: {
+      prompt: compact.params.prompt,
+      width: compact.params.width,
+      height: compact.params.height,
+      size: compact.params.size,
+      duration: compact.params.duration,
+      style: compact.params.style,
+      model: compact.params.model,
+      autoInsertToCanvas: compact.params.autoInsertToCanvas,
+    },
+    createdAt: compact.createdAt,
+    updatedAt: compact.updatedAt,
+    startedAt: compact.startedAt,
+    completedAt: compact.completedAt,
+    result: compact.result
+      ? {
+          url: compact.result.url || '',
+          urls: compact.result.urls,
+          imageArtifacts: compact.result.imageArtifacts,
+          format: compact.result.format || '',
+          size: compact.result.size || 0,
+          resultKind: compact.result.resultKind,
+          width: compact.result.width,
+          height: compact.result.height,
+          duration: compact.result.duration,
+          thumbnailUrl: compact.result.thumbnailUrl,
+          previewImageUrl: compact.result.previewImageUrl,
+          title: compact.result.title,
+          lyricsText: compact.result.lyricsText,
+          lyricsTitle: compact.result.lyricsTitle,
+          lyricsTags: compact.result.lyricsTags,
+          providerTaskId: compact.result.providerTaskId,
+          primaryClipId: compact.result.primaryClipId,
+          clipIds: compact.result.clipIds,
+          characterUsername: compact.result.characterUsername,
+          characterProfileUrl: compact.result.characterProfileUrl,
+          characterPermalink: compact.result.characterPermalink,
+        }
+      : undefined,
+    error: compact.error
+      ? {
+          code: compact.error.code,
+          message: compact.error.message,
+        }
+      : undefined,
+    progress: compact.progress,
+    remoteId: compact.remoteId,
+    invocationRoute: compact.invocationRoute,
+    executionPhase: compact.executionPhase as Task['executionPhase'],
+    savedToLibrary: compact.savedToLibrary,
+    insertedToCanvas: compact.insertedToCanvas,
+    // Remote terminal records are history, not work to resume locally.
+    syncedFromRemote: true,
   };
 }
 
@@ -485,7 +551,7 @@ class TaskSyncService {
       const page = await this.downloadRemotePage(pageId, gistId, customPassword);
       if (page) {
         // 恢复下载的任务到本地
-        const tasksToRestore = page.tasks.map(compact => this.compactToTask(compact));
+        const tasksToRestore = page.tasks.map(restoreTaskFromCompact);
         await taskQueueService.restoreTasks(tasksToRestore);
         downloaded += page.tasks.length;
       }
@@ -517,66 +583,6 @@ class TaskSyncService {
       uploaded: changes.toUpload.length,
       downloaded,
       skipped: changes.skipped.length,
-    };
-  }
-
-  /**
-   * 将 CompactTask 还原为 Task（用于恢复下载的任务）
-   * 标记 syncedFromRemote = true，避免在 SW 重启时被错误地恢复执行
-   */
-  private compactToTask(compact: CompactTask): Task {
-    return {
-      id: compact.id,
-      type: compact.type as TaskType,
-      status: compact.status as TaskStatus,
-      params: {
-        prompt: compact.params.prompt,
-        width: compact.params.width,
-        height: compact.params.height,
-        size: compact.params.size,
-        duration: compact.params.duration,
-        style: compact.params.style,
-        model: compact.params.model,
-        autoInsertToCanvas: compact.params.autoInsertToCanvas,
-      },
-      createdAt: compact.createdAt,
-      updatedAt: compact.updatedAt,
-      startedAt: compact.startedAt,
-      completedAt: compact.completedAt,
-      result: compact.result ? {
-        url: compact.result.url || '',
-        urls: compact.result.urls,
-        format: compact.result.format || '',
-        size: compact.result.size || 0,
-        resultKind: compact.result.resultKind,
-        width: compact.result.width,
-        height: compact.result.height,
-        duration: compact.result.duration,
-        thumbnailUrl: compact.result.thumbnailUrl,
-        previewImageUrl: compact.result.previewImageUrl,
-        title: compact.result.title,
-        lyricsText: compact.result.lyricsText,
-        lyricsTitle: compact.result.lyricsTitle,
-        lyricsTags: compact.result.lyricsTags,
-        providerTaskId: compact.result.providerTaskId,
-        primaryClipId: compact.result.primaryClipId,
-        clipIds: compact.result.clipIds,
-        characterUsername: compact.result.characterUsername,
-        characterProfileUrl: compact.result.characterProfileUrl,
-        characterPermalink: compact.result.characterPermalink,
-      } : undefined,
-      error: compact.error ? {
-        code: compact.error.code,
-        message: compact.error.message,
-      } : undefined,
-      progress: compact.progress,
-      remoteId: compact.remoteId,
-      invocationRoute: compact.invocationRoute,
-      executionPhase: compact.executionPhase as any,
-      savedToLibrary: compact.savedToLibrary,
-      insertedToCanvas: compact.insertedToCanvas,
-      // 标记为远程同步的任务，不会被恢复执行
-      syncedFromRemote: true,
     };
   }
 

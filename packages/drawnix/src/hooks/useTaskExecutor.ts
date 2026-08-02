@@ -17,10 +17,7 @@ import { characterStorageService } from '../services/character-storage-service';
 import { unifiedCacheService } from '../services/unified-cache-service';
 import { Task, TaskStatus, TaskType } from '../types/task.types';
 import { CharacterStatus } from '../types/character.types';
-import {
-  isResumableAsyncImageTask,
-  isTaskTimeout,
-} from '../utils/task-utils';
+import { isTaskTimeout } from '../utils/task-utils';
 import { AI_GENERATION_CONCURRENCY_LIMIT } from '../constants/TASK_CONSTANTS';
 import { classifyApiCredentialError } from '../utils/api-auth-error-event';
 import {
@@ -28,6 +25,17 @@ import {
   resolveTaskInvocationRouteModel,
   shouldUseStrictTaskInvocationRoute,
 } from '../services/task-invocation-route';
+import {
+  captureImageTaskRecoveryIdentity,
+  isCurrentImageTaskRecovery,
+  resolveImageTaskHookAction,
+  shouldHookManageImageTaskTimeout,
+  shouldStartImageTaskRecovery,
+} from '../services/image-task-recovery-guard';
+import {
+  completeImageTaskRecovery,
+  failImageTaskRecovery,
+} from '../services/image-task-recovery-outcome';
 
 /**
  * 从 API 错误体中提取原始错误消息
@@ -202,6 +210,7 @@ export function useTaskExecutor(): void {
 
   useEffect(() => {
     let isActive = true;
+    const imageRecoveryControllers = new Map<string, AbortController>();
 
     // All tasks execute in main thread
 
@@ -284,12 +293,19 @@ export function useTaskExecutor(): void {
     const resumeAsyncImageTask = async (task: Task) => {
       const taskId = task.id;
       const remoteId = task.remoteId!;
+      const recoveryIdentity = captureImageTaskRecoveryIdentity(task);
 
-      if (executingTasksRef.current.has(taskId)) {
+      if (
+        !recoveryIdentity ||
+        !shouldStartImageTaskRecovery(task, taskQueueService) ||
+        executingTasksRef.current.has(taskId)
+      ) {
         return;
       }
 
       executingTasksRef.current.add(taskId);
+      const abortController = new AbortController();
+      imageRecoveryControllers.set(taskId, abortController);
 
       try {
         if (shouldUseStrictTaskInvocationRoute(task)) {
@@ -298,23 +314,42 @@ export function useTaskExecutor(): void {
         const result = await generationAPIService.resumeAsyncImageGeneration(
           taskId,
           remoteId,
-          resolveTaskInvocationRouteModel(task)
+          resolveTaskInvocationRouteModel(task),
+          task.invocationRoute?.binding?.id,
+          abortController.signal
         );
 
-        if (!isActive) return;
+        if (
+          !isActive ||
+          !isCurrentImageTaskRecovery(
+            legacyTaskQueueService.getTask(taskId),
+            recoveryIdentity
+          )
+        ) {
+          return;
+        }
 
-        legacyTaskQueueService.updateTaskStatus(taskId, TaskStatus.COMPLETED, {
-          result,
-        });
+        const outcome = await completeImageTaskRecovery(
+          recoveryIdentity,
+          result
+        );
+        const terminalTask =
+          taskQueueService.applyImageExecutionOutcome(outcome);
 
-        if (result.url) {
+        if (
+          terminalTask?.status === TaskStatus.COMPLETED &&
+          terminalTask.result?.url
+        ) {
           try {
-            await unifiedCacheService.registerImageMetadata(result.url, {
-              taskId: task.id,
-              model: task.params.model,
-              prompt: task.params.prompt,
-              params: task.params,
-            });
+            await unifiedCacheService.registerImageMetadata(
+              terminalTask.result.url,
+              {
+                taskId: task.id,
+                model: task.params.model,
+                prompt: task.params.prompt,
+                params: task.params,
+              }
+            );
           } catch (error) {
             console.error(
               `[TaskExecutor] Failed to register metadata for resumed async image task ${taskId}:`,
@@ -323,7 +358,15 @@ export function useTaskExecutor(): void {
           }
         }
       } catch (error: any) {
-        if (!isActive) return;
+        if (
+          !isActive ||
+          !isCurrentImageTaskRecovery(
+            legacyTaskQueueService.getTask(taskId),
+            recoveryIdentity
+          )
+        ) {
+          return;
+        }
 
         const errorCode = error.httpStatus
           ? `HTTP_${error.httpStatus}`
@@ -335,17 +378,19 @@ export function useTaskExecutor(): void {
           error.message ||
           String(error);
 
-        legacyTaskQueueService.updateTaskStatus(taskId, TaskStatus.FAILED, {
-          error: {
-            code: errorCode,
-            message: errorMessage,
-            details: {
-              originalError: originalErrorInfo,
-              timestamp: Date.now(),
-            },
+        const outcome = await failImageTaskRecovery(recoveryIdentity, {
+          code: errorCode,
+          message: errorMessage,
+          details: {
+            originalError: originalErrorInfo,
+            timestamp: Date.now(),
           },
         });
+        taskQueueService.applyImageExecutionOutcome(outcome);
       } finally {
+        if (imageRecoveryControllers.get(taskId) === abortController) {
+          imageRecoveryControllers.delete(taskId);
+        }
         onTaskFinished(taskId);
       }
     };
@@ -459,12 +504,38 @@ export function useTaskExecutor(): void {
         return executeCharacterTask(task);
       }
 
-      // Check if this is a resumable async image task
-      if (
-        task.status === TaskStatus.PROCESSING &&
-        isResumableAsyncImageTask(task)
-      ) {
+      const imageTaskAction = resolveImageTaskHookAction(
+        task,
+        taskQueueService
+      );
+
+      // Prior-session images can only resume the persisted remote operation.
+      if (imageTaskAction === 'recover-query-only') {
         return resumeAsyncImageTask(task);
+      }
+
+      // TaskQueueService is the sole submit owner for every new/retried image
+      // attempt. The hook may only run query-only recovery for a prior-session
+      // task with a durable remoteId. A restored legacy PENDING image has no
+      // proof that dispatch did not happen, so fail it without a network call
+      // instead of handing it to GenerationAPIService as a second executor.
+      if (imageTaskAction !== 'not-image') {
+        if (imageTaskAction === 'fail-interrupted') {
+          legacyTaskQueueService.updateTaskStatus(taskId, TaskStatus.FAILED, {
+            completedAt: Date.now(),
+            executionPhase: undefined,
+            error: {
+              code: 'IMAGE_ATTEMPT_INTERRUPTED',
+              message: '图片任务缺少可安全恢复的远程任务信息，请手动重试',
+              details: {
+                originalError:
+                  'Restored pending image attempt has no authoritative dispatch acknowledgement',
+                timestamp: Date.now(),
+              },
+            },
+          });
+        }
+        return;
       }
 
       // Skip resumable video tasks — handled by FallbackMediaExecutor.resumePendingTasks()
@@ -499,7 +570,8 @@ export function useTaskExecutor(): void {
         const result = await generationAPIService.generate(
           taskId,
           task.params,
-          task.type
+          task.type,
+          task.invocationRoute
         );
 
         if (!isActive) return;
@@ -587,10 +659,8 @@ export function useTaskExecutor(): void {
       );
 
       // Process resumable tasks (processing with remoteId) — video tasks excluded, handled by FallbackMediaExecutor
-      const resumableTasks = tasks.filter(
-        (task) =>
-          task.status === TaskStatus.PROCESSING &&
-          isResumableAsyncImageTask(task)
+      const resumableTasks = tasks.filter((task) =>
+        shouldStartImageTaskRecovery(task, taskQueueService)
       );
       const resumableAudioTasks = tasks.filter(
         (task) =>
@@ -624,6 +694,9 @@ export function useTaskExecutor(): void {
       );
 
       processingTasks.forEach((task) => {
+        if (!shouldHookManageImageTaskTimeout(task, taskQueueService)) {
+          return;
+        }
         if (isTaskTimeout(task)) {
           console.warn(`[TaskExecutor] Task ${task.id} timed out`);
 
@@ -656,6 +729,13 @@ export function useTaskExecutor(): void {
         if (event.type === 'taskCreated' || event.type === 'taskUpdated') {
           const task = event.task;
 
+          if (
+            task.type === TaskType.IMAGE &&
+            task.status !== TaskStatus.PROCESSING
+          ) {
+            imageRecoveryControllers.get(task.id)?.abort();
+          }
+
           // Execute pending tasks
           if (task.status === TaskStatus.PENDING) {
             enqueueTask(task);
@@ -663,9 +743,7 @@ export function useTaskExecutor(): void {
           // Resume async image tasks that have remoteId and are in processing state (video tasks excluded, handled by FallbackMediaExecutor)
           else if (
             !executingTasksRef.current.has(task.id) &&
-            task.remoteId &&
-            task.status === TaskStatus.PROCESSING &&
-            isResumableAsyncImageTask(task)
+            shouldStartImageTaskRecovery(task, taskQueueService)
           ) {
             enqueueTask(task);
           } else if (
@@ -701,6 +779,8 @@ export function useTaskExecutor(): void {
       executingTasksRef.current.forEach((taskId) => {
         generationAPIService.cancelRequest(taskId);
       });
+      imageRecoveryControllers.forEach((controller) => controller.abort());
+      imageRecoveryControllers.clear();
       executingTasksRef.current.clear();
     };
   }, []);

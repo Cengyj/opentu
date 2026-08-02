@@ -19,72 +19,62 @@ import {
   settingsManager,
 } from '../../utils/settings-manager';
 import { TaskType } from '../../types/shared/core.types';
-import type { ImageGenerationParams } from '../media-executor/types';
 import { taskQueueService } from '../task-queue-service';
 import {
   TaskStatus as QueueTaskStatus,
   TaskExecutionPhase,
 } from '../../types/task.types';
-import { createTaskInvocationRouteSnapshot } from '../task-invocation-route';
-
-function buildStoredImageAdapterParams(
-  options: ImageGenerationOptions
-): Record<string, unknown> | undefined {
-  const adapterParams: Record<string, unknown> = {
-    ...(options.params || {}),
-  };
-
-  if (
-    options.resolution !== undefined &&
-    adapterParams.resolution === undefined
-  ) {
-    adapterParams.resolution = options.resolution;
-  }
-
-  if (options.quality !== undefined && adapterParams.quality === undefined) {
-    adapterParams.quality = options.quality;
-  }
-
-  if (
-    typeof options.count === 'number' &&
-    Number.isFinite(options.count) &&
-    adapterParams.n === undefined
-  ) {
-    adapterParams.n = options.count;
-  }
-
-  return Object.keys(adapterParams).length > 0 ? adapterParams : undefined;
-}
+import {
+  createTaskInvocationRouteSnapshot,
+  createTaskInvocationRouteSnapshotFromPlan,
+} from '../task-invocation-route';
+import {
+  normalizeImageRequest,
+  resolveNormalizedImageInvocation,
+  type NormalizedImageRequest,
+} from '../image-invocation';
 
 function buildStoredImageTaskParams(
-  prompt: string,
-  options: ImageGenerationOptions
+  request: NormalizedImageRequest
 ) {
   return {
-    prompt,
-    model: options.model,
-    modelRef: options.modelRef || null,
-    size: options.size,
-    resolution: options.resolution,
-    quality: options.quality,
-    generationMode: options.generationMode,
+    prompt: request.prompt,
+    model: request.model,
+    modelRef: request.modelRef || null,
+    size: request.size,
+    resolution: request.resolution,
+    quality: request.quality,
+    generationMode: request.generationMode,
     referenceImages:
-      options.referenceImages && options.referenceImages.length > 0
-        ? options.referenceImages
+      request.referenceImages.length > 0
+        ? [...request.referenceImages]
         : undefined,
-    maskImage: options.maskImage,
-    inputFidelity: options.inputFidelity,
-    background: options.background,
-    outputFormat: options.outputFormat,
-    outputCompression: options.outputCompression,
-    uploadedImages:
-      options.uploadedImages && options.uploadedImages.length > 0
-        ? options.uploadedImages
+    maskImage: request.maskImage,
+    inputFidelity:
+      request.inputFidelity as ImageGenerationOptions['inputFidelity'],
+    background: request.background as ImageGenerationOptions['background'],
+    outputFormat:
+      request.outputFormat as ImageGenerationOptions['outputFormat'],
+    outputCompression: request.outputCompression,
+    count: request.count,
+    assetMetadata: request.assetMetadata
+      ? { ...request.assetMetadata }
+      : undefined,
+    promptMeta: request.promptMeta
+      ? {
+          ...request.promptMeta,
+          tags: request.promptMeta.tags
+            ? [...request.promptMeta.tags]
+            : undefined,
+          knowledgeContextRefs: request.promptMeta.knowledgeContextRefs
+            ? request.promptMeta.knowledgeContextRefs.map((ref) => ({ ...ref }))
+            : undefined,
+        }
+      : undefined,
+    params:
+      Object.keys(request.params).length > 0
+        ? { ...request.params }
         : undefined,
-    count: options.count,
-    assetMetadata: options.assetMetadata,
-    promptMeta: options.promptMeta,
-    params: buildStoredImageAdapterParams(options),
   };
 }
 
@@ -106,29 +96,42 @@ export async function generateImage(
     throw new Error(validation.errors.join(', '));
   }
   const sanitizedParams = sanitizeGenerationParams(params);
+  const taskId = generateTaskId();
+  const normalizedRequest = normalizeImageRequest({
+    ...options,
+    taskId,
+    prompt: sanitizedParams.prompt,
+  });
 
   // 确保 API Key 已解密
   await settingsManager.waitForInitialization();
   if (
-    !hasInvocationRouteCredentials('image', options.modelRef || options.model)
+    !hasInvocationRouteCredentials(
+      'image',
+      normalizedRequest.modelRef || normalizedRequest.model
+    )
   ) {
     throw new Error('未配置 API Key，请在设置中配置');
   }
 
+  const imageInvocation = resolveNormalizedImageInvocation(normalizedRequest);
+  const finalRequest = imageInvocation.request;
+
   // 创建任务记录
-  const taskId = generateTaskId();
   // 必须先认领当前会话，再进行首次异步持久化；否则启动恢复可能把刚写入的
   // processing 快照误判为上次页面中断的任务。
   taskQueueService.claimTaskForCurrentSession(taskId);
   const now = Date.now();
-  const persistedTaskParams = buildStoredImageTaskParams(
-    sanitizedParams.prompt,
-    options
-  );
-  const invocationRoute = createTaskInvocationRouteSnapshot(
-    'image',
-    options.modelRef || options.model || null
-  );
+  const invocationRoute = imageInvocation.plan
+    ? createTaskInvocationRouteSnapshotFromPlan('image', imageInvocation.plan)
+    : createTaskInvocationRouteSnapshot(
+        'image',
+        finalRequest.modelRef || finalRequest.model || null,
+        {
+          preferredRequestSchema: imageInvocation.preferredRequestSchema,
+        }
+      );
+  const persistedTaskParams = buildStoredImageTaskParams(finalRequest);
   await taskStorageWriter.createTask(
     taskId,
     'image',
@@ -154,25 +157,11 @@ export async function generateImage(
     // 和执行本身属于同一收敛边界：任一步骤抛错都必须离开 processing。
     options.onTaskCreated?.(taskId);
 
-    const executorParams: ImageGenerationParams = {
+    const executorParams = {
       taskId,
-      prompt: sanitizedParams.prompt,
-      model: options.model,
-      modelRef: options.modelRef || null,
-      size: options.size,
-      resolution: options.resolution,
-      generationMode: options.generationMode,
-      quality: options.quality,
-      referenceImages: options.referenceImages,
-      maskImage: options.maskImage,
-      inputFidelity: options.inputFidelity,
-      background: options.background,
-      outputFormat: options.outputFormat,
-      outputCompression: options.outputCompression,
-      uploadedImages: options.uploadedImages,
-      count: options.count,
-      assetMetadata: options.assetMetadata,
-      params: options.params,
+      request: finalRequest,
+      invocationRoute,
+      resolvedInvocation: imageInvocation,
     };
 
     const executor = options.forceMainThread

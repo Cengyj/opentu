@@ -184,6 +184,7 @@ export interface ImageGenerationParams {
   resolution?: '1k' | '2k' | '4k';
   quality?: 'auto' | 'low' | 'medium' | 'high' | '1k' | '2k' | '4k';
   model?: string;
+  modelRef?: ModelRef | null;
   count?: number;
   /** 批次 ID（批量生成时） */
   batchId?: string;

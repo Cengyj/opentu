@@ -6,13 +6,13 @@ Several active changes already own discovery concurrency/fallback, route/binding
 
 ## Goals / Non-Goals
 
-- Goals: give existing provider fields and switches stable localized names/state, make existing model disclosures and icon actions operable and perceivable without hover, and make F-09 application copy follow the mounted Chinese/English context.
+- Goals: give existing provider fields and provider-enabled switches stable localized names/state, make existing model disclosures and icon actions operable and perceivable without hover, and make F-09 application copy follow the mounted Chinese/English context.
 - Non-Goals: add providers/models/actions, change discovery or health behavior, alter settings save timing, redesign the page, migrate/encrypt credentials, change routing or sorting, resize the window, repair the shared four-view navigation, or claim unmeasured compact/theme/performance improvement.
 
 ## Decisions
 
 - Decision: use stable `id`/`htmlFor`, wrapping labels, or explicit `aria-labelledby`/`aria-describedby` relationships owned by the F-09 content. Placeholder text remains instruction/example text and is never the sole accessible name.
-- Decision: name each real TDesign switch at its rendered interactive element and verify that its programmatic checked state changes with the existing value. Do not add a second hidden checkbox or wrapper control that could fork focus, state, or callbacks.
+- Decision: name each remaining provider-enabled TDesign switch at its rendered interactive element and verify that its programmatic checked state changes with the existing value. Do not add a second hidden checkbox or wrapper control that could fork focus, state, or callbacks.
 - Decision: separate each model-group collapse trigger from the adjacent benchmark action. The collapse portion becomes a native button with `aria-expanded` and a stable controlled-region relationship; the benchmark button remains a separate sibling so no interactive element is nested inside another.
 - Decision: keep discovery filters as existing native buttons and expose exactly one current filter with one consistent pressed/tab/radio contract selected by focused tests. Vendor header buttons expose `aria-expanded` and controlled content without changing the existing single-expanded-vendor behavior.
 - Decision: give model test/remove actions localized purpose at the button itself. Names may use the already displayed provider/model identity for row disambiguation, but never API keys, credential-shaped data, provider response bodies, raw URLs, prompts, errors, or analytics payloads.
@@ -22,7 +22,7 @@ Several active changes already own discovery concurrency/fallback, route/binding
 
 ## Invariants
 
-- Provider profile IDs, enabled values, connection fields, image compatibility, pricing values, API-key masking/reveal, capabilities, catalogs, selected model IDs, presets, and active routes are unchanged.
+- Provider profile IDs, enabled values, connection fields, image compatibility, API-key masking/reveal, capabilities, catalogs, selected model IDs, presets, and active routes are unchanged.
 - One pointer or keyboard activation produces exactly the existing callback/state mutation and no additional provider, health, price, benchmark, storage, analytics, task, media, or canvas side effect.
 - Discovery request URL/header/body, error propagation, ordering, stale-response/fallback behavior, catalog persistence, and selection reconciliation are unchanged.
 - Raw provider/user/private data is not copied into translation keys, fixed accessible names, logs, snapshots, or analytics.
@@ -38,7 +38,7 @@ Several active changes already own discovery concurrency/fallback, route/binding
 
 ## Verification And Rollback
 
-- Component tests cover provider fields, selects, three switches, profile switching, API-key masking/reveal, model-group disclosure, discovery filters/vendors, and model test/remove actions with pointer and keyboard input.
+- Component tests cover provider fields, selects, provider-enabled switches, profile switching, API-key masking/reveal, model-group disclosure, discovery filters/vendors, and model test/remove actions with pointer and keyboard input.
 - Tests assert exact existing values/callbacks, no additional discovery/price/health/benchmark/storage calls, and byte-for-byte preservation of provider/model/private sentinel values.
 - Chinese/English tests cover initial render and live language change for normal, empty, loading, failure, and discovery content without resetting drafts, selected profile/model, open groups, or focus.
 - Browser verification uses no real credential or provider call. Empty/default settings can be checked in production; populated discovery states use local synthetic fixtures only after approval.
