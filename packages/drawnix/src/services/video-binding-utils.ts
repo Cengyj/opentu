@@ -192,9 +192,23 @@ function buildFrontendSoraMetadata(
     return null;
   }
 
+  const durationParam = getCompatibleParams(modelId || '').find(
+    (param) => param.id === 'duration' && param.valueType === 'enum'
+  );
+  const allowedDurations =
+    durationParam?.options?.map((option) => option.value) || [];
+  const defaultDuration = allowedDurations.includes(
+    durationParam?.defaultValue || ''
+  )
+    ? durationParam?.defaultValue
+    : allowedDurations[0];
+
   return {
-    allowedDurations: staticMetadata.allowedDurations,
-    defaultDuration: staticMetadata.defaultDuration,
+    allowedDurations:
+      allowedDurations.length > 0
+        ? allowedDurations
+        : staticMetadata.allowedDurations,
+    defaultDuration: defaultDuration || staticMetadata.defaultDuration,
     durationMode: staticMetadata.durationMode,
     durationField: staticMetadata.durationField,
     durationToModelMap: staticMetadata.durationToModelMap,

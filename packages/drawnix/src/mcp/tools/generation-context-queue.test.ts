@@ -21,6 +21,13 @@ vi.mock('../../utils/settings-manager', () => ({
   geminiSettings: {
     get: vi.fn(() => ({})),
   },
+  providerPricingCacheSettings: {
+    get: vi.fn(() => []),
+  },
+  resolveInvocationRoute: vi.fn(() => ({
+    profileId: 'legacy-default',
+    modelId: 'gpt-image-2',
+  })),
   createModelRef: (profileId: string, modelId: string) => ({
     profileId,
     modelId,

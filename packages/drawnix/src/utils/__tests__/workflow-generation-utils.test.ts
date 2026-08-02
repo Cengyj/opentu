@@ -23,6 +23,15 @@ vi.mock('@aitu/utils', async () => {
   };
 });
 
+function createBlobResponse(contents: BlobPart[], type: string): Response {
+  const blob = new Blob(contents, { type });
+  return {
+    ok: true,
+    status: 200,
+    blob: vi.fn(async () => blob),
+  } as unknown as Response;
+}
+
 afterEach(() => {
   downloadFromBlobMock.mockReset();
   vi.unstubAllGlobals();
@@ -149,9 +158,7 @@ describe('workflow-generation-utils', () => {
   it('exports selected audio as mp3 when the download URL has no extension', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        new Response(new Blob(['audio-bytes'], { type: 'audio/mpeg' }))
-      )
+      vi.fn(async () => createBlobResponse(['audio-bytes'], 'audio/mpeg'))
     );
 
     await exportWorkflowAssetsZip({
@@ -183,13 +190,14 @@ describe('workflow-generation-utils', () => {
 
   it('exports cached audio when the remote URL cannot be fetched', async () => {
     const audioUrl = 'https://cdn.example.com/audio/download?expires=1';
-    const cachedResponse = new Response(
-      new Blob(['cached-audio-bytes'], { type: 'audio/mpeg' })
+    const cachedResponse = createBlobResponse(
+      ['cached-audio-bytes'],
+      'audio/mpeg'
     );
     const matchMock = vi.fn(async (request: RequestInfo | URL) => {
       const key = String(request);
       return key === 'https://cdn.example.com/audio/download'
-        ? cachedResponse.clone()
+        ? cachedResponse
         : undefined;
     });
 

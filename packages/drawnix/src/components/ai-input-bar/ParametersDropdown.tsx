@@ -306,6 +306,7 @@ export const ParametersDropdown: React.FC<ParametersDropdownProps> = ({
                 className={`parameters-dropdown__trigger ${
                   isOpen ? 'parameters-dropdown__trigger--open' : ''
                 }`}
+                data-testid="parameters-selector"
                 onMouseDown={handleToggle}
                 onKeyDown={handleTriggerKeyDown}
                 type="button"

@@ -199,11 +199,20 @@ describe('video binding utils', () => {
     const config = getEffectiveVideoModelConfig('sora-2', null, {
       sora_mode: 'web',
     });
+    const proConfig = getEffectiveVideoModelConfig('sora-2-pro', null, {
+      sora_mode: 'web',
+    });
 
     expect(config.defaultDuration).toBe('10');
     expect(config.durationOptions.map((option) => option.value)).toEqual([
       '10',
       '15',
+    ]);
+    expect(proConfig.defaultDuration).toBe('10');
+    expect(proConfig.durationOptions.map((option) => option.value)).toEqual([
+      '10',
+      '15',
+      '25',
     ]);
 
     const submission = resolveVideoSubmission(

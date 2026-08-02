@@ -39,16 +39,22 @@ export function findMatchingSelectableModel(
   const expectedKey = getSelectionKey(modelId, modelRef);
   const expectedProfileId = modelRef?.profileId || null;
 
-  return (
+  const exactMatch =
     models.find((model) => getSelectionKeyForModel(model) === expectedKey) ||
     models.find(
       (model) =>
         model.id === modelId &&
         (model.sourceProfileId || null) === expectedProfileId
-    ) ||
-    (expectedProfileId === null
-      ? models.find((model) => model.id === modelId && !model.sourceProfileId)
-      : undefined) ||
-    models.find((model) => model.id === modelId)
+    );
+
+  if (exactMatch || expectedProfileId) {
+    return exactMatch;
+  }
+
+  const profileScopedMatches = models.filter(
+    (model) => model.id === modelId && Boolean(model.sourceProfileId)
   );
+  return profileScopedMatches.length === 1
+    ? profileScopedMatches[0]
+    : undefined;
 }

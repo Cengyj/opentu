@@ -150,14 +150,21 @@ const record: ComicRecord = {
   ],
 };
 
+function createImageResponse(type = 'image/png'): Response {
+  const blob = new Blob(['image'], { type });
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': type }),
+    blob: vi.fn(async () => blob),
+  } as unknown as Response;
+}
+
 function mockFetchImages() {
   const calls: string[] = [];
   global.fetch = vi.fn(async (input: RequestInfo | URL) => {
     calls.push(String(input));
-    return new Response(new Blob(['image'], { type: 'image/png' }), {
-      status: 200,
-      headers: { 'content-type': 'image/png' },
-    });
+    return createImageResponse();
   }) as unknown as typeof fetch;
   return calls;
 }
@@ -453,10 +460,7 @@ describe('comic export service pure helpers', () => {
       activeFetchCounts.push(activeFetches);
       await Promise.resolve();
       activeFetches -= 1;
-      return new Response(new Blob(['image'], { type: 'image/jpeg' }), {
-        status: 200,
-        headers: { 'content-type': 'image/jpeg' },
-      });
+      return createImageResponse('image/jpeg');
     }) as unknown as typeof fetch;
 
     await exportComicAsPdf(record, {

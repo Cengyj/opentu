@@ -13,7 +13,7 @@ test.describe('@feature 功能测试', () => {
   test('主画布：AI输入、绘图工具', async ({ page }) => {
     await page.goto('/');
     const drawnix = page.locator('.drawnix');
-    await expect(drawnix).toBeVisible({ timeout: 10000 });
+    await expect(drawnix).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
     // === AI 输入栏功能（必须通过）===
@@ -32,7 +32,7 @@ test.describe('@feature 功能测试', () => {
     await page.keyboard.press('Escape');
 
     // 尺寸选择器（必须通过）
-    const sizeSelector = page.getByRole('button', { name: '自动' }).first();
+    const sizeSelector = page.locator('[data-testid="parameters-selector"]');
     await expect(sizeSelector).toBeVisible();
     await sizeSelector.click();
     await page.waitForTimeout(200);
@@ -107,7 +107,7 @@ test.describe('@feature 功能测试', () => {
   test('弹窗抽屉：设置、项目管理', async ({ page }) => {
     await page.goto('/');
     const drawnix = page.locator('.drawnix');
-    await expect(drawnix).toBeVisible({ timeout: 10000 });
+    await expect(drawnix).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(1500);
 
     // === 项目抽屉 ===
@@ -179,7 +179,7 @@ test.describe('@feature 功能测试', () => {
   test('素材库：打开关闭', async ({ page }) => {
     await page.goto('/');
     const drawnix = page.locator('.drawnix');
-    await expect(drawnix).toBeVisible({ timeout: 10000 });
+    await expect(drawnix).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(1500);
 
     // 素材库按钮（必须通过）

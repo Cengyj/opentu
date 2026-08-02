@@ -86,11 +86,12 @@ describe('message-utils', () => {
   });
 
   it('converts local cached image paths into data urls before sending', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(new Blob(['fake-image'], { type: 'image/png' }), {
-        status: 200,
-      }) as Response
-    );
+    const imageBlob = new Blob(['fake-image'], { type: 'image/png' });
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      blob: vi.fn(async () => imageBlob),
+    } as Response);
 
     const normalized = await normalizeImageUrlForMultimodalInput(
       '/__aitu_cache__/image/example.png'

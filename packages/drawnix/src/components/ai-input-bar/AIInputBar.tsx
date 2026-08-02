@@ -137,6 +137,12 @@ import {
   createModelRef,
   type ModelRef,
 } from '../../utils/settings-manager';
+import {
+  findMatchingSelectableModel,
+  getModelRefFromConfig,
+  getSelectionKey,
+  getSelectionKeyForModel,
+} from '../../utils/model-selection';
 import { promptForApiKey } from '../../utils/gemini-api/auth';
 import type { WorkflowMessageData } from '../../types/chat.types';
 import type { GenerationParams } from '../../types/shared/core.types';
@@ -237,6 +243,12 @@ function toWorkflowMessageData(
     postProcessingStatus,
     insertedCount,
   };
+}
+
+function getModelTypeForGeneration(
+  type: GenerationType
+): Exclude<GenerationType, 'agent'> {
+  return type === 'agent' ? 'text' : type;
 }
 
 function areAllWorkflowStepsCompleted(workflow: WorkflowDefinition): boolean {
@@ -451,27 +463,6 @@ interface GenerationRequestOverride {
   appendToCurrentChatSession?: boolean;
 }
 
-function getSelectionKeyForModel(
-  model: Pick<ModelConfig, 'id' | 'selectionKey' | 'sourceProfileId'>
-): string {
-  return (
-    model.selectionKey ||
-    (model.sourceProfileId ? `${model.sourceProfileId}::${model.id}` : model.id)
-  );
-}
-
-function getSelectionKey(modelId: string, modelRef?: ModelRef | null): string {
-  return modelRef?.profileId ? `${modelRef.profileId}::${modelId}` : modelId;
-}
-
-function getModelRefFromConfig(model?: ModelConfig | null): ModelRef | null {
-  if (!model) {
-    return null;
-  }
-
-  return createModelRef(model.sourceProfileId || null, model.id);
-}
-
 function getPromptLengthBucket(length: number): string {
   if (length <= 0) return '0';
   if (length <= 20) return '1-20';
@@ -570,32 +561,6 @@ function resizeAIInputTextarea(
 
   textarea.style.height = `${nextHeight}px`;
   textarea.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
-}
-
-function findMatchingSelectableModel(
-  models: ModelConfig[],
-  modelId?: string | null,
-  modelRef?: ModelRef | null
-): ModelConfig | undefined {
-  if (!modelId) {
-    return undefined;
-  }
-
-  const expectedKey = getSelectionKey(modelId, modelRef);
-  const expectedProfileId = modelRef?.profileId || null;
-
-  return (
-    models.find((model) => getSelectionKeyForModel(model) === expectedKey) ||
-    models.find(
-      (model) =>
-        model.id === modelId &&
-        (model.sourceProfileId || null) === expectedProfileId
-    ) ||
-    (expectedProfileId === null
-      ? models.find((model) => model.id === modelId && !model.sourceProfileId)
-      : undefined) ||
-    models.find((model) => model.id === modelId)
-  );
 }
 
 function resolveGenerationTypeForModelSelection(
@@ -1016,15 +981,13 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           return matchedModel;
         }
 
-        if (type === 'text' || type === 'agent') {
-          const pinnedModel = getPinnedSelectableModel(
-            'text',
-            persisted.modelId,
-            createModelRef(persisted.profileId, persisted.modelId)
-          );
-          if (pinnedModel) {
-            return pinnedModel;
-          }
+        const pinnedModel = getPinnedSelectableModel(
+          getModelTypeForGeneration(type),
+          persisted.modelId,
+          createModelRef(persisted.profileId, persisted.modelId)
+        );
+        if (pinnedModel) {
+          return pinnedModel;
         }
 
         clearPersistedModelSelection(type);
@@ -1043,21 +1006,12 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           return persistedModel;
         }
 
-        const routeType =
-          type === 'video'
-            ? 'video'
-            : type === 'audio'
-            ? 'audio'
-            : type === 'text' || type === 'agent'
-            ? 'text'
-            : 'image';
+        const routeType = getModelTypeForGeneration(type);
         const route = resolveInvocationRoute(routeType);
         const routeModelRef = createModelRef(route.profileId, route.modelId);
         const routeModel =
           findMatchingSelectableModel(models, route.modelId, routeModelRef) ||
-          (type === 'text' || type === 'agent'
-            ? getPinnedSelectableModel('text', route.modelId, routeModelRef)
-            : null);
+          getPinnedSelectableModel(routeType, route.modelId, routeModelRef);
         if (routeModel) {
           return routeModel;
         }
@@ -1113,14 +1067,21 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     const initialAudioModel =
       resolvePreferredModelSelection('audio', audioModels) ||
       getModelConfig(getDefaultAudioModel());
-    const initialImageRoute = resolveInvocationRoute('image');
+    const initialRouteType = getModelTypeForGeneration(initialGenerationType);
+    const initialRoute = resolveInvocationRoute(initialRouteType);
     const initialSelectedModelId =
-      initialImageModel?.id ||
-      initialImageRoute.modelId ||
-      getDefaultImageModel();
+      initialSelectedModelConfig?.id ||
+      initialRoute.modelId ||
+      (initialRouteType === 'video'
+        ? getDefaultVideoModel()
+        : initialRouteType === 'audio'
+        ? getDefaultAudioModel()
+        : initialRouteType === 'text'
+        ? getDefaultTextModel()
+        : getDefaultImageModel());
     const initialSelectedModelRef =
-      getModelRefFromConfig(initialImageModel) ||
-      createModelRef(initialImageRoute.profileId, initialImageRoute.modelId);
+      getModelRefFromConfig(initialSelectedModelConfig) ||
+      createModelRef(initialRoute.profileId, initialRoute.modelId);
     const initialSelectedModelKey = getSelectionKey(
       initialSelectedModelConfig?.id || initialSelectedModelId,
       getModelRefFromConfig(initialSelectedModelConfig) ||

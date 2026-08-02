@@ -31,6 +31,7 @@ vi.mock('../../../services/unified-cache-service', () => ({
 }));
 
 vi.mock('../../../utils/settings-manager', () => ({
+  LEGACY_DEFAULT_PROVIDER_PROFILE_ID: 'legacy-default',
   settingsManager: {
     getSetting: vi.fn(),
     updateSettings: vi.fn(),
