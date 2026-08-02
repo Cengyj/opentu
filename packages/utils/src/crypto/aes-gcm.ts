@@ -228,14 +228,16 @@ export async function decrypt(
   try {
     const parsed: EncryptedData = JSON.parse(encryptedData);
 
-    const data = base64ToArrayBuffer(parsed.data);
-    const iv = base64ToArrayBuffer(parsed.iv);
-    const salt = base64ToArrayBuffer(parsed.salt);
+    // Node 20 Web Crypto rejects ArrayBuffers created by jsdom's realm, while
+    // the typed-array views satisfy the BufferSource contract in both realms.
+    const data = new Uint8Array(base64ToArrayBuffer(parsed.data));
+    const iv = new Uint8Array(base64ToArrayBuffer(parsed.iv));
+    const salt = new Uint8Array(base64ToArrayBuffer(parsed.salt));
 
-    const key = await deriveKey(password, new Uint8Array(salt), options);
+    const key = await deriveKey(password, salt, options);
 
     const decrypted = await crypto.subtle.decrypt(
-      { name: ALGORITHM, iv: iv as BufferSource },
+      { name: ALGORITHM, iv },
       key,
       data
     );
