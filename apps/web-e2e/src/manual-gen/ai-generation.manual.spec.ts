@@ -39,13 +39,18 @@ test.describe('AI 生成功能手册', () => {
       }),
     });
 
-    // 步骤 0: 首次点击输入框，加载完整 AI 控件（带标注）
-    const textarea = page.locator('[data-testid="ai-input-textarea"]');
-    await expect(textarea).toBeVisible();
-    await textarea.click();
+    // 步骤 0: 高级控件首次使用时加载完整 AI 运行时（带标注）
+    const deferredAIInputBar = page.getByTestId('deferred-ai-input-bar');
+    await expect(deferredAIInputBar).toBeVisible();
+    await deferredAIInputBar
+      .getByRole('button', { name: '自动模型', exact: true })
+      .click();
 
     const aiInputBar = page.getByTestId('ai-input-bar');
     await expect(aiInputBar).toBeVisible();
+    const textarea = aiInputBar.getByTestId('ai-input-textarea');
+    await expect(textarea).toBeVisible();
+    await textarea.click();
     const modelSelector = aiInputBar
       .getByTestId('model-selector')
       .first()
@@ -138,11 +143,17 @@ test.describe('AI 生成功能手册', () => {
       }),
     });
 
-    // 首次真实交互会加载完整 AI 运行时和灵感板。
-    const textarea = page.locator('[data-testid="ai-input-textarea"]');
+    // 高级控件首次使用时加载完整 AI 运行时，再聚焦输入框显示灵感板。
+    const deferredAIInputBar = page.getByTestId('deferred-ai-input-bar');
+    await expect(deferredAIInputBar).toBeVisible();
+    await deferredAIInputBar
+      .getByRole('button', { name: '自动模型', exact: true })
+      .click();
+    const aiInputBar = page.getByTestId('ai-input-bar');
+    await expect(aiInputBar).toBeVisible();
+    const textarea = aiInputBar.getByTestId('ai-input-textarea');
     await expect(textarea).toBeVisible();
     await textarea.click();
-    await expect(page.getByTestId('ai-input-bar')).toBeVisible();
     
     // 灵感创意板标题（必须通过）
     const inspirationTitle = page.getByRole('heading', { name: '灵感创意', level: 3 });
