@@ -1,3 +1,28 @@
+## 1.0.3 (2026-08-03)
+
+### 🚀 Features
+
+- unify image execution and harden release upgrades (2111e60)
+
+### 🩹 Fixes
+
+- hydrate ai input after startup idle (cb60a0f)
+- normalize WebCrypto buffer sources (f5ea110)
+- preserve provider-scoped model selection (d04dcef)
+
+### 🔧 Chores
+
+- docs: record successful ci verification (30e5528)
+- ci: separate build from lint debt (5184f16)
+- build: enforce portable library declarations (7bf0043)
+- test: align manual with deferred ai runtime (4f24385)
+- build: pin supported node release image (0ed439a)
+- perf: harden startup loading and dependency security (e510fd0)
+
+### ❤️  Thank You
+
+- Codex <codex@openai.com>
+
 ## 1.0.0 (2026-05-26)
 
 ### 🩹 Fixes

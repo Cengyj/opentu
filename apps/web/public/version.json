@@ -1,12 +1,9 @@
 {
-  "version": "1.0.2",
-  "releaseId": "1.0.2-2026-08-01T14-31-42.210Z",
-  "buildTime": "2026-08-01T14:31:42.210Z",
-  "gitCommit": "unknown",
+  "version": "1.0.3",
+  "releaseId": "1.0.3-cb60a0facb2b-2026-08-03T09-56-29.277Z",
+  "buildTime": "2026-08-03T09:56:29.277Z",
+  "gitCommit": "cb60a0facb2b7b2b24275c1f5610f329bc8bb1d3",
   "changelog": [
-    "修复运行时模型添加后设置与对话列表偶发不同步",
-    "串行化模型目录持久化，避免模型发现与选择竞态",
-    "统一终态任务生命周期，移除残留的活动执行阶段",
-    "启动时自动修复旧 IndexedDB 终态记录"
+    "perf: harden startup loading and dependency security"
   ]
 }
