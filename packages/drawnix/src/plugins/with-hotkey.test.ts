@@ -21,6 +21,8 @@ const {
   setPenStrokeWidthMock,
   updatePencilCursorMock,
   updateEraserCursorMock,
+  exportBoardImageMock,
+  openImageFilePickerMock,
 } = vi.hoisted(() => ({
   updatePointerTypeMock: vi.fn(),
   setCreationModeMock: vi.fn(),
@@ -38,6 +40,8 @@ const {
   setPenStrokeWidthMock: vi.fn(),
   updatePencilCursorMock: vi.fn(),
   updateEraserCursorMock: vi.fn(),
+  exportBoardImageMock: vi.fn().mockResolvedValue(undefined),
+  openImageFilePickerMock: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@plait/core', () => ({
@@ -116,9 +120,9 @@ vi.mock('@plait/draw', () => ({
   },
 }));
 
-vi.mock('../utils/image', () => ({
-  addImage: vi.fn(),
-  saveAsImage: vi.fn(),
+vi.mock('../utils/image-file-actions', () => ({
+  exportBoardImage: exportBoardImageMock,
+  openImageFilePicker: openImageFilePickerMock,
 }));
 
 vi.mock('../data/json', () => ({
@@ -322,6 +326,43 @@ describe('buildDrawnixHotkeyPlugin', () => {
     expect(globalKeyDownMock).not.toHaveBeenCalled();
     expect(updatePointerTypeMock).not.toHaveBeenCalled();
     expect(updateAppStateMock).not.toHaveBeenCalled();
+  });
+
+  it('routes the image export shortcut through the lazy file-action boundary', () => {
+    const board = buildDrawnixHotkeyPlugin(updateAppStateMock)(
+      createBoard()
+    ) as TestBoard;
+    const event = new KeyboardEvent('keydown', {
+      key: 'e',
+      code: 'KeyE',
+      ctrlKey: true,
+      shiftKey: true,
+      cancelable: true,
+    });
+
+    board.globalKeyDown(event);
+
+    expect(exportBoardImageMock).toHaveBeenCalledWith(board, true);
+    expect(event.defaultPrevented).toBe(true);
+    expect(globalKeyDownMock).not.toHaveBeenCalled();
+  });
+
+  it('routes the image picker shortcut through the lazy file-action boundary', () => {
+    const board = buildDrawnixHotkeyPlugin(updateAppStateMock)(
+      createBoard()
+    ) as TestBoard;
+    const event = new KeyboardEvent('keydown', {
+      key: 'u',
+      code: 'KeyU',
+      ctrlKey: true,
+      cancelable: true,
+    });
+    Object.defineProperty(event, 'which', { value: 85 });
+
+    board.globalKeyDown(event);
+
+    expect(openImageFilePickerMock).toHaveBeenCalledWith(board);
+    expect(globalKeyDownMock).toHaveBeenCalledWith(event);
   });
 
   it('decreases freehand brush size with -', () => {

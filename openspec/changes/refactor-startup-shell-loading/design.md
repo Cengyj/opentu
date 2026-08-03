@@ -6,6 +6,11 @@
 - startup validator 会遍历入口静态依赖，但禁止前缀缺少 `ai-chat-`；逐文件 500KiB 预算也不能限制多个小 chunk 的总成本。
 - 同构建四组各 5 次基线：冷/SW 关可操作中位数 1174ms、39 请求、5,859,060B 正文；冷/SW 开 1496ms、51 请求、6,517,471B；热/SW 关 468ms；热/SW 开 505ms。该本机口径用于修复前后对照，不外推公网设备。
 - 已安装并预热的 SW 在源站停止后 857ms 恢复到可操作画布；离线缓存与存储格式不需要为本 change 重做。
+- 2026-08-03 当前依赖图的真实消费者确认：批量生图 Excel 模板和模型基准使用 `xlsx`；聊天 Markdown 使用 Mermaid；`@plait-board/mermaid-to-drawnix` 带入 Mermaid/uuid；Nx 19 通过 `@swc-node/register` 使用 `@swc-node/core`。这些依赖不能仅按 package 名称删除或猜测性升级。
+- 当前锁文件已将 SheetJS 从 npm registry 的 `0.18.5` 升级为上游官方 CDN 的 `0.20.3` tarball，将直接/传递 Mermaid 收敛到 `10.9.6`、其 uuid 收敛到 `14.0.1`，并将 `@swc-node/core` 固定到 `1.13.3`。该事实以 lock importer/resolution、`pnpm why`、业务合同测试和生产审计为证据。
+- 继续追踪入口图后，应用菜单、MoreTools、Minimap、Asset/统一缓存运行时和 `precise-erase` 被确认是剩余可延后边界。全部边界和 CacheQuota 启动门槛完成后，最终生产构建把 `drawnix-app` 降至 481,924B、入口静态图降至 1,941,175B；所有单文件均不超过 512,000B，入口静态图低于 2,000,000B 预算。
+- 用户手册响应证据区分了两个 URL：`/user-manual/` 收到 SPA 应用壳，`/user-manual/index.html` 收到 18,467B 的真实静态手册首页，含 `opentu-document=user-manual` 和 `opentu-manual-version=1.0.2`。当前生成目录包含 21 个 HTML 页面；菜单和发布校验因此必须以显式文档 URL 为合同。
+- 生产审计最终结果为 464 个 production dependencies、0 vulnerabilities，exit 0。包含开发工具链的完整审计覆盖 1,592 个 dependencies，仍因 3 个 moderate vulnerabilities 以 exit 1 结束：2 个来自 `@swc/cli → downloader → file-type`，1 个来自 Nx 19 `nx graph` CORS；没有 high 或 critical。本 change 不以缺少兼容矩阵的 Nx/SWC 大版本升级掩盖该剩余开发工具链风险。
 
 ## Goals / Non-Goals
 
@@ -15,12 +20,14 @@
   - 保留当前 SW 的 precache 机制，并新增一层空闲预取
   - 让源码挂载边界、package 运行时导出、Vite 分组、idle manifest 与产物校验使用同一组资源边界
   - 保持当前画布、任务、工作流、缓存、升级和崩溃恢复语义
+  - 保证用户手册菜单和静态发布路径始终返回独立手册文档，而不是 SPA 应用壳
 - Non-Goals:
   - 不重做白板核心交互
   - 不新增用户可配置的性能开关
   - 不将用户媒体或任务结果纳入 idle 预取
   - 不改变任务执行线程、模型路由、存储 schema 或迁移版本
   - 不借本 change 重构 Chat/AI 业务逻辑或新增产品能力
+  - 不为用户手册目录 URL 引入新的路由系统，也不改变手册内容结构
 
 ## Decisions
 
@@ -30,6 +37,9 @@
 - Decision: 为 `@drawnix/drawnix` 增加 `runtime` 子入口，供 `main.tsx` 与 `app.tsx` 读取启动/工作区服务。
   - Alternatives considered: 继续从根 barrel 导出运行时服务
   - Why not chosen: 难以稳定隔离启动服务与 UI 图谱。
+- Decision: Web 的动态画布只从 `@drawnix/drawnix/app` 加载 `Drawnix`，根 barrel 继续作为兼容 API；首屏不可避免的 React、Plait、Slate 与 TDesign 依赖按依赖层拆成稳定 vendor chunk。
+  - Alternatives considered: 继续动态导入根 barrel，或只把超大入口改名成多个无依赖边界的块。
+  - Why not chosen: 根 barrel 不是精确的运行时边界；任意按体积改名既不能阻止额外导出回流，也容易形成 chunk 循环。共享的 RxJS、TSLib 等低层依赖必须独立于 Plait 层，避免 bootstrap 通过共享依赖反向加载画布引擎。
 - Decision: 通过 `manualChunks + idle-prefetch-manifest` 管理高频延后模块。
   - Alternatives considered: 只依赖 Rollup 默认拆包
   - Why not chosen: 无法稳定产出可校验、可预取的 chunk 分组。
@@ -42,9 +52,39 @@
 - Decision: AI 输入在首屏保留等尺寸、可聚焦的轻壳以保持现有布局；完整 `WorkflowProvider`、`ModelHealthProvider`、模型目录与生成运行时在首次聚焦/输入/快捷键激活时加载。合格 idle 预取只能 warm cache，不能提前挂载业务副作用。
   - Alternatives considered: 画布可操作后再插入完整 AIInputBar。
   - Why not chosen: 会造成底部布局跳动并改变当前首屏视觉层级。
-- Decision: 在 validator 中维护唯一的禁止启动组清单，并新增入口静态依赖图总 raw budget。首轮预算为 2,000,000B，且任何 `ai-chat-`、`tool-windows-`、`external-skills-` JS 都不得进入入口静态图。
+- Decision: 可选画布浮层采用“首次真实激活后挂载并保留实例”的边界；PopupToolbar、LinkPopup、Pencil/Pen/Eraser settings 与 CleanConfirm 未激活时不进入 React 渲染图，激活后保持既有关闭动画、焦点和组件状态。
+  - Alternatives considered: 首屏挂载所有浮层但用 CSS 隐藏。
+  - Why not chosen: CSS 隐藏仍会执行模块、hooks 与订阅，不能形成可验证的启动边界。
+- Decision: `with-tool` 只静态保留工具消息和画布契约；设置读取、图片生成 TaskQueue/模型选择、图片插入与 `ToolGenerator` 在真实工具消息或工具元素出现时动态加载。PPT 图片占位点击和图片覆盖也通过轻量 controller 加载现有运行时，controller 不复制生成、布局或插入业务逻辑。
+  - Alternatives considered: 把整套工具/PPT 运行时预装进画布插件，或在 controller 中重写业务逻辑。
+  - Why not chosen: 前者恢复启动重链，后者产生第二套执行语义。迟到的 ToolGenerator 加载必须检查组件是否已销毁，加载失败必须允许同一用户操作重试。
+- Decision: `safeReload` 保持相同的活动任务确认语义，但仅在用户真实请求刷新时动态加载活动任务/TaskQueue 图。
+  - Alternatives considered: 由轻量 runtime 静态导入任务队列。
+  - Why not chosen: 页面启动不需要执行刷新确认，静态导入会让生成链回流首屏。
+- Decision: 应用工具栏首屏只保留菜单 trigger、Undo 和 Redo；完整菜单在首次真实打开时通过可重试单飞 loader 加载。MoreTools 同样只保留轻量 trigger，完整面板按首次打开加载。
+  - Alternatives considered: 保持菜单/MoreTools 全量静态挂载，或在轻壳复制菜单动作。
+  - Why not chosen: 前者继续带入导入、导出、设置、备份和工具运行时；后者会产生第二套动作语义。动态运行时继续复用原菜单顺序、popover container/z-index 和 Backup/Cloud 回调。
+- Decision: AssetContext 保持同步 context/API 外壳，IndexedDB/同步/缓存运行时只在统一 `isStartupOperable` 门槛成立后的浏览器空闲回调（500ms fallback）或更早的第一次显式存储访问时加载，两条路径共享同一个初始化 Promise；CacheQuota 监听在门槛成立前不注册 idle 调度也不加载缓存 runtime。RetryImage、统一缓存和画布音频缓存使用同一类可重试动态边界。Minimap 在空闲或用户展开时加载，而不是阻塞首屏。
+  - Alternatives considered: 移除 AssetProvider，或让每个消费者自行加载/初始化存储。
+  - Why not chosen: 移除 provider 会改变现有消费者合同；分散初始化会产生重复读取、重复订阅和竞态。轻壳保留唯一状态所有权，运行时只承载延后实现。
+- Decision: `precise-erase` 只在已完成的有效多点擦除手势中动态加载；Freehand 整体删除保持同步执行，精细擦除使用本笔路径、设置和支持元素快照。模块加载单飞但每笔手势独立执行，加载失败允许下一笔重试。
+  - Alternatives considered: 启动时静态加载布尔运算，或合并并发手势为一次执行。
+  - Why not chosen: 静态加载为所有用户支付精细擦除成本；合并手势会改变编辑语义。unsupported 元素仍按原有 precise execute 后的 live board 规则处理。
+- Decision: 用户手册菜单始终打开 `./user-manual/index.html`；Service Worker 将显式 `.html` 识别为独立静态文档并拒绝把应用壳缓存响应当作手册，release static contract 校验文档标记、版本和字节身份。
+  - Alternatives considered: 继续打开 `/user-manual/` 并依赖各部署平台的目录索引/重写。
+  - Why not chosen: 本机真实响应已经证明该目录 URL 会落入 SPA fallback，而显式文件 URL 可稳定返回手册；依赖平台重写无法形成一致的静态发布合同。
+- Decision: 在 validator 中维护唯一的禁止启动组清单，并新增入口静态依赖图总 raw budget。首轮预算为 2,000,000B，且任何 `ai-chat-`、`diagram-engines-`、`tool-windows-`、`external-skills-` JS 都不得进入入口静态图。
   - Alternatives considered: 只补 `ai-chat-` 前缀或继续使用单文件 500KiB。
   - Why not chosen: 只能修复本次名字，仍会放行重命名或多个小 chunk 回流。
+- Decision: Excel 继续使用 SheetJS API，但将版本来源固定为上游官方 `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`；升级必须通过批量生图中文字段和模型基准多工作表/结构化值往返合同。
+  - Alternatives considered: 继续使用 npm registry 的 `xlsx@0.18.5`，或在没有真实格式矩阵时改用另一解析器。
+  - Why not chosen: 前者保留生产审计风险，后者会无依据改变 Excel 兼容面和业务 API。
+- Decision: Mermaid 直接依赖和 `@plait-board/mermaid-to-drawnix` 的传递依赖统一为 `10.9.6`，传递 `uuid@9.0.1` 统一为 `14.0.1`；聊天中的不可信图表始终以 `securityLevel: 'strict'` 初始化。
+  - Alternatives considered: 只升级直接 Mermaid，或仅依赖渲染器默认安全级别。
+  - Why not chosen: 会留下重复的旧传递版本或让安全策略随上游默认值漂移。
+- Decision: 仅将 `@swc-node/core` 固定为当前 Nx 19 / `@swc-node/register` / SWC 图已验证的 `1.13.3`，不把启动与安全修复扩大成 Nx、Vite、Vitest、React 的大版本迁移。
+  - Alternatives considered: 同时升级整套构建工具。
+  - Why not chosen: 当前 Vite/Vitest 与 Nx peer 迁移需要独立兼容矩阵，不能用无关大版本变化污染启动优化和依赖安全证据。
 
 ## Invariants
 
@@ -54,7 +94,15 @@
 - 任务恢复、自动插入和 WorkZone/工作流同步仍在现有延后运行时执行；不得因 UI 拆分永久跳过。
 - 画板、任务、工作流、偏好、素材与 Cache API 的 key/schema/迁移保持不变。
 - SW 仍只预取版本化静态资源，不缓存用户媒体或任务结果；warm offline 行为不得回归。
+- 普通 SW idle run 只消费明确请求的非空分组；没有明确请求时只消费 manifest defaults。遍历全部分组只属于已就绪新 release 的显式 full-prewarm 阶段。
+- 当前 manifest defaults 为空：未发生真实交互的普通启动不下载延后分组；Chat/AI/工具入口按需请求，高版本 release 的 full-prewarm 仍负责升级离线完整性。
+- CDN 配置加载不得无限阻塞 main；同一页面内并发 CDN 选择必须共享一个探测 Promise，失败后的 local 结果也应缓存，避免重复 `version.json` 请求。
 - 公开根 barrel 继续兼容；只改变 bootstrap 的内部导入路径。
+- 未激活的可选浮层、ToolGenerator、工具图片执行、PPT 图片生成/覆盖和刷新任务检查不得进入首屏静态依赖图；首次真实操作必须继续调用原有业务实现，不能丢命令、重复提交或改变错误传播。
+- 未打开的应用菜单/MoreTools、未展开的 Minimap、未触发存储能力和未发生有效多点擦除时，对应重运行时不得静态进入首屏；失败重试、卸载防迟到和每次手势独立执行语义不得回归。
+- `isStartupOperable` 成立前 CacheQuota 不得安排 idle 回调或请求 Asset/统一缓存 runtime；门槛成立后的空闲加载与首次显式存储访问继续共享单一初始化所有权。
+- 用户手册入口必须指向显式 `user-manual/index.html`；显式手册 HTML 响应不能被 SPA shell、旧缓存或发布路径重写替代，手册版本必须与发布版本一致。
+- 依赖升级不改变 `.xlsx` 工作表名、中文列名、值类型、导入/导出 API，不改变 Mermaid-to-Drawnix 业务入口，也不修改持久化 schema；生产依赖树必须由锁文件唯一确定。
 
 ## Risks / Trade-offs
 
@@ -70,6 +118,16 @@
   - Mitigation: 轻壳持有草稿/focus 激活状态，完整组件复用同一容器尺寸；用 1280×720、平板和移动视口截图验证 CLS/布局连续性。
 - 总预算可能因合法核心能力变化而失真。
   - Mitigation: 预算以实际入口图报告输出；任何调整必须带新测量和独立 OpenSpec 审批，不能只提高阈值。
+- Mermaid strict 模式可能改变带原始 HTML 的图表标签显示。
+  - Mitigation: 使用上游 10.9.x 补丁版本并显式测试聊天初始化配置；该安全收紧不通过放宽 strict 回滚。
+- SheetJS 官方 tarball 来源不同于 npm registry，升级可能暴露 Excel 边缘格式差异。
+  - Mitigation: package 与 lockfile 原子锁定完整 HTTPS URL，冻结锁安装；以批量模板中文字段、模型基准工作表顺序和结构化值往返合同保护真实消费者。
+- `uuid@14` 与 `@swc-node/core@1.13.3` 是传递/工具链兼容锁，未来上游升级可能使 override 过时。
+  - Mitigation: 每次依赖升级重新执行 `pnpm why`、冻结锁安装、类型检查、生产构建和生产审计；不能只删除 override 后接受漂移解析。
+- 动态菜单、存储或精细擦除加载失败可能让首次操作没有结果，迟到模块也可能在组件卸载或下一笔手势后执行。
+  - Mitigation: 统一使用可重试单飞 loader；轻壳保留当前意图，组件卸载后忽略迟到模块，擦除运行时只消费完成手势的不可变快照。对应并发、失败重试和卸载合同必须通过。
+- 手册显式路径若在部署或 Service Worker 中再次被应用壳替代，会重现“Resource unavailable”而 HTTP 状态仍可能是 200。
+  - Mitigation: 不能只断言状态码；静态合同和浏览器验证必须同时检查 `opentu-document=user-manual`、页面结构和版本标记，并能从首页跳转到其他手册页面。
 
 ## Migration Plan
 
@@ -77,20 +135,54 @@
 2. 从 `runtime` 子入口导出 analytics release API，并切换 bootstrap 内部导入；保留根导出。
 3. 将 Chat 打开意图与命令队列迁移到轻量 controller，再条件挂载完整 Drawer。
 4. 将 AI 输入拆成等尺寸轻壳和首次交互加载的完整实现，不移动生成/任务数据所有权。
-5. 统一 Vite/idle manifest/validator 的禁止组和 2,000,000B 总 raw budget。
+5. 统一 Vite/idle manifest/validator 的禁止组和 2,000,000B 总 raw budget；动态画布切换到专用 app 子入口，并按依赖层拆分不可避免的 vendor。
 6. 由窄到宽验证并重跑四组各 5 次基线；失败时按上述文件边界整体回滚，不执行数据清理或迁移。
+7. 验证 CDN 单飞/有界 fallback 与 SW 精确分组策略；release full-prewarm 继续覆盖全部非空分组。
+8. 将 Popup/Link/画笔设置/清空确认、ToolGenerator/工具图片链、PPT 图片操作和刷新任务检查迁移到各自首次真实激活边界，并用静态依赖与行为合同证明没有复制业务执行器。
+9. 将 SheetJS 锁定到官方 `0.20.3` tarball；锁定 Mermaid `10.9.6`、uuid `14.0.1` 和 `@swc-node/core` `1.13.3`，运行 Excel 往返、聊天 strict、冻结锁、审计、类型检查和生产构建回归。
+10. 将完整应用菜单、MoreTools、Minimap、Asset/缓存运行时和精细擦除迁移到真实激活边界，保留原动作、状态所有权、错误和并发语义。
+11. 将用户手册菜单固定为显式 `./user-manual/index.html`，由手册完整性、SW 路由和 release static 合同验证 21 页文档不会被 SPA shell 替代。
 
 ## Acceptance Thresholds
 
 - 当前同机冷 origin、SW 关、1280×720、无 throttle、5 次口径下：可操作中位数不得高于 1174ms，范围上界不得高于 1276ms；入口前服务器正文不高于 2,000,000B，请求数不高于 30。
 - 热、SW 关同口径 5 次可操作中位数不高于 515ms（当前 468ms + 10% 容差）。
-- `ai-chat-*`、`tool-windows-*`、`external-skills-*` JS 在未交互冷启动 5/5 样本中均不得由入口静态图请求；AI 轻壳自身 chunk 可存在，但不能静态依赖这些组。
+- `ai-chat-*`、`diagram-engines-*`、`tool-windows-*`、`external-skills-*` JS 在未交互冷启动 5/5 样本中均不得由入口静态图请求；AI 轻壳自身 chunk 可存在，但不能静态依赖这些组。
 - 首次 Chat/AI 激活 100ms 内出现可访问 loading/pressed 状态；本地热缓存下 5 次完成挂载的中位数不高于 1000ms。该指标必须新增修复前/后原始值。
 - warm SW 源站离线仍能进入可操作画布；初始化失败仍显示错误、日志、安全模式和调试入口。
 - 同视口/同主题前后截图中，未交互首屏 AI 输入容器位置和尺寸不变；浏览器报告 CLS 不高于 0.1，移动/平板无新溢出。
+- 每个首屏 JS/CSS 资源的未压缩体积不高于 512,000B，入口静态图未压缩总量不高于 2,000,000B；不得通过提高预算完成验收。
+- `pnpm install --frozen-lockfile` 必须保持 package/lock 一致；`pnpm audit --prod --json` 在当前审计源下不得报告已知生产漏洞。
+- Excel 合同必须保持批量模板中文字段、模型基准工作表顺序和结构化值往返；聊天 Mermaid 合同必须证明 `securityLevel: 'strict'`，依赖树必须只解析到已锁定的 Mermaid/uuid/SheetJS/SWC 版本。
+- 应用菜单打开的 URL 必须为 `/user-manual/index.html`，响应必须包含手册文档标记且不包含应用 `#root`；手册首页必须能跳转到 `advanced-settings.html` 等独立页面。
+
+## Verification Evidence (2026-08-03)
+
+- `pnpm --dir packages/drawnix exec vitest run src/utils/__tests__/spreadsheet-dependency-contract.test.ts src/components/chat-drawer/__tests__/MermaidRenderer.test.tsx --no-file-parallelism --maxWorkers=1`：2 files / 3 tests，exit 0。
+- `pnpm audit --prod --json`：生产审计由修复前 2 high + 1 moderate 收敛为 464 production dependencies、0 vulnerabilities，exit 0。
+- `pnpm install --frozen-lockfile --lockfile-only`：5 workspace projects 的 package/lock 收敛检查通过，exit 0；完整冻结锁安装也已在本 change 验证通过。
+- SheetJS `0.20.3` tarball 的 lockfile integrity 为 `sha512-oLDq3jw7AcLqKWH2AhCpVTZl8mf6X2YReP+Neh0SJUzV/BdZYjth94tG5toiMB1PPrYtxOCfaoUCkvtuH+3AJA==`。
+- 已通过的启动边界定向合同包括 Chat controller 6/6、with-tool 7 files 18/18、overlay/PPT 7 files 15/15、相邻 tool/PPT 3 files 39/39；最终生产构建和产物预算见下方证据，浏览器复测仍以 `tasks.md` 未勾选项为准。
+- AppToolbar/AppMenu 定向回归为 5 files / 21 tests，精细擦除/hand-mode 边界为 3 files / 10 tests，均 exit 0；两批修改后的 `drawnix:typecheck` 与目标 ESLint 均通过。
+- CacheQuota 启动门槛合同为 3 files / 14 tests，目标 ESLint 0 errors，`drawnix:typecheck` exit 0；`isStartupOperable` 成立前零 idle 调度、零缓存 runtime 加载。
+- 最终全量 `pnpm test` 为 292 files / 2,218 tests（2,217 passed、1 skipped、0 failed），exit 0；`drawnix:typecheck`、`web:typecheck` 均 exit 0，`check:cycles` 为 0 cycles，`git diff --check` exit 0。
+- 最终 `NX_DAEMON=false pnpm exec nx build web` exit 0；`drawnix-app` 为 481,924B，入口静态图为 1,941,175B，所有单文件均不超过 512,000B。startup analyzer 9/9、release static 44/44、manual contract 14/14 均通过。
+- 用户手册 21 个生成页面完整性与版本合同已通过；实际静态首页为 18,467B，包含 `opentu-document=user-manual` 与 `opentu-manual-version=1.0.2`。最终菜单浏览器验收仍以 `tasks.md` 未勾选的 8.4 为准。
+- SheetJS `0.20.3` 官方 tarball 的 SHA-512 integrity 已按锁文件值验证；生产审计覆盖 464 dependencies、0 vulnerabilities，exit 0。完整工具链审计覆盖 1,592 dependencies，剩余 3 moderate（2 个 `@swc/cli → downloader → file-type`、1 个 Nx 19 `nx graph` CORS），0 high/critical，exit 1。
+- 全仓 lint 仍为 exit 1：当前 433 errors / 2,441 warnings；HEAD 基线为 439 errors / 2,471 warnings，差值为 -6 errors / -30 warnings，本 change 新增 diagnostics 为 0。该结果不得误报为全仓 lint 通过。
+- 最终 10 次 cold/SW-off 语义门槛原始 operable 为 `[375,302,288,297,317,325,313,294,317,312]ms`，中位 313ms、最大 375ms；请求为 `[16,18,18,18,18,18,18,18,18,18]`，正文为 1 次 1,986,782B、9 次 1,989,484B。10/10 样本的 `unified-cache-service`、Asset runtime、Minimap、Chat/AI/工具/编辑器等禁止启动资源均为 0，页面错误、HTTP 和 request failure 均为 0。
+- 最终四组各 5 次 operable 原始值：cold/SW-off `[463,327,312,298,340]ms`（中位/最大 327/463），cold/SW-on `[316,337,323,313,326]ms`（323/337），warm/SW-off `[306,89,66,83,69]ms`（83/306），warm/SW-on `[329,736,736,116,69]ms`（329/736）。冷样本均为 18 请求、1,989,484B；warm 样本源站网络请求和正文均为 0。warm/SW-on 第 2 次记录到一次 `startup-app` `net::ERR_ABORTED`，但页面可操作；原探针未记录足以证明其阶段或原因的数据，因此不作归因。等待稳定 2 秒后追加 5 次 warm/SW-on 为 `[136,108,113,94,120]ms`，5/5 controller 正确且无 request/HTTP/page error，原异常未复现。
+- 最终非付费浏览器 smoke 已确认 AI 输入草稿、Chat、App Menu、MoreTools、Minimap 均可操作，模型/付费请求计数为 0；从 App Menu 打开的手册显式 URL、marker、版本、sidebar/main、无 `#root` 和 `advanced-settings.html` 导航均正确。Chat 完整运行时加载时外部 `https://foropencode.com/api/history/aggregated` 返回一次 HTTP 404，但没有页面异常且不影响本地功能，本 change 不把该外部状态接口响应隐写为通过。
+- warm SW 在源站离线时由 `http://127.0.0.1:7210/sw.js` 持续控制，83ms 重新进入可操作画布，页面错误、request failure 和 HTTP failure 均为 0。
+- 仓库 Playwright smoke 仍受精确浏览器缺失阻塞：套件要求 Chromium 1200，本机可用浏览器为 1208；3 个 smoke 在测试体执行前均因 executable missing 退出，安装命令长时间无输出后以 130 终止。上述真实 smoke 使用相同 Playwright API 显式指定 1208 完成，不能替代未运行的 feature/visual/responsive 全矩阵。
+- `openspec validate refactor-startup-shell-loading --strict` 仍因 `openspec: command not found` 以 exit 127 结束；strict validation 明确未完成。仓库 Playwright 全矩阵以及任务/工作流真实恢复、升级、多标签页浏览器路径仍由 `tasks.md` 的未勾选项跟踪，不由构建、合同测试或已完成的浏览器 smoke 替代。
 
 ## Rollback
 
 - 独立回退 runtime analytics 导出/导入、Chat controller、AI 轻壳和 validator/Vite 改动及对应测试。
+- 可选浮层、工具、PPT 和刷新边界按 controller/runtime 成对回退；不得只恢复静态重依赖而保留失效的首次激活状态，也不得回退成第二套生成或插入实现。
+- AppMenu、MoreTools、Asset/缓存、Minimap 和 precise erase 必须按各自轻壳/运行时边界成对回退；不能保留指向已删除运行时的 loader，也不能把擦除并发手势合并。
+- 用户手册修复可独立回退菜单链接与静态路由合同，但不得发布已知会返回 SPA shell 的目录入口；回退前必须提供等价的显式静态文档路由证据。
+- 依赖回退必须同时修改 manifest、override 与 lockfile，并重跑相同 Excel/Mermaid/审计/类型/构建合同。不得只回退 SheetJS tarball、Mermaid 或 uuid 的一侧造成重复版本；已知存在安全风险的旧版本不得在没有明确风险处置和受影响入口隔离时重新发布。
 - 不删除或迁移 IndexedDB、Cache API、localStorage/sessionStorage 数据。
 - 任一首次命令丢失、任务恢复缺失、离线回归或预算/测试失败时整体回滚加载语义；不得只提高预算或放宽断言。

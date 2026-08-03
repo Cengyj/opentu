@@ -453,8 +453,9 @@ describe('CanvasAudioPlaybackService', () => {
     await service.togglePlayback(queue[1]);
 
     audio.dispatchEvent(new Event('ended'));
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(service.getState().activeAudioUrl).toBe(queue[0].audioUrl);
+    });
 
     expect(service.getState()).toMatchObject({
       activeAudioUrl: queue[0].audioUrl,
@@ -478,10 +479,10 @@ describe('CanvasAudioPlaybackService', () => {
 
     audio.currentTime = 42;
     audio.dispatchEvent(new Event('ended'));
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(audio.currentTime).toBe(0);
+    });
 
-    expect(audio.currentTime).toBe(0);
     expect(service.getState()).toMatchObject({
       activeAudioUrl: track.audioUrl,
       activeQueueIndex: 0,
@@ -517,10 +518,10 @@ describe('CanvasAudioPlaybackService', () => {
     await service.togglePlayback(queue[0]);
 
     audio.dispatchEvent(new Event('ended'));
-    await Promise.resolve();
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(service.getState().activeAudioUrl).toBe(queue[2].audioUrl);
+    });
 
-    expect(service.getState().activeAudioUrl).toBe(queue[2].audioUrl);
     expect(service.getState().activeQueueIndex).toBe(2);
     randomSpy.mockRestore();
   });
@@ -607,7 +608,7 @@ describe('CanvasAudioPlaybackService', () => {
     expect(service.getState().waveformLevels).toEqual([...EMPTY_AUDIO_WAVEFORM]);
   });
 
-  it('plays reading sources and tracks subtitle progress', () => {
+  it('plays reading sources and tracks subtitle progress', async () => {
     const audio = new MockAudioElement();
     const speechSynthesis = new MockSpeechSynthesis();
     let currentNow = 0;
@@ -638,7 +639,7 @@ describe('CanvasAudioPlaybackService', () => {
       }
     );
 
-    service.toggleReadingPlaybackInQueue(readingSource ? [readingSource][0] : (null as never), readingSource ? [readingSource] : []);
+    await service.toggleReadingPlaybackInQueue(readingSource ? [readingSource][0] : (null as never), readingSource ? [readingSource] : []);
 
     expect(service.getState()).toMatchObject({
       mediaType: 'reading',
@@ -661,7 +662,7 @@ describe('CanvasAudioPlaybackService', () => {
     expect(speechSynthesis.paused).toBe(false);
   });
 
-  it('restarts reading from the same source in single-loop mode after the last segment', () => {
+  it('restarts reading from the same source in single-loop mode after the last segment', async () => {
     const audio = new MockAudioElement();
     const speechSynthesis = new MockSpeechSynthesis();
     const readingSource = createReadingPlaybackSource({
@@ -683,7 +684,7 @@ describe('CanvasAudioPlaybackService', () => {
     );
 
     service.setPlaybackMode('single-loop');
-    service.toggleReadingPlaybackInQueue(readingSource ? [readingSource][0] : (null as never), readingSource ? [readingSource] : []);
+    await service.toggleReadingPlaybackInQueue(readingSource ? [readingSource][0] : (null as never), readingSource ? [readingSource] : []);
 
     const firstUtterance = speechSynthesis.utterances[0];
     firstUtterance?.onend?.(new Event('end') as SpeechSynthesisEvent);
@@ -721,7 +722,7 @@ describe('CanvasAudioPlaybackService', () => {
       }
     );
 
-    service.toggleReadingPlaybackInQueue(readingSource ? [readingSource][0] : (null as never), readingSource ? [readingSource] : []);
+    await service.toggleReadingPlaybackInQueue(readingSource ? [readingSource][0] : (null as never), readingSource ? [readingSource] : []);
     service.setPlaybackRate(1.5, 'reading');
     await Promise.resolve();
 
@@ -755,7 +756,7 @@ describe('CanvasAudioPlaybackService', () => {
       }
     );
 
-    service.toggleReadingPlaybackInQueue(readingSource ? [readingSource][0] : (null as never), readingSource ? [readingSource] : []);
+    await service.toggleReadingPlaybackInQueue(readingSource ? [readingSource][0] : (null as never), readingSource ? [readingSource] : []);
     await ttsSettings.update({ rate: 2 });
 
     expect(service.getState()).toMatchObject({
@@ -764,5 +765,103 @@ describe('CanvasAudioPlaybackService', () => {
       activeReadingSourceId: readingSource?.readingSourceId,
     });
     expect(speechSynthesis.utterances[0]?.rate).toBe(2);
+  });
+
+  it('single-flights concurrent reading runtime loads', async () => {
+    const speechSynthesis = new MockSpeechSynthesis();
+    const readingSource = createReadingPlaybackSource({
+      elementId: 'kb-note:single-flight',
+      title: '并发加载',
+      content: '第一句。',
+      origin: { kind: 'kb-note', id: 'single-flight' },
+    });
+    let resolveRuntime: ((runtime: {
+      getPlaybackRate: () => number;
+      subscribePlaybackRate: () => () => void;
+      updatePlaybackRate: () => Promise<void>;
+      configureUtterance: (utterance: SpeechSynthesisUtterance) => void;
+    }) => void) | undefined;
+    const runtimePromise = new Promise<{
+      getPlaybackRate: () => number;
+      subscribePlaybackRate: () => () => void;
+      updatePlaybackRate: () => Promise<void>;
+      configureUtterance: (utterance: SpeechSynthesisUtterance) => void;
+    }>((resolve) => {
+      resolveRuntime = resolve;
+    });
+    const loadRuntime = vi.fn(() => runtimePromise);
+    const service = new CanvasAudioPlaybackService(
+      () => new MockAudioElement() as unknown as HTMLAudioElement,
+      {
+        speechSynthesis: speechSynthesis as unknown as SpeechSynthesis,
+        utteranceFactory: (text) => ({ text } as SpeechSynthesisUtterance),
+        loadReadingPlaybackRuntime: loadRuntime,
+      }
+    );
+
+    const firstToggle = service.toggleReadingPlayback(readingSource as NonNullable<typeof readingSource>);
+    const secondToggle = service.toggleReadingPlayback(readingSource as NonNullable<typeof readingSource>);
+    await Promise.resolve();
+    expect(loadRuntime).toHaveBeenCalledTimes(1);
+
+    resolveRuntime?.({
+      getPlaybackRate: () => 1,
+      subscribePlaybackRate: () => () => undefined,
+      updatePlaybackRate: async () => undefined,
+      configureUtterance: (utterance) => {
+        utterance.rate = 1;
+      },
+    });
+    await Promise.all([firstToggle, secondToggle]);
+
+    expect(service.getState().playing).toBe(true);
+    expect(speechSynthesis.utterances).toHaveLength(1);
+  });
+
+  it('retries reading runtime initialization after a failed settings read', async () => {
+    const speechSynthesis = new MockSpeechSynthesis();
+    const getPlaybackRate = vi
+      .fn<() => number>()
+      .mockImplementationOnce(() => {
+        throw new Error('settings unavailable');
+      })
+      .mockReturnValue(1.25);
+    const readingRuntime = {
+      getPlaybackRate,
+      subscribePlaybackRate: vi.fn(() => () => undefined),
+      updatePlaybackRate: vi.fn(async () => undefined),
+      configureUtterance: vi.fn((utterance: SpeechSynthesisUtterance) => {
+        utterance.rate = 1.25;
+      }),
+    };
+    const loadRuntime = vi.fn(async () => readingRuntime);
+    const readingSource = createReadingPlaybackSource({
+      elementId: 'kb-note:retry',
+      title: '加载重试',
+      content: '第一句。',
+      origin: { kind: 'kb-note', id: 'retry' },
+    });
+    const service = new CanvasAudioPlaybackService(
+      () => new MockAudioElement() as unknown as HTMLAudioElement,
+      {
+        speechSynthesis: speechSynthesis as unknown as SpeechSynthesis,
+        utteranceFactory: (text) => ({ text } as SpeechSynthesisUtterance),
+        loadReadingPlaybackRuntime: loadRuntime,
+      }
+    );
+
+    await service.toggleReadingPlayback(readingSource as NonNullable<typeof readingSource>);
+    expect(service.getState()).toMatchObject({
+      playing: false,
+      error: '语音朗读组件加载失败，请再次点击重试',
+    });
+
+    await service.toggleReadingPlayback(readingSource as NonNullable<typeof readingSource>);
+    expect(loadRuntime).toHaveBeenCalledTimes(2);
+    expect(service.getState()).toMatchObject({
+      playing: true,
+      readingPlaybackRate: 1.25,
+      error: undefined,
+    });
   });
 });

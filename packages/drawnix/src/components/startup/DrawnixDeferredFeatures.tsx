@@ -1,5 +1,4 @@
 import React, { Suspense, lazy } from 'react';
-import type { PlaitElement } from '@plait/core';
 import type { DrawnixBoard } from '../../hooks/use-drawnix';
 import type { Board as WorkspaceBoard } from '../../types/workspace.types';
 import type { MediaLibraryConfig } from '../../types/asset.types';
@@ -26,16 +25,6 @@ const BackupRestoreDialog = lazy(() =>
     default: module.BackupRestoreDialog,
   }))
 );
-const VersionUpdatePrompt = lazy(() =>
-  import('../version-update/version-update-prompt').then((module) => ({
-    default: module.VersionUpdatePrompt,
-  }))
-);
-const PerformancePanel = lazy(() =>
-  import('../performance-panel/PerformancePanel').then((module) => ({
-    default: module.PerformancePanel,
-  }))
-);
 const SyncSettings = lazy(() =>
   import('./DeferredSyncSettings').then((module) => ({
     default: module.DeferredSyncSettings,
@@ -59,10 +48,7 @@ const ToolWinBoxManager = lazy(() =>
 
 interface DrawnixDeferredFeaturesProps {
   board: DrawnixBoard | null;
-  value: PlaitElement[];
   containerRef: React.RefObject<HTMLDivElement>;
-  versionUpdateEnabled: boolean;
-  performancePanelEnabled: boolean;
   toolWindowManagerEnabled: boolean;
   projectDrawerOpen: boolean;
   toolboxDrawerOpen: boolean;
@@ -86,15 +72,11 @@ interface DrawnixDeferredFeaturesProps {
     }
   ) => void;
   handleBeforeSwitch: () => Promise<void>;
-  onCreateProjectForMemory: () => Promise<void>;
 }
 
 export function DrawnixDeferredFeatures({
   board,
-  value,
   containerRef,
-  versionUpdateEnabled,
-  performancePanelEnabled,
   toolWindowManagerEnabled,
   projectDrawerOpen,
   toolboxDrawerOpen,
@@ -110,7 +92,6 @@ export function DrawnixDeferredFeatures({
   setCloudSyncOpen,
   handleOpenMediaLibrary,
   handleBeforeSwitch,
-  onCreateProjectForMemory,
 }: DrawnixDeferredFeaturesProps) {
   const { appState, setAppState } = useDrawnix();
   const commandPaletteOpen = appState.openCommandPalette || false;
@@ -164,11 +145,6 @@ export function DrawnixDeferredFeatures({
           />
         </Suspense>
       )}
-      {versionUpdateEnabled && (
-        <Suspense fallback={null}>
-          <VersionUpdatePrompt />
-        </Suspense>
-      )}
       {toolWindowManagerEnabled && (
         <Suspense fallback={null}>
           <ToolWinBoxManager />
@@ -200,15 +176,6 @@ export function DrawnixDeferredFeatures({
               }));
             }}
             board={board}
-          />
-        </Suspense>
-      )}
-      {performancePanelEnabled && (
-        <Suspense fallback={null}>
-          <PerformancePanel
-            container={containerRef.current}
-            onCreateProject={onCreateProjectForMemory}
-            elements={board?.children || value}
           />
         </Suspense>
       )}

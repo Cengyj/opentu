@@ -5,43 +5,61 @@
  * 采用上下布局,视觉风格统一,使用标准的 ToolButton 组件
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { Badge } from 'tdesign-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ToolButton } from '../tool-button';
-import { useTaskQueue } from '../../hooks/useTaskQueue';
-import type { Task } from '../../types/task.types';
 import { FeedbackButton } from '../feedback-button/feedback-button';
-import { FolderIcon, ToolboxIcon, TaskIcon } from '../icons';
+import {
+  FolderIcon,
+  ToolboxIcon,
+  TaskIcon,
+} from '../icons/startup-icons';
+import { createRetriableModuleLoader } from '../../utils/retriable-module-loader';
 import './bottom-actions-section.scss';
 
-const FAILED_TASK_ACK_STORAGE_KEY = 'aitu-task-queue-failed-ack-at';
+type TaskQueueActionButtonComponent = React.ComponentType<{
+  taskPanelExpanded: boolean;
+  onTaskPanelToggle: () => void;
+}>;
 
-function readFailedTaskAckAt(): number {
-  if (typeof window === 'undefined') {
-    return 0;
-  }
+export type TaskQueueActionButtonLoader = () => Promise<{
+  TaskQueueActionButton: TaskQueueActionButtonComponent;
+}>;
 
-  try {
-    const value = Number(
-      window.localStorage.getItem(FAILED_TASK_ACK_STORAGE_KEY)
-    );
-    return Number.isFinite(value) ? value : 0;
-  } catch {
-    return 0;
-  }
+const loadDefaultTaskQueueActionButton = createRetriableModuleLoader(
+  () => import('./task-queue-action-button')
+);
+
+interface BottomActionButtonProps {
+  icon: React.ReactNode;
+  label: string;
+  selected: boolean;
+  track: string;
+  testId: string;
+  onClick: () => void;
 }
 
-function writeFailedTaskAckAt(value: number): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  window.localStorage.setItem(FAILED_TASK_ACK_STORAGE_KEY, String(value));
-}
-
-function getTaskSignalAt(task: Task): number {
-  return task.completedAt || task.updatedAt || task.createdAt || 0;
-}
+const BottomActionButton: React.FC<BottomActionButtonProps> = ({
+  icon,
+  label,
+  selected,
+  track,
+  testId,
+  onClick,
+}) => (
+  <ToolButton
+    type="icon"
+    icon={icon}
+    aria-label={label}
+    tooltip={label}
+    tooltipPlacement="right"
+    selected={selected}
+    visible={true}
+    data-track={track}
+    data-testid={testId}
+    onPointerDown={(event) => event.event.stopPropagation()}
+    onClick={onClick}
+  />
+);
 
 export interface BottomActionsSectionProps {
   /** 项目抽屉是否打开 */
@@ -56,6 +74,8 @@ export interface BottomActionsSectionProps {
   taskPanelExpanded: boolean;
   /** 任务面板切换回调 */
   onTaskPanelToggle: () => void;
+  /** 延迟任务状态运行时的加载边界，默认指向生产任务按钮。 */
+  taskQueueActionButtonLoader?: TaskQueueActionButtonLoader;
 }
 
 export const BottomActionsSection: React.FC<BottomActionsSectionProps> = ({
@@ -65,40 +85,67 @@ export const BottomActionsSection: React.FC<BottomActionsSectionProps> = ({
   onToolboxDrawerToggle,
   taskPanelExpanded,
   onTaskPanelToggle,
+  taskQueueActionButtonLoader = loadDefaultTaskQueueActionButton,
 }) => {
-  const { activeTasks, completedTasks, failedTasks } = useTaskQueue();
-  const [acknowledgedFailedAt, setAcknowledgedFailedAt] = useState(
-    readFailedTaskAckAt
-  );
+  const [LoadedTaskQueueActionButton, setLoadedTaskQueueActionButton] =
+    useState<TaskQueueActionButtonComponent | null>(null);
+  const mountedRef = useRef(false);
+  const taskSummaryLoadingRef = useRef(false);
 
-  const latestFailedAt = useMemo(
-    () =>
-      failedTasks.reduce(
-        (latest, task) => Math.max(latest, getTaskSignalAt(task)),
-        0
-      ),
-    [failedTasks]
-  );
-  const hasUnseenFailedTasks = latestFailedAt > acknowledgedFailedAt;
-
-  useEffect(() => {
-    if (!taskPanelExpanded || latestFailedAt <= acknowledgedFailedAt) {
+  const requestTaskSummary = useCallback(() => {
+    if (!mountedRef.current) {
       return;
     }
 
-    setAcknowledgedFailedAt(latestFailedAt);
-    try {
-      writeFailedTaskAckAt(latestFailedAt);
-    } catch {
-      // localStorage 不可用时，仅保留当前页面会话内的已读状态
+    if (LoadedTaskQueueActionButton || taskSummaryLoadingRef.current) {
+      return;
     }
-  }, [acknowledgedFailedAt, latestFailedAt, taskPanelExpanded]);
 
-  // 准备任务提示内容
-  const totalTasks = activeTasks.length + completedTasks.length + failedTasks.length;
-  const taskTooltip = totalTasks > 0
-    ? `任务队列 (生成中: ${activeTasks.length}, 已完成: ${completedTasks.length}, 失败: ${failedTasks.length})`
-    : '任务队列 (暂无任务)';
+    taskSummaryLoadingRef.current = true;
+    void taskQueueActionButtonLoader().then(
+      (module) => {
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setLoadedTaskQueueActionButton(() => module.TaskQueueActionButton);
+      },
+      () => {
+        // Keep the light button interactive. A later click can retry a failed
+        // chunk load without taking down the toolbar.
+        taskSummaryLoadingRef.current = false;
+      }
+    );
+  }, [LoadedTaskQueueActionButton, taskQueueActionButtonLoader]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    if (taskPanelExpanded) {
+      requestTaskSummary();
+    }
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, [requestTaskSummary, taskPanelExpanded]);
+
+  const handleTaskPanelToggle = () => {
+    requestTaskSummary();
+    onTaskPanelToggle();
+  };
+
+  const taskButtonFallback = (
+    <div className="bottom-actions-section__task-wrapper">
+      <BottomActionButton
+        icon={<TaskIcon />}
+        label="任务队列"
+        selected={taskPanelExpanded}
+        track="toolbar_click_tasks"
+        testId="toolbar-tasks"
+        onClick={handleTaskPanelToggle}
+      />
+    </div>
+  );
 
   return (
     <div className="bottom-actions-section">
@@ -106,73 +153,35 @@ export const BottomActionsSection: React.FC<BottomActionsSectionProps> = ({
       <FeedbackButton />
 
       {/* 打开项目按钮 - 使用 ToolButton */}
-      <ToolButton
-        type="icon"
+      <BottomActionButton
         icon={<FolderIcon />}
-        aria-label={projectDrawerOpen ? '关闭项目' : '打开项目'}
-        tooltip={projectDrawerOpen ? '关闭项目' : '打开项目'}
-        tooltipPlacement="right"
+        label={projectDrawerOpen ? '关闭项目' : '打开项目'}
         selected={projectDrawerOpen}
-        visible={true}
-        data-track="toolbar_click_project_drawer"
-        data-testid="toolbar-project"
-        onPointerDown={(e) => {
-          e.event.stopPropagation();
-        }}
+        track="toolbar_click_project_drawer"
+        testId="toolbar-project"
         onClick={onProjectDrawerToggle}
       />
 
       {/* 工具箱按钮 */}
       {onToolboxDrawerToggle && (
-        <ToolButton
-          type="icon"
+        <BottomActionButton
           icon={<ToolboxIcon />}
-          aria-label={toolboxDrawerOpen ? '关闭工具箱' : '打开工具箱'}
-          tooltip={toolboxDrawerOpen ? '关闭工具箱' : '打开工具箱'}
-          tooltipPlacement="right"
+          label={toolboxDrawerOpen ? '关闭工具箱' : '打开工具箱'}
           selected={toolboxDrawerOpen}
-          visible={true}
-          data-track="toolbar_click_toolbox"
-          data-testid="toolbar-toolbox"
-          onPointerDown={(e) => {
-            e.event.stopPropagation();
-          }}
+          track="toolbar_click_toolbox"
+          testId="toolbar-toolbox"
           onClick={onToolboxDrawerToggle}
         />
       )}
 
-      {/* 任务队列按钮 - 使用 ToolButton + Badge */}
-      <div className="bottom-actions-section__task-wrapper">
-        <Badge
-          count={activeTasks.length > 0 ? activeTasks.length : 0}
-          showZero={false}
-          offset={[6, -6]}
-        >
-          <ToolButton
-            type="icon"
-            icon={<TaskIcon />}
-            aria-label="任务队列"
-            tooltip={taskTooltip}
-            tooltipPlacement="right"
-            selected={taskPanelExpanded}
-            visible={true}
-            data-track="toolbar_click_tasks"
-            data-testid="toolbar-tasks"
-            onPointerDown={(e) => {
-              e.event.stopPropagation();
-            }}
-            onClick={onTaskPanelToggle}
-          />
-        </Badge>
-
-        {/* 状态指示点 */}
-        {activeTasks.length > 0 && (
-          <div className="bottom-actions-section__status bottom-actions-section__status--active" />
-        )}
-        {hasUnseenFailedTasks && activeTasks.length === 0 && (
-          <div className="bottom-actions-section__status bottom-actions-section__status--failed" />
-        )}
-      </div>
+      {LoadedTaskQueueActionButton ? (
+        <LoadedTaskQueueActionButton
+          taskPanelExpanded={taskPanelExpanded}
+          onTaskPanelToggle={handleTaskPanelToggle}
+        />
+      ) : (
+        taskButtonFallback
+      )}
     </div>
   );
 };

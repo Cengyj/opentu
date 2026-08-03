@@ -8,7 +8,6 @@ import React, {
 } from 'react';
 import classNames from 'classnames';
 import { ATTACHED_ELEMENT_CLASS_NAME } from '@plait/core';
-import { ChevronUp, ChevronDown } from 'lucide-react';
 import { AppToolbar } from './app-toolbar/app-toolbar';
 import { CreationToolbar } from './creation-toolbar';
 import { UnifiedToolbarProps } from './toolbar.types';
@@ -16,7 +15,12 @@ import { Island } from '../island';
 import { BottomActionsSection } from './bottom-actions-section';
 import { useViewportScale } from '../../hooks/useViewportScale';
 import { useDeviceType } from '../../hooks/useDeviceType';
-import { AIImageIcon, AIVideoIcon } from '../icons';
+import {
+  AIImageIcon,
+  AIVideoIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+} from '../icons/startup-icons';
 import { DialogType, useDrawnix } from '../../hooks/use-drawnix';
 import { HoverTip } from '../shared/hover';
 
@@ -504,7 +508,7 @@ export const UnifiedToolbar: React.FC<UnifiedToolbarProps> = React.memo(
                 onClick={handleMobileToggle}
                 aria-label="展开工具栏"
               >
-                <ChevronUp size={18} />
+                <ChevronUpIcon size={18} />
               </button>
               {/* AI 图片生成 */}
               <button
@@ -532,7 +536,7 @@ export const UnifiedToolbar: React.FC<UnifiedToolbarProps> = React.memo(
               onClick={handleMobileToggle}
               aria-label="收起工具栏"
             >
-              <ChevronDown size={18} />
+              <ChevronDownIcon size={18} />
             </button>
           )}
 

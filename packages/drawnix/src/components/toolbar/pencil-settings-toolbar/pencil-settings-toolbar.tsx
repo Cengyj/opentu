@@ -24,8 +24,6 @@ import {
   setPencilShape,
   FreehandStrokeStyle,
 } from '../../../plugins/freehand/freehand-settings';
-import { FreehandShape } from '../../../plugins/freehand/type';
-import { getFreehandPointers } from '../../../plugins/freehand/utils';
 import { useI18n } from '../../../i18n';
 import { useViewportScale } from '../../../hooks/useViewportScale';
 import { updatePencilCursor } from '../../../hooks/usePencilCursor';
@@ -39,6 +37,7 @@ import {
 import './pencil-settings-toolbar.scss';
 import { HoverTip } from '../../shared/hover';
 import { analytics } from '../../../utils/posthog-analytics';
+import { isPencilSettingsToolbarActive } from '../tool-settings-visibility';
 
 // 模拟光标预览组件
 const CursorPreview: React.FC<{
@@ -95,10 +94,7 @@ export const PencilSettingsToolbar: React.FC = () => {
   const [showCursorPreview, setShowCursorPreview] = useState(false);
 
   // 检查是否是画笔指针（不包括橡皮擦）
-  const freehandPointers = getFreehandPointers();
-  const isPencilPointer =
-    freehandPointers.includes(appState.pointer as FreehandShape) &&
-    appState.pointer !== FreehandShape.eraser;
+  const isPencilPointer = isPencilSettingsToolbarActive(appState.pointer);
 
   // 当 board 变化时同步设置
   useEffect(() => {

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import classNames from 'classnames';
-import { Pause, Play } from 'lucide-react';
 import type { PlaitAudioNode } from '../../types/audio-node.types';
+import { PauseIcon, PlayIcon } from '../icons/startup-icons';
 import { AudioCover } from '../shared/AudioCover';
 import { HoverTip } from '../shared/hover';
 import {
@@ -615,12 +615,12 @@ export const AudioNodeContent: React.FC<AudioNodeContentProps> = ({
             />
             <div className="audio-node__artwork-overlay">
               {isPlaying ? (
-                <Pause
+                <PauseIcon
                   size={18}
                   className="audio-node__artwork-icon audio-node__artwork-icon--pause"
                 />
               ) : (
-                <Play
+                <PlayIcon
                   size={28}
                   fill="currentColor"
                   strokeWidth={0}

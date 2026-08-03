@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button } from 'tdesign-react';
+import { Button } from 'tdesign-react/es/button';
 import {
   Dialog,
   DialogContent,

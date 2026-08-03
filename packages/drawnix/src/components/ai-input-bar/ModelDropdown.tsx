@@ -26,7 +26,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { MessagePlugin } from 'tdesign-react';
+import { MessagePlugin } from '../../utils/message-plugin';
 import {
   IMAGE_MODELS,
   ModelVendor,

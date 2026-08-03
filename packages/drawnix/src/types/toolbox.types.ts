@@ -5,6 +5,7 @@
  */
 
 import { PlaitElement, Point } from '@plait/core';
+import type { ToolBridgeCapability } from './tool-communication.types';
 
 export interface ToolDefaultWindowBehavior {
   /** 打开工具后是否默认常驻到左侧最小化工具栏 */
@@ -40,6 +41,9 @@ export type ToolDefinition = {
 
   /** iframe sandbox 权限 */
   permissions?: string[];
+
+  /** Trusted host capabilities for this iframe manifest. */
+  bridgeCapabilities?: ToolBridgeCapability[];
 
   /** 是否支持同工具多窗口实例 */
   supportsMultipleWindows?: boolean;

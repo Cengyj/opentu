@@ -8,6 +8,7 @@
 import localforage from 'localforage';
 import { ToolDefinition, ToolCategory } from '../types/toolbox.types';
 import { toolRegistry } from '../tools/registry';
+import { resolveSafeExternalToolUrl } from '../utils/external-tool-url';
 
 /**
  * 自定义工具存储格式
@@ -258,6 +259,13 @@ class ToolboxService {
     let skipped = 0;
 
     for (const tool of tools) {
+      try {
+        this.validateToolDefinition(tool);
+      } catch {
+        skipped++;
+        continue;
+      }
+
       const existingIndex = this.customTools.findIndex(t => t.id === tool.id);
       
       if (existingIndex === -1) {
@@ -307,16 +315,12 @@ class ToolboxService {
       throw new Error('Tool cannot have both a URL and an internal component');
     }
 
-    // URL 格式验证（如果提供了 URL）
-    if (tool.url && tool.url.startsWith('http')) {
-      try {
-        const url = new URL(tool.url);
-        // 只允许 https 和 http
-        if (!['https:', 'http:'].includes(url.protocol)) {
-          throw new Error('Only HTTP/HTTPS URLs are allowed');
-        }
-      } catch (e) {
-        throw new Error('Invalid URL format');
+    // URL 格式验证（如果提供了 URL）。相对地址用于本地工具，最终
+    // iframe 渲染时会再次基于当前应用 origin 解析和校验。
+    if (tool.url) {
+      const result = resolveSafeExternalToolUrl(tool.url);
+      if (!result.ok) {
+        throw new Error(result.message);
       }
     }
 

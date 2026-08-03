@@ -12,9 +12,10 @@ import {
   BoardTransforms,
   getViewportOrigination,
 } from '@plait/core';
-import { MinusIcon, AddIcon, ChevronDownIcon } from 'tdesign-icons-react';
+import MinusIcon from 'tdesign-icons-react/esm/components/minus';
+import AddIcon from 'tdesign-icons-react/esm/components/add';
+import ChevronDownIcon from 'tdesign-icons-react/esm/components/chevron-down';
 import { useBoard } from '@plait-board/react-board';
-import { Minimap } from '../minimap/Minimap';
 import { useChatDrawerControl } from '../../contexts/ChatDrawerContext';
 import { Popover, PopoverContent, PopoverTrigger } from '../popover/popover';
 import { Z_INDEX } from '../../constants/z-index';
@@ -23,6 +24,7 @@ import { fitAllPPTFrames, fitFrame } from '../../utils/fit-frame';
 import { HoverTip } from '../shared/hover';
 import { isFrameElement } from '../../types/frame.types';
 import { requestOpenPPTEditor } from '../../services/ppt/ppt-ui-events';
+import { DeferredViewNavigationMinimap } from './DeferredViewNavigationMinimap';
 import './view-navigation.scss';
 
 export interface ViewNavigationProps {
@@ -30,6 +32,8 @@ export interface ViewNavigationProps {
   showMinimap?: boolean;
   /** 容器元素 */
   container?: HTMLElement | null;
+  /** Core Drawnix shell has initialized and completed its first paint. */
+  isStartupOperable?: boolean;
 }
 
 // 边距
@@ -52,6 +56,7 @@ const getViewportSnapshot = (board?: PlaitBoard) => {
 export const ViewNavigation: React.FC<ViewNavigationProps> = ({
   showMinimap = true,
   container,
+  isStartupOperable = true,
 }) => {
   const board = useBoard() as PlaitBoard;
   const { t } = useI18n();
@@ -346,17 +351,10 @@ export const ViewNavigation: React.FC<ViewNavigationProps> = ({
       {/* Minimap - 展开时显示 */}
       {showMinimap && minimapExpanded && (
         <div className="view-navigation__minimap">
-          <Minimap
+          <DeferredViewNavigationMinimap
             board={board}
-            displayMode="always"
-            config={{
-              width: 180,
-              height: 120,
-              position: 'top-right',
-              margin: 0,
-              collapsible: false,
-              defaultExpanded: true,
-            }}
+            isStartupOperable={isStartupOperable}
+            loadImmediately={manuallyExpanded}
           />
         </div>
       )}

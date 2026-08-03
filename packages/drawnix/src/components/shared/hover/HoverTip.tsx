@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tooltip as TDesignTooltip } from 'tdesign-react';
+import { Tooltip as TDesignTooltip } from 'tdesign-react/es/tooltip';
 import { Z_INDEX } from '../../../constants/z-index';
 import { hasUsableHoverContent, stripNativeHoverProps } from './hover-utils';
 

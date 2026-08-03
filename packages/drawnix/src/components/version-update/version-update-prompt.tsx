@@ -3,44 +3,12 @@ import { Button, Dialog } from 'tdesign-react';
 import { RefreshIcon } from 'tdesign-icons-react';
 import { useTaskQueue } from '../../hooks/useTaskQueue';
 import './version-update-prompt.scss';
-
-type VersionUpgradePhase =
-  | 'idle'
-  | 'ready'
-  | 'confirming'
-  | 'commit-sent'
-  | 'activating';
-
-type VersionUpgradeConfirmationIssue =
-  | 'waiting-worker-unavailable'
-  | 'commit-delivery-failed'
-  | 'commit-acknowledgement-pending'
-  | 'commit-rejected';
-
-interface VersionUpgradeSnapshot {
-  revision: number;
-  committedReleaseId: string;
-  pendingReleaseId: string | null;
-  displayVersion: string | null;
-  phase: VersionUpgradePhase;
-  metadata: { changelog?: readonly string[] } | null;
-  confirmationIssue: VersionUpgradeConfirmationIssue | null;
-  confirmationRejectionReason: string | null;
-}
-
-interface VersionUpgradeRuntimeView {
-  getSnapshot: () => VersionUpgradeSnapshot;
-  subscribe: (listener: () => void) => () => void;
-  replacePendingRelease?: (
-    releaseId: string,
-    displayVersion?: string | null
-  ) => void;
-}
-
-interface VersionUpgradeWindow {
-  __OPENTU_VERSION_UPGRADE_RUNTIME__?: VersionUpgradeRuntimeView;
-  __debugTriggerUpdate?: (version?: string, releaseId?: string) => void;
-}
+import {
+  getNoVersionUpgradeRuntimeSnapshot,
+  getVersionUpgradeRuntime,
+  subscribeToNoVersionUpgradeRuntime,
+  type VersionUpgradeWindow,
+} from '../startup/operational-monitor-policy';
 
 interface UpgradeTaskBlocker {
   classification: 'unknown-authority';
@@ -48,19 +16,12 @@ interface UpgradeTaskBlocker {
   count: number;
 }
 
-const getVersionUpgradeRuntime = (): VersionUpgradeRuntimeView | null =>
-  (window as Window & VersionUpgradeWindow)
-    .__OPENTU_VERSION_UPGRADE_RUNTIME__ || null;
-
-const subscribeToNoRuntime = (): (() => void) => () => undefined;
-const getNoRuntimeSnapshot = (): null => null;
-
 export const VersionUpdatePrompt: React.FC = () => {
   const runtime = getVersionUpgradeRuntime();
   const snapshot = useSyncExternalStore(
-    runtime?.subscribe || subscribeToNoRuntime,
-    runtime?.getSnapshot || getNoRuntimeSnapshot,
-    runtime?.getSnapshot || getNoRuntimeSnapshot
+    runtime?.subscribe || subscribeToNoVersionUpgradeRuntime,
+    runtime?.getSnapshot || getNoVersionUpgradeRuntimeSnapshot,
+    runtime?.getSnapshot || getNoVersionUpgradeRuntimeSnapshot
   );
   const [showChangelog, setShowChangelog] = useState(false);
   const { activeTasks, isLoading } = useTaskQueue();

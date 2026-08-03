@@ -13,7 +13,13 @@ import { ToolProviderWrapper } from '../startup/ToolProviderWrapper';
 import { ToolTransforms } from './tool.transforms';
 import { toolWindowService } from '../../services/tool-window-service';
 import { processToolUrl, hasTemplateVariables } from '../../utils/url-template';
+import { resolveSafeExternalToolUrl } from '../../utils/external-tool-url';
 import { toolRegistry } from '../../tools/registry';
+import {
+  acquireToolCommunicationRuntime,
+  releaseToolCommunicationRuntime,
+  type ToolCommunicationRuntime,
+} from '../../plugins/tool-communication-runtime';
 
 /**
  * 工具元素渲染生成器
@@ -24,6 +30,8 @@ export class ToolGenerator {
   private reactRoots = new Map<string, Root>();
   private canvasClickHandler: ((e: MouseEvent) => void) | null = null;
   private settingsChangeHandler: (() => void) | null = null;
+  private communicationRuntime: ToolCommunicationRuntime;
+  private communicationRuntimeReleased = false;
 
   private scheduleRootUnmount(root: Root): void {
     setTimeout(() => {
@@ -37,12 +45,30 @@ export class ToolGenerator {
 
   constructor(board: PlaitBoard) {
     this.board = board;
+    this.communicationRuntime = acquireToolCommunicationRuntime(board);
 
-    // 监听画布点击事件，恢复所有 iframe 蒙层
-    this.setupCanvasClickHandler();
-    
-    // 监听设置变化，刷新包含模板变量的 iframe
-    this.setupSettingsChangeHandler();
+    try {
+      // 监听画布点击事件，恢复所有 iframe 蒙层
+      this.setupCanvasClickHandler();
+
+      // 监听设置变化，刷新包含模板变量的 iframe
+      this.setupSettingsChangeHandler();
+    } catch (error: unknown) {
+      if (this.canvasClickHandler) {
+        document.removeEventListener('click', this.canvasClickHandler);
+        this.canvasClickHandler = null;
+      }
+      if (this.settingsChangeHandler) {
+        window.removeEventListener(
+          'gemini-settings-changed',
+          this.settingsChangeHandler
+        );
+        this.settingsChangeHandler = null;
+      }
+      releaseToolCommunicationRuntime(board, this.communicationRuntime);
+      this.communicationRuntimeReleased = true;
+      throw error;
+    }
   }
   
   /**
@@ -67,13 +93,48 @@ export class ToolGenerator {
       if (templateUrl && hasTemplateVariables(templateUrl)) {
         // 重新处理模板变量
         const { url: processedUrl } = processToolUrl(templateUrl);
-        const url = new URL(processedUrl, window.location.origin);
+        const resolution = resolveSafeExternalToolUrl(processedUrl, {
+          baseUrl: window.location.origin,
+        });
+        if (!resolution.ok) {
+          this.communicationRuntime.service.unregisterToolIframe(
+            elementId,
+            iframe
+          );
+          iframe.removeAttribute('src');
+          iframe.hidden = true;
+          iframe.dataset.externalToolUrlError = resolution.code;
+          return;
+        }
+
+        const url = new URL(resolution.url);
         url.searchParams.set('toolId', elementId);
-        
+
         // 更新 iframe src
+        iframe.hidden = false;
+        delete iframe.dataset.externalToolUrlError;
         iframe.src = url.toString();
+        this.communicationRuntime.service.registerToolIframe(
+          elementId,
+          iframe,
+          this.getTrustedBridgeCapabilities(elementId)
+        );
       }
     });
+  }
+
+  private getTrustedBridgeCapabilities(elementId: string) {
+    const element = this.board.children.find(
+      (candidate) => candidate.id === elementId
+    ) as PlaitTool | undefined;
+    if (!element?.url) {
+      return [];
+    }
+    const trustedManifest = toolRegistry.getManifestById(element.toolId);
+    if (!trustedManifest?.url || trustedManifest.url !== element.url) {
+      return [];
+    }
+    return trustedManifest.bridgeCapabilities || [];
   }
 
   /**
@@ -148,8 +209,11 @@ export class ToolGenerator {
       // 更新 React 内容（如果需要的话，比如 props 变化，虽然目前 PlaitTool 没带业务 props）
       this.renderReactContent(current);
     } 
-    // 如果是 URL 类型，检查 URL 是否变化
-    else if (previous.url !== current.url) {
+    // URL 或其 manifest 身份变化时重建，避免沿用旧 bridge 权限
+    else if (
+      previous.url !== current.url ||
+      previous.toolId !== current.toolId
+    ) {
       this.recreateContent(nodeG, current);
       return;
     }
@@ -179,10 +243,25 @@ export class ToolGenerator {
       this.scheduleRootUnmount(oldRoot);
     }
 
+    this.disposeIframe(element.id);
+
     nodeG.innerHTML = '';
     const foreignObject = this.createForeignObject(element);
     nodeG.appendChild(foreignObject);
     this.applyRotation(nodeG, element);
+  }
+
+  private disposeIframe(elementId: string): void {
+    const iframe = this.iframeCache.get(elementId);
+    if (!iframe) {
+      return;
+    }
+
+    this.communicationRuntime.service.unregisterToolIframe(elementId, iframe);
+    iframe.onload = null;
+    iframe.onerror = null;
+    iframe.src = 'about:blank';
+    this.iframeCache.delete(elementId);
   }
 
   /**
@@ -264,16 +343,21 @@ export class ToolGenerator {
       const overlay = this.createIframeOverlay();
       contentArea.appendChild(overlay);
 
-      // iframe 加载完成后移除 loader
-      iframe.onload = () => {
-        loader.remove();
-      };
-
-      // iframe 加载失败处理
-      iframe.onerror = () => {
-        loader.textContent = '加载失败';
+      if (iframe.dataset.externalToolUrlError) {
+        loader.textContent = '工具地址无效或协议不受支持';
         loader.style.color = '#f5222d';
-      };
+      } else {
+        // iframe 加载完成后移除 loader
+        iframe.onload = () => {
+          loader.remove();
+        };
+
+        // iframe 加载失败处理
+        iframe.onerror = () => {
+          loader.textContent = '加载失败';
+          loader.style.color = '#f5222d';
+        };
+      }
 
       container.appendChild(contentArea);
     }
@@ -548,9 +632,17 @@ export class ToolGenerator {
     }
 
     // 设置 iframe URL，添加 toolId 参数用于通信
-    const url = new URL(processedUrl, window.location.origin);
-    url.searchParams.set('toolId', element.id);
-    iframe.src = url.toString();
+    const resolution = resolveSafeExternalToolUrl(processedUrl, {
+      baseUrl: window.location.origin,
+    });
+    if (resolution.ok) {
+      const url = new URL(resolution.url);
+      url.searchParams.set('toolId', element.id);
+      iframe.src = url.toString();
+    } else {
+      iframe.hidden = true;
+      iframe.dataset.externalToolUrlError = resolution.code;
+    }
     
     // 保存原始模板 URL，用于设置变化时重新替换
     (iframe as any).__templateUrl = element.url;
@@ -582,6 +674,14 @@ export class ToolGenerator {
 
     // 设置 title 用于可访问性
     iframe.setAttribute('title', element.metadata?.name || 'Tool');
+
+    if (resolution.ok) {
+      this.communicationRuntime.service.registerToolIframe(
+        element.id,
+        iframe,
+        this.getTrustedBridgeCapabilities(element.id)
+      );
+    }
 
     // 缓存 iframe 引用
     this.iframeCache.set(element.id, iframe);
@@ -717,11 +817,9 @@ export class ToolGenerator {
     }
 
     // 清理所有 iframe 引用
-    this.iframeCache.forEach((iframe) => {
-      // 清除 src 以停止加载
-      iframe.src = 'about:blank';
+    [...this.iframeCache.keys()].forEach((elementId) => {
+      this.disposeIframe(elementId);
     });
-    this.iframeCache.clear();
 
     // 清理所有 React Roots
     this.reactRoots.forEach((root) => {
@@ -732,5 +830,10 @@ export class ToolGenerator {
     // 移除所有蒙层
     const overlays = document.querySelectorAll('.iframe-protection-overlay');
     overlays.forEach((overlay) => overlay.remove());
+
+    if (!this.communicationRuntimeReleased) {
+      releaseToolCommunicationRuntime(this.board, this.communicationRuntime);
+      this.communicationRuntimeReleased = true;
+    }
   }
 }

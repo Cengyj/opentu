@@ -75,7 +75,7 @@ vi.mock('@drawnix/drawnix/runtime', () => {
   };
 });
 
-vi.mock('@drawnix/drawnix', async () => {
+vi.mock('@drawnix/drawnix/app', async () => {
   const React = await import('react');
   return {
     Drawnix: (props: DrawnixProps) => {

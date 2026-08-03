@@ -1,12 +1,5 @@
-import {
-  DEFAULT_TTS_SETTINGS,
-  resolveVoice,
-} from '../hooks/useTextToSpeech';
-import { getFileExtension } from '@aitu/utils';
 import { LS_KEYS } from '../constants/storage-keys';
-import { ttsSettings, type TtsSettings } from '../utils/settings-manager';
-import { cacheRemoteUrl } from './media-executor/fallback-utils';
-import { getAudioCacheKeySeed } from '../data/audio-cache-key';
+import { createRetriableModuleLoader } from '../utils/retriable-module-loader';
 import type {
   ReadingPlaybackOrigin,
   ReadingPlaybackSource,
@@ -35,6 +28,7 @@ export const DEFAULT_PLAYBACK_MODE: PlaybackMode = 'sequential';
 export const AUDIO_PLAYBACK_SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 2, 3] as const;
 export const READING_PLAYBACK_SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 2, 3, 5, 10] as const;
 export const DEFAULT_AUDIO_PLAYBACK_RATE = 1;
+const DEFAULT_READING_PLAYBACK_RATE = 1;
 export const PLAYBACK_MODE_LABELS: Record<PlaybackMode, string> = {
   sequential: '顺序播放',
   'list-loop': '列表循环',
@@ -102,7 +96,7 @@ function normalizeAudioPlaybackRate(value: unknown): number {
 
 function normalizeReadingPlaybackRate(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    return DEFAULT_TTS_SETTINGS.rate;
+    return DEFAULT_READING_PLAYBACK_RATE;
   }
 
   return Math.max(0.5, Math.min(value, 10));
@@ -134,10 +128,6 @@ function persistAudioPlaybackRate(rate: number): void {
   } catch {
     // ignore
   }
-}
-
-function readPersistedReadingPlaybackRate(): number {
-  return normalizeReadingPlaybackRate(ttsSettings.get()?.rate);
 }
 
 export interface CanvasAudioPlaybackState {
@@ -208,7 +198,7 @@ function createInitialState(): CanvasAudioPlaybackState {
     duration: 0,
     volume: DEFAULT_VOLUME,
     audioPlaybackRate: readPersistedAudioPlaybackRate(),
-    readingPlaybackRate: readPersistedReadingPlaybackRate(),
+    readingPlaybackRate: DEFAULT_READING_PLAYBACK_RATE,
     effectivePlaybackRate: readPersistedAudioPlaybackRate(),
     analysisAvailable: false,
     spectrumLevels: [...EMPTY_AUDIO_SPECTRUM],
@@ -217,7 +207,36 @@ function createInitialState(): CanvasAudioPlaybackState {
   };
 }
 
-interface CanvasAudioPlaybackRuntime {
+export interface CanvasAudioUrlResolver {
+  (source: CanvasAudioPlaybackSource): Promise<string>;
+}
+
+export interface CanvasReadingPlaybackRuntime {
+  getPlaybackRate(): unknown;
+  subscribePlaybackRate(listener: (rate: unknown) => void): () => void;
+  updatePlaybackRate(rate: number): Promise<void>;
+  configureUtterance(
+    utterance: SpeechSynthesisUtterance,
+    speechSynthesis: SpeechSynthesis,
+    preferredLanguage: string,
+    playbackRate: number
+  ): void;
+}
+
+const loadDefaultAudioUrlResolver = createRetriableModuleLoader<CanvasAudioUrlResolver>(
+  async () => {
+    const runtime = await import('./canvas-audio-playback-cache-runtime');
+    return runtime.resolveCanvasAudioPlaybackUrl;
+  }
+);
+
+const loadDefaultReadingPlaybackRuntime =
+  createRetriableModuleLoader<CanvasReadingPlaybackRuntime>(async () => {
+    const runtime = await import('./canvas-audio-reading-runtime');
+    return runtime.canvasAudioReadingRuntime;
+  });
+
+export interface CanvasAudioPlaybackRuntime {
   audioContextFactory?: () => AudioContext;
   requestFrame?: (callback: FrameRequestCallback) => number;
   cancelFrame?: (handle: number) => void;
@@ -226,6 +245,8 @@ interface CanvasAudioPlaybackRuntime {
   setInterval?: typeof window.setInterval;
   clearInterval?: typeof window.clearInterval;
   now?: () => number;
+  loadAudioUrlResolver?: () => Promise<CanvasAudioUrlResolver>;
+  loadReadingPlaybackRuntime?: () => Promise<CanvasReadingPlaybackRuntime>;
 }
 
 function getPlaybackErrorMessage(error: unknown): string {
@@ -270,13 +291,17 @@ export class CanvasAudioPlaybackService {
   private readingSegmentResumeAt = 0;
   private readingSegmentOffsetMs = 0;
   private readingResumeRequiresRestart = false;
+  private audioUrlResolver: CanvasAudioUrlResolver | null = null;
+  private audioUrlResolverPromise: Promise<CanvasAudioUrlResolver> | null = null;
+  private readingPlaybackRuntime: CanvasReadingPlaybackRuntime | null = null;
+  private readingPlaybackRuntimePromise: Promise<CanvasReadingPlaybackRuntime> | null = null;
+  private readingRateWasSetLocally = false;
+  private readingActionVersion = 0;
 
   constructor(
     private readonly audioFactory: () => HTMLAudioElement = () => new Audio(),
     private readonly runtime: CanvasAudioPlaybackRuntime = {}
-  ) {
-    ttsSettings.addListener(this.handleTtsSettingsChange);
-  }
+  ) {}
 
   getState(): CanvasAudioPlaybackState {
     return this.state;
@@ -312,6 +337,86 @@ export class CanvasAudioPlaybackService {
     });
   }
 
+  private ensureAudioUrlResolver(): Promise<CanvasAudioUrlResolver> {
+    if (this.audioUrlResolver) {
+      return Promise.resolve(this.audioUrlResolver);
+    }
+
+    if (this.audioUrlResolverPromise) {
+      return this.audioUrlResolverPromise;
+    }
+
+    const loader = this.runtime.loadAudioUrlResolver || loadDefaultAudioUrlResolver;
+    const loadAttempt = Promise.resolve().then(loader);
+    const trackedAttempt = loadAttempt.then(
+      (resolver) => {
+        this.audioUrlResolver = resolver;
+        if (this.audioUrlResolverPromise === trackedAttempt) {
+          this.audioUrlResolverPromise = null;
+        }
+        return resolver;
+      },
+      (error: unknown) => {
+        if (this.audioUrlResolverPromise === trackedAttempt) {
+          this.audioUrlResolverPromise = null;
+        }
+        throw error;
+      }
+    );
+
+    this.audioUrlResolverPromise = trackedAttempt;
+    return trackedAttempt;
+  }
+
+  private ensureReadingPlaybackRuntime(): Promise<CanvasReadingPlaybackRuntime> {
+    if (this.readingPlaybackRuntime) {
+      return Promise.resolve(this.readingPlaybackRuntime);
+    }
+
+    if (this.readingPlaybackRuntimePromise) {
+      return this.readingPlaybackRuntimePromise;
+    }
+
+    const loader =
+      this.runtime.loadReadingPlaybackRuntime || loadDefaultReadingPlaybackRuntime;
+    const loadAttempt = Promise.resolve().then(loader);
+    const trackedAttempt = loadAttempt.then(
+      (runtime) => {
+        try {
+          if (!this.readingRateWasSetLocally) {
+            const persistedRate = normalizeReadingPlaybackRate(
+              runtime.getPlaybackRate()
+            );
+            this.patchState((current) => ({
+              readingPlaybackRate: persistedRate,
+              effectivePlaybackRate:
+                current.mediaType !== 'audio'
+                  ? persistedRate
+                  : current.effectivePlaybackRate,
+            }));
+          }
+
+          runtime.subscribePlaybackRate(this.handleReadingPlaybackRateChange);
+          this.readingPlaybackRuntime = runtime;
+          return runtime;
+        } finally {
+          if (this.readingPlaybackRuntimePromise === trackedAttempt) {
+            this.readingPlaybackRuntimePromise = null;
+          }
+        }
+      },
+      (error: unknown) => {
+        if (this.readingPlaybackRuntimePromise === trackedAttempt) {
+          this.readingPlaybackRuntimePromise = null;
+        }
+        throw error;
+      }
+    );
+
+    this.readingPlaybackRuntimePromise = trackedAttempt;
+    return trackedAttempt;
+  }
+
   private getSpeechSynthesis(): SpeechSynthesis | null {
     if (this.runtime.speechSynthesis) {
       return this.runtime.speechSynthesis;
@@ -324,8 +429,8 @@ export class CanvasAudioPlaybackService {
     return window.speechSynthesis;
   }
 
-  private handleTtsSettingsChange = (nextSettings: TtsSettings): void => {
-    const nextReadingRate = normalizeReadingPlaybackRate(nextSettings?.rate);
+  private handleReadingPlaybackRateChange = (rate: unknown): void => {
+    const nextReadingRate = normalizeReadingPlaybackRate(rate);
 
     if (Math.abs(nextReadingRate - this.state.readingPlaybackRate) < 0.001) {
       return;
@@ -343,7 +448,7 @@ export class CanvasAudioPlaybackService {
 
     if (this.state.playing) {
       const nextSegmentIndex = Math.max(0, this.state.activeReadingSegmentIndex);
-      this.startReading(this.currentReadingSource, nextSegmentIndex);
+      this.startReadingWithRuntime(this.currentReadingSource, nextSegmentIndex);
       return;
     }
 
@@ -856,6 +961,7 @@ export class CanvasAudioPlaybackService {
   }
 
   private stopReadingForAudio(): void {
+    this.readingActionVersion += 1;
     this.clearReadingRuntime(true);
     this.patchState({
       activeReadingSourceId: undefined,
@@ -872,7 +978,16 @@ export class CanvasAudioPlaybackService {
   ): Promise<void> {
     this.stopReadingForAudio();
     const audio = this.ensureAudio();
-    const playbackUrl = await this.resolvePlaybackAudioUrl(source);
+    let playbackUrl: string;
+    try {
+      playbackUrl = await this.resolvePlaybackAudioUrl(source);
+    } catch (error) {
+      this.patchState({
+        playing: false,
+        error: '音频播放组件加载失败，请再次点击重试',
+      });
+      throw error;
+    }
     const switchingTrack =
       restartFromBeginning
       || this.state.activeAudioUrl !== source.audioUrl
@@ -937,56 +1052,28 @@ export class CanvasAudioPlaybackService {
       return audioUrl;
     }
 
-    try {
-      const ext = getFileExtension(audioUrl);
-      const cacheKey = source.elementId?.startsWith('asset:')
-        ? source.elementId
-        : getAudioCacheKeySeed(audioUrl, {
-            clipId: source.clipId,
-            providerTaskId: source.providerTaskId,
-          });
-      return await cacheRemoteUrl(
-        audioUrl,
-        cacheKey,
-        'audio',
-        ext !== 'bin' ? ext : 'mp3',
-        undefined,
-        {
-          source:
-            source.elementId?.startsWith('asset:')
-              ? 'PLAYBACK_CACHE'
-              : 'AI_GENERATED',
-        }
-      );
-    } catch (error) {
-      console.warn('[CanvasAudioPlayback] Failed to resolve local audio cache:', error);
-      return audioUrl;
+    if (this.audioUrlResolver) {
+      return this.audioUrlResolver(source);
     }
+
+    const resolver = await this.ensureAudioUrlResolver();
+    return resolver(source);
   }
 
   private createReadingUtterance(text: string, preferredLanguage: string): SpeechSynthesisUtterance | null {
     const speechSynthesis = this.getSpeechSynthesis();
     const utteranceFactory = this.getUtteranceFactory();
-    if (!speechSynthesis || !utteranceFactory) {
+    if (!speechSynthesis || !utteranceFactory || !this.readingPlaybackRuntime) {
       return null;
     }
 
-    const persistedTtsSettings = ttsSettings.get();
-    const settings = {
-      ...DEFAULT_TTS_SETTINGS,
-      ...(persistedTtsSettings || {}),
-      voicesByLanguage: persistedTtsSettings?.voicesByLanguage || {},
-      rate: this.state.readingPlaybackRate,
-    };
     const utterance = utteranceFactory(text);
-    utterance.lang = preferredLanguage;
-    utterance.rate = settings.rate;
-    utterance.pitch = settings.pitch;
-    utterance.volume = settings.volume;
-    const voice = resolveVoice(speechSynthesis.getVoices(), settings, preferredLanguage);
-    if (voice) {
-      utterance.voice = voice;
-    }
+    this.readingPlaybackRuntime.configureUtterance(
+      utterance,
+      speechSynthesis,
+      preferredLanguage,
+      this.state.readingPlaybackRate
+    );
     return utterance;
   }
 
@@ -1082,7 +1169,10 @@ export class CanvasAudioPlaybackService {
     speechSynthesis.speak(utterance);
   }
 
-  private startReading(source: ReadingPlaybackSource, segmentIndex = 0): void {
+  private startReadingWithRuntime(
+    source: ReadingPlaybackSource,
+    segmentIndex = 0
+  ): void {
     this.stopAudioForReading();
     this.clearReadingRuntime(true);
     this.currentReadingSource = source;
@@ -1112,7 +1202,7 @@ export class CanvasAudioPlaybackService {
     await this.startPlayback(source);
   }
 
-  toggleReadingPlayback(source: ReadingPlaybackSource): void {
+  async toggleReadingPlayback(source: ReadingPlaybackSource): Promise<void> {
     const isSameSource = this.state.mediaType === 'reading'
       && this.state.activeReadingSourceId === source.readingSourceId;
 
@@ -1120,12 +1210,29 @@ export class CanvasAudioPlaybackService {
       if (this.state.playing) {
         this.pausePlayback();
       } else {
-        void this.resumePlayback();
+        await this.resumePlayback();
       }
       return;
     }
 
-    this.startReading(source);
+    const actionVersion = ++this.readingActionVersion;
+    try {
+      await this.ensureReadingPlaybackRuntime();
+    } catch {
+      if (actionVersion === this.readingActionVersion) {
+        this.patchState({
+          playing: false,
+          error: '语音朗读组件加载失败，请再次点击重试',
+        });
+      }
+      return;
+    }
+
+    if (actionVersion !== this.readingActionVersion) {
+      return;
+    }
+
+    this.startReadingWithRuntime(source);
   }
 
   setPlaybackMode(mode: PlaybackMode): void {
@@ -1140,28 +1247,44 @@ export class CanvasAudioPlaybackService {
 
     if (targetMediaType === 'reading') {
       const nextRate = normalizeReadingPlaybackRate(rate);
-      if (Math.abs(nextRate - this.state.readingPlaybackRate) < 0.001) {
+      this.readingRateWasSetLocally = true;
+      const rateChanged =
+        Math.abs(nextRate - this.state.readingPlaybackRate) >= 0.001;
+      if (!rateChanged && this.readingPlaybackRuntime) {
         return;
       }
 
-      this.patchState((current) => ({
-        readingPlaybackRate: nextRate,
-        effectivePlaybackRate:
-          current.mediaType !== 'audio' ? nextRate : current.effectivePlaybackRate,
-      }));
+      if (rateChanged) {
+        this.patchState((current) => ({
+          readingPlaybackRate: nextRate,
+          effectivePlaybackRate:
+            current.mediaType !== 'audio'
+              ? nextRate
+              : current.effectivePlaybackRate,
+        }));
+      }
 
-      if (this.state.mediaType === 'reading' && this.currentReadingSource) {
+      if (
+        rateChanged
+        && this.state.mediaType === 'reading'
+        && this.currentReadingSource
+      ) {
         const nextSegmentIndex = Math.max(0, this.state.activeReadingSegmentIndex);
         if (this.state.playing) {
-          this.startReading(this.currentReadingSource, nextSegmentIndex);
+          this.startReadingWithRuntime(this.currentReadingSource, nextSegmentIndex);
         } else {
           this.readingResumeRequiresRestart = true;
         }
       }
 
-      void ttsSettings.update({ rate: nextRate }).catch((error) => {
-        console.warn('[CanvasAudioPlayback] Failed to persist reading playback rate:', error);
-      });
+      void this.ensureReadingPlaybackRuntime()
+        .then((runtime) => runtime.updatePlaybackRate(nextRate))
+        .catch((error) => {
+          console.warn(
+            '[CanvasAudioPlayback] Failed to persist reading playback rate:',
+            error
+          );
+        });
       return;
     }
 
@@ -1237,7 +1360,10 @@ export class CanvasAudioPlaybackService {
 
     const target = this.state.queue[index];
     if (isReadingPlaybackSource(target)) {
-      this.startReading(target);
+      if (!this.readingPlaybackRuntime) {
+        await this.ensureReadingPlaybackRuntime();
+      }
+      this.startReadingWithRuntime(target);
       return;
     }
 
@@ -1316,16 +1442,16 @@ export class CanvasAudioPlaybackService {
     });
   }
 
-  toggleReadingPlaybackInQueue(
+  async toggleReadingPlaybackInQueue(
     source: ReadingPlaybackSource,
     queue: ReadingPlaybackSource[],
     options?: {
       queueId?: string;
       queueName?: string;
     }
-  ): void {
+  ): Promise<void> {
     this.setReadingQueue(queue, options);
-    this.toggleReadingPlayback(source);
+    await this.toggleReadingPlayback(source);
   }
 
   setQueue(
@@ -1412,7 +1538,7 @@ export class CanvasAudioPlaybackService {
       }
 
       if (this.state.activeReadingSegmentIndex < 0 || this.readingResumeRequiresRestart) {
-        this.startReading(
+        this.startReadingWithRuntime(
           this.currentReadingSource,
           Math.max(0, this.state.activeReadingSegmentIndex)
         );
@@ -1469,7 +1595,7 @@ export class CanvasAudioPlaybackService {
     }
 
     const boundedIndex = Math.max(0, Math.min(index, this.currentReadingSource.segments.length - 1));
-    this.startReading(this.currentReadingSource, boundedIndex);
+    this.startReadingWithRuntime(this.currentReadingSource, boundedIndex);
   }
 
   setVolume(volume: number): void {
@@ -1485,6 +1611,7 @@ export class CanvasAudioPlaybackService {
   }
 
   stopAndClear(): void {
+    this.readingActionVersion += 1;
     this.stopAnalysisLoop();
     this.clearReadingRuntime(true);
 

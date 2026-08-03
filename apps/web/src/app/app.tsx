@@ -17,7 +17,6 @@ import {
   safeReload,
   useDocumentTitle,
   markTabSyncVersion,
-  requestServiceWorkerIdlePrefetch,
   MessagePlugin,
 } from '@drawnix/drawnix/runtime';
 import type {
@@ -30,7 +29,7 @@ import { ErrorFallbackUI, safeModeReload, goToDebug } from './ErrorBoundary';
 import { collectAndDownloadErrorLog } from '../utils/error-log-exporter';
 
 const Drawnix = lazy(() =>
-  import('@drawnix/drawnix').then((module) => ({
+  import('@drawnix/drawnix/app').then((module) => ({
     default: module.Drawnix,
   }))
 );
@@ -277,14 +276,6 @@ export function App() {
     if (showCrashDialog || initError || !isLoading) {
       bootController.markReady();
     }
-  }, [initError, isLoading, showCrashDialog]);
-
-  useEffect(() => {
-    if (showCrashDialog || initError || isLoading) {
-      return;
-    }
-
-    requestServiceWorkerIdlePrefetch(['offline-static-assets']);
   }, [initError, isLoading, showCrashDialog]);
 
   // Initialize workspace and handle migration

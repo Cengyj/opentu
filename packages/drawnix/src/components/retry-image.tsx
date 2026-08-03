@@ -19,8 +19,8 @@ import React, {
   useRef,
   useMemo,
 } from 'react';
-import { unifiedCacheService } from '../services/unified-cache-service';
 import { normalizeImageDataUrl } from '@aitu/utils';
+import { loadRetryImageCacheRuntime } from './retry-image-cache-runtime';
 
 export interface RetryImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   /** Image source URL */
@@ -129,7 +129,7 @@ function isVirtualUrl(url: string): boolean {
 function isSWAvailable(): boolean {
   return typeof navigator !== 'undefined' && 
          'serviceWorker' in navigator && 
-         !!navigator.serviceWorker.controller;
+         !!navigator.serviceWorker?.controller;
 }
 
 export const RetryImage = forwardRef<HTMLImageElement, RetryImageProps>(({
@@ -163,6 +163,8 @@ export const RetryImage = forwardRef<HTMLImageElement, RetryImageProps>(({
   // 存储降级创建的 blob URL，用于清理
   const blobUrlRef = useRef<string | null>(null);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const mountedRef = useRef(true);
+  const activeSourceRef = useRef(normalizedSrc);
   
   /**
    * 尝试将虚拟路径降级为 blob URL
@@ -174,7 +176,8 @@ export const RetryImage = forwardRef<HTMLImageElement, RetryImageProps>(({
     }
     
     try {
-      const blob = await unifiedCacheService.getCachedBlob(url);
+      const { getCachedBlob } = await loadRetryImageCacheRuntime();
+      const blob = await getCachedBlob(url);
       if (blob && blob.size > 0) {
         const blobUrl = URL.createObjectURL(blob);
         return blobUrl;
@@ -229,6 +232,10 @@ export const RetryImage = forwardRef<HTMLImageElement, RetryImageProps>(({
       if (shouldBypassSW && isVirtualUrl(normalizedSrc) && !blobUrlRef.current) {
         const blobUrl = await tryFallbackToBlobUrl(normalizedSrc);
         if (blobUrl) {
+          if (!mountedRef.current || activeSourceRef.current !== normalizedSrc) {
+            URL.revokeObjectURL(blobUrl);
+            return;
+          }
           blobUrlRef.current = blobUrl;
           setRetryCount(nextRetryCount);
           setImageSrc(blobUrl);
@@ -273,6 +280,9 @@ export const RetryImage = forwardRef<HTMLImageElement, RetryImageProps>(({
 
   // Reset state when src changes and handle virtual path fallback
   useEffect(() => {
+    activeSourceRef.current = normalizedSrc;
+    let disposed = false;
+
     // 清理之前的 blob URL
     if (blobUrlRef.current) {
       URL.revokeObjectURL(blobUrlRef.current);
@@ -289,6 +299,13 @@ export const RetryImage = forwardRef<HTMLImageElement, RetryImageProps>(({
     if (isVirtualUrl(normalizedSrc) && !isSWAvailable()) {
       // 异步尝试降级
       tryFallbackToBlobUrl(normalizedSrc).then((blobUrl) => {
+        if (disposed || activeSourceRef.current !== normalizedSrc) {
+          if (blobUrl) {
+            URL.revokeObjectURL(blobUrl);
+          }
+          return;
+        }
+
         if (blobUrl) {
           blobUrlRef.current = blobUrl;
           setImageSrc(blobUrl);
@@ -303,17 +320,23 @@ export const RetryImage = forwardRef<HTMLImageElement, RetryImageProps>(({
 
     // Clear any pending retry timeouts
     return () => {
+      disposed = true;
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
     };
   }, [normalizedSrc, tryFallbackToBlobUrl]);
 
   // Cleanup on unmount
   useEffect(() => {
+    mountedRef.current = true;
+
     return () => {
+      mountedRef.current = false;
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
       // 清理 blob URL
       if (blobUrlRef.current) {

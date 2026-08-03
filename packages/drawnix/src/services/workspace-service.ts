@@ -26,6 +26,7 @@ import {
   type BoardMetadataUpdate,
 } from './workspace-storage-service';
 import { logDebug, logWarning, logError } from './github-sync/sync-log-service';
+import { hasStoredGitHubSyncToken } from './github-sync/token-storage';
 import { registerWorkspaceRuntime } from './workspace-runtime-bridge';
 
 /**
@@ -1217,34 +1218,47 @@ class WorkspaceService {
    * 触发同步引擎标记脏数据（防抖处理）
    * 使用动态 import 避免循环依赖
    */
-  private triggerSyncMarkDirty(eventType: WorkspaceEvent['type'], payload?: unknown): void {
+  private triggerSyncMarkDirty(
+    eventType: WorkspaceEvent['type'],
+    payload?: unknown
+  ): void {
+    // The encrypted-token presence check is deliberately kept in the core
+    // workspace boundary. Loading sync-engine before this check pulls the
+    // complete task/cache/model graph into a first-time startup even when the
+    // user has never enabled GitHub sync.
+    if (!hasStoredGitHubSyncToken()) {
+      return;
+    }
+
     // 使用动态 import 避免循环依赖
-    import('./github-sync/sync-engine').then(({ syncEngine }) => {
-      import('./github-sync/token-service').then(({ tokenService }) => {
-        // 只在已配置 token 时才触发
-        if (!tokenService.hasToken()) {
-          return;
-        }
-        
+    void import('./github-sync/sync-engine')
+      .then(({ syncEngine }) => {
         logDebug('Triggering syncEngine.markDirty()', { eventType });
         syncEngine.markDirty();
-        
+
         // 如果是画板删除，还需要记录本地删除
         if (eventType === 'boardDeleted') {
           const boardId = (payload as { id?: string })?.id;
           if (boardId && typeof boardId === 'string') {
             logDebug('Recording local deletion for board', { boardId });
-            syncEngine.recordLocalDeletion(boardId).then(() => {
-              return syncEngine.syncBoardDeletion(boardId);
-            }).catch(err => {
-              logError('Failed to sync board deletion', err instanceof Error ? err : new Error(String(err)));
-            });
+            syncEngine
+              .recordLocalDeletion(boardId)
+              .then(() => syncEngine.syncBoardDeletion(boardId))
+              .catch((error) => {
+                logError(
+                  'Failed to sync board deletion',
+                  error instanceof Error ? error : new Error(String(error))
+                );
+              });
           }
         }
+      })
+      .catch((error) => {
+        logError(
+          'Failed to import sync engine',
+          error instanceof Error ? error : new Error(String(error))
+        );
       });
-    }).catch(err => {
-      logError('Failed to import sync modules', err instanceof Error ? err : new Error(String(err)));
-    });
   }
 
   // ========== Initialization ==========

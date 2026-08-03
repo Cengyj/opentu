@@ -15,7 +15,7 @@ import {
   CARD_BODY_FONT_SIZE,
   getCardColorByIndex,
 } from '../constants/card-colors';
-import { scrollToPointIfNeeded } from './selection-utils';
+import { scrollToPointIfNeeded } from './viewport-scroll';
 
 /** 网格布局常量 */
 const GRID_COLUMNS = 3;

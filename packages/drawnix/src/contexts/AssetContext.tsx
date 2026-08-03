@@ -18,19 +18,8 @@ import {
   useEffect,
 } from 'react';
 import { MessagePlugin } from '../utils/message-plugin';
-import { assetStorageService } from '../services/asset-storage-service';
-import { taskQueueService } from '../services/task-queue';
-import { markAssetAsCharacter } from '../services/character-asset-metadata-service';
-import {
-  taskStorageReader,
-  type AssetTaskRecord,
-} from '../services/task-storage-reader';
-import {
-  unifiedCacheService,
-  type CachedMedia,
-} from '../services/unified-cache-service';
-import { getStorageStatus } from '../utils/storage-quota';
-import { getAssetSizeFromCache } from '../hooks/useAssetSize';
+import type { AssetTaskRecord } from '../services/task-storage-reader';
+import type { CachedMedia } from '../services/unified-cache-service';
 import type {
   Asset,
   AssetContextValue,
@@ -47,7 +36,6 @@ import {
 } from '../types/asset.types';
 import { TaskType } from '../types/task.types';
 import { AssetContext } from './asset-context-instance';
-import { audioPlaylistService } from '../services/audio-playlist-service';
 import {
   setGlobalAssetMap,
   setGlobalAssetMapStatus,
@@ -63,6 +51,7 @@ import {
   isLegacyCacheUrl,
 } from '../utils/virtual-media-url';
 import { isInternalLibraryExcludedCache } from '../utils/asset-utils';
+import { createRetriableModuleLoader } from '../utils/retriable-module-loader';
 import {
   buildCharacterMeta,
   getAIGeneratedAssetCleanupTargets,
@@ -75,9 +64,31 @@ import {
  */
 interface AssetProviderProps {
   children: ReactNode;
+  /**
+   * Allows eventual background initialization after the core Drawnix shell
+   * has painted. Explicit context actions still initialize immediately.
+   */
+  isStartupOperable?: boolean;
 }
 
 const LOAD_ASSETS_CACHE_TTL_MS = 8000;
+const ASSET_RUNTIME_FALLBACK_DELAY_MS = 500;
+
+type AssetContextRuntime = typeof import('./asset-context-runtime');
+
+const loadAssetContextRuntime = createRetriableModuleLoader(
+  () => import('./asset-context-runtime')
+);
+
+const loadTaskQueueService = createRetriableModuleLoader(async () => {
+  const { taskQueueService } = await import('../services/task-queue-service');
+  return taskQueueService;
+});
+
+async function deleteTaskFromQueue(taskId: string): Promise<void> {
+  const taskQueueService = await loadTaskQueueService();
+  taskQueueService.deleteTask(taskId);
+}
 
 function getLocalDedupeKey(asset: Asset): string | undefined {
   return getLocalAssetGroupKey(asset) || undefined;
@@ -347,7 +358,9 @@ function mergeLocalAssets(assets: Asset[]): Asset[] {
         representative.thumbnail || existing.thumbnail || asset.thumbnail,
       category: representative.category || existing.category || asset.category,
       characterMeta:
-        representative.characterMeta || existing.characterMeta || asset.characterMeta,
+        representative.characterMeta ||
+        existing.characterMeta ||
+        asset.characterMeta,
       dedupeAssetIds: Array.from(mergedAssetIds),
       dedupeUrls: Array.from(mergedUrls),
     });
@@ -401,7 +414,10 @@ function getLocalCleanupTargets(asset: Asset): {
  * Asset Provider Component
  * 素材Provider组件
  */
-export function AssetProvider({ children }: AssetProviderProps) {
+export function AssetProvider({
+  children,
+  isStartupOperable = true,
+}: AssetProviderProps) {
   // 核心数据
   const [assets, setAssets] = useState<Asset[]>([]);
 
@@ -431,19 +447,82 @@ export function AssetProvider({ children }: AssetProviderProps) {
     loadedAt: number;
     assetCount: number;
   } | null>(null);
+  const loadedRuntimeRef = useRef<AssetContextRuntime | null>(null);
+  const initializeRuntimePromiseRef =
+    useRef<Promise<AssetContextRuntime> | null>(null);
+  const assetOperationTailRef = useRef<Promise<void>>(Promise.resolve());
+
+  const runAssetOperation = useCallback(<T,>(operation: () => Promise<T>) => {
+    const run = assetOperationTailRef.current
+      .catch(() => undefined)
+      .then(operation);
+    assetOperationTailRef.current = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }, []);
+
+  const getInitializedRuntime = useCallback(async () => {
+    if (loadedRuntimeRef.current) {
+      return loadedRuntimeRef.current;
+    }
+    if (initializeRuntimePromiseRef.current) {
+      return initializeRuntimePromiseRef.current;
+    }
+
+    const attempt = (async () => {
+      const runtime = await loadAssetContextRuntime();
+      try {
+        // Preserve the established initialization order: asset migration first,
+        // then playlist setup. All actions wait for this same attempt.
+        await runtime.assetStorageService.initialize();
+        await runtime.audioPlaylistService.initialize();
+        loadedRuntimeRef.current = runtime;
+        return runtime;
+      } catch (error) {
+        runtime.assetStorageService.cleanup();
+        throw error;
+      }
+    })();
+
+    initializeRuntimePromiseRef.current = attempt;
+    void attempt.catch(() => {
+      if (initializeRuntimePromiseRef.current === attempt) {
+        initializeRuntimePromiseRef.current = null;
+      }
+    });
+    return attempt;
+  }, []);
 
   /**
    * Initialize service on mount
    * 组件挂载时初始化服务
    */
   useEffect(() => {
+    if (!isStartupOperable) {
+      return;
+    }
+
+    let disposed = false;
+    let idleCallbackId: number | null = null;
+    let fallbackTimerId: ReturnType<typeof setTimeout> | null = null;
+
     const initService = async () => {
       try {
-        await assetStorageService.initialize();
-        await audioPlaylistService.initialize();
+        const runtime = await getInitializedRuntime();
+        if (disposed) {
+          runtime.assetStorageService.cleanup();
+          loadedRuntimeRef.current = null;
+          initializeRuntimePromiseRef.current = null;
+          return;
+        }
         // 初始化完成后自动加载资产到 global store，供画布卡片等脱离 Context 的组件使用
         loadAssetsRef.current?.();
       } catch (err) {
+        if (disposed) {
+          return;
+        }
         console.error('Failed to initialize asset storage service:', err);
         const error = err as Error;
         setError(error.message);
@@ -451,13 +530,40 @@ export function AssetProvider({ children }: AssetProviderProps) {
       }
     };
 
-    initService();
+    if (typeof window.requestIdleCallback === 'function') {
+      idleCallbackId = window.requestIdleCallback(
+        () => {
+          idleCallbackId = null;
+          void initService();
+        },
+        { timeout: 1500 }
+      );
+    } else {
+      fallbackTimerId = setTimeout(() => {
+        fallbackTimerId = null;
+        void initService();
+      }, ASSET_RUNTIME_FALLBACK_DELAY_MS);
+    }
 
     // Cleanup on unmount
     return () => {
-      assetStorageService.cleanup();
+      disposed = true;
+      if (
+        idleCallbackId !== null &&
+        typeof window.cancelIdleCallback === 'function'
+      ) {
+        window.cancelIdleCallback(idleCallbackId);
+      }
+      if (fallbackTimerId !== null) {
+        clearTimeout(fallbackTimerId);
+      }
+      if (loadedRuntimeRef.current) {
+        loadedRuntimeRef.current.assetStorageService.cleanup();
+        loadedRuntimeRef.current = null;
+        initializeRuntimePromiseRef.current = null;
+      }
     };
-  }, []);
+  }, [getInitializedRuntime, isStartupOperable]);
 
   /**
    * Convert completed task to Asset
@@ -594,6 +700,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
       taskContext?: CacheAssetTaskContext
     ): Promise<CacheAssetLoadResult> => {
       try {
+        const { unifiedCacheService } = await getInitializedRuntime();
         // 直接从 IndexedDB 获取所有缓存媒体的元数据
         // 这比遍历 Cache Storage 快得多
         const cachedMediaList = await unifiedCacheService.getAllCachedMedia();
@@ -732,7 +839,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
         };
       }
     },
-    []
+    [getInitializedRuntime]
   );
 
   /**
@@ -755,19 +862,20 @@ export function AssetProvider({ children }: AssetProviderProps) {
       return;
     }
 
-    const run = (async () => {
+    const run = runAssetOperation(async () => {
       setGlobalAssetMapStatus('loading');
       setLoading(true);
       setError(null);
 
       try {
+        const runtime = await getInitializedRuntime();
         // 1. 加载本地上传的素材（只包含 LOCAL 来源）
-        const localAssets = await assetStorageService.getAllAssets();
+        const localAssets = await runtime.assetStorageService.getAllAssets();
 
         // 2. 从任务队列获取已完成的 AI 生成任务
         // 统一从 IndexedDB 直接读取，SW 模式和降级模式使用同一个数据库
         // includeArchived: 归档任务的媒体仍在 Cache Storage 中，需要读取元数据
-        const completedTasks = await taskStorageReader.getAssetTasks({
+        const completedTasks = await runtime.taskStorageReader.getAssetTasks({
           includeArchived: true,
         });
         const preliminaryAiAssets = completedTasks.flatMap(taskToAssets);
@@ -893,7 +1001,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
             if (batch.length === 0) return;
 
             const sizePromises = batch.map(async (asset) => {
-              const size = await getAssetSizeFromCache(asset.url);
+              const size = await runtime.getAssetSizeFromCache(asset.url);
               return { id: asset.id, size };
             });
 
@@ -953,11 +1061,16 @@ export function AssetProvider({ children }: AssetProviderProps) {
         loadAssetsPromiseRef.current = null;
         setLoading(false);
       }
-    })();
+    });
 
     loadAssetsPromiseRef.current = run;
     return run;
-  }, [taskToAssets, getAssetsFromCacheStorage]);
+  }, [
+    taskToAssets,
+    getAssetsFromCacheStorage,
+    getInitializedRuntime,
+    runAssetOperation,
+  ]);
 
   // 供初始化 effect 延迟调用
   loadAssetsRef.current = loadAssets;
@@ -968,6 +1081,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
    */
   const checkStorageQuota = useCallback(async () => {
     try {
+      const { getStorageStatus } = await getInitializedRuntime();
       const status = await getStorageStatus();
       setStorageStatus(status);
 
@@ -990,7 +1104,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
     } catch (err: unknown) {
       console.error('Failed to check storage quota:', err);
     }
-  }, []);
+  }, [getInitializedRuntime]);
 
   /**
    * Add Asset
@@ -1002,7 +1116,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
       type: AssetType,
       source: AssetSource,
       name?: string
-    ): Promise<Asset> => {
+    ): Promise<Asset> =>
+      runAssetOperation(async () => {
       // console.log('[AssetContext] addAsset called with:', {
       //   fileName: file instanceof File ? file.name : 'Blob',
       //   type,
@@ -1016,6 +1131,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
       setError(null);
 
       try {
+          const { assetStorageService } = await getInitializedRuntime();
         // 生成默认名称
         const assetName =
           name || (file instanceof File ? file.name : `asset-${Date.now()}`);
@@ -1077,8 +1193,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
       } finally {
         setLoading(false);
       }
-    },
-    [checkStorageQuota]
+      }),
+    [checkStorageQuota, getInitializedRuntime, runAssetOperation]
   );
 
   /**
@@ -1089,11 +1205,17 @@ export function AssetProvider({ children }: AssetProviderProps) {
    * 缓存素材：从 unified-cache 删除
    */
   const removeAsset = useCallback(
-    async (id: string): Promise<void> => {
+    async (id: string): Promise<void> =>
+      runAssetOperation(async () => {
       setLoading(true);
       setError(null);
 
       try {
+          const {
+            assetStorageService,
+            audioPlaylistService,
+            unifiedCacheService,
+          } = await getInitializedRuntime();
         const asset = assets.find((a) => a.id === id);
         const cleanupTargets = asset ? getLocalCleanupTargets(asset) : null;
         const aiCleanupTargets =
@@ -1111,7 +1233,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
           }
         } else if (asset?.source === AssetSourceEnum.AI_GENERATED) {
           // AI 生成的素材：删除任务 + 清理缓存
-          taskQueueService.deleteTask(aiCleanupTargets?.taskId || id);
+            await deleteTaskFromQueue(aiCleanupTargets?.taskId || id);
           await Promise.all(
             (aiCleanupTargets?.urls || [asset.url]).map((url) =>
               unifiedCacheService.deleteCache(url).catch(() => undefined)
@@ -1136,7 +1258,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
             );
             await Promise.all(
               cacheOnlyUrls.map((url) =>
-                unifiedCacheService.deleteCache(url).catch((e) => {})
+                unifiedCacheService.deleteCache(url).catch(() => undefined)
               )
             );
           } else {
@@ -1203,8 +1325,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
       } finally {
         setLoading(false);
       }
-    },
-    [assets, checkStorageQuota]
+      }),
+    [assets, checkStorageQuota, getInitializedRuntime, runAssetOperation]
   );
 
   /**
@@ -1214,12 +1336,18 @@ export function AssetProvider({ children }: AssetProviderProps) {
   const removeAssets = useCallback(
     async (ids: string[]): Promise<void> => {
       if (ids.length === 0) return;
+      return runAssetOperation(async () => {
       const requestedCount = ids.length;
 
       setLoading(true);
       setError(null);
 
       try {
+          const {
+            assetStorageService,
+            audioPlaylistService,
+            unifiedCacheService,
+          } = await getInitializedRuntime();
         const successIds: string[] = [];
         const errors: { id: string; error: Error }[] = [];
 
@@ -1292,7 +1420,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
         // 删除 AI 生成的素材：删除任务 + 清理缓存
         for (const targets of aiCleanupTargets.values()) {
           try {
-            taskQueueService.deleteTask(targets.taskId);
+              await deleteTaskFromQueue(targets.taskId);
             await Promise.all(
               targets.urls.map((url) =>
                 unifiedCacheService.deleteCache(url).catch(() => undefined)
@@ -1346,7 +1474,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
             Array.from(localUrlSet)
               .filter((url) => !storedAssetUrls.has(normalizeAssetUrl(url)))
               .map((url) =>
-                unifiedCacheService.deleteCache(url).catch((e) => {})
+                unifiedCacheService.deleteCache(url).catch(() => undefined)
               )
           );
 
@@ -1409,8 +1537,15 @@ export function AssetProvider({ children }: AssetProviderProps) {
       } finally {
         setLoading(false);
       }
+      });
     },
-    [assets, selectedAssetId, checkStorageQuota]
+    [
+      assets,
+      selectedAssetId,
+      checkStorageQuota,
+      getInitializedRuntime,
+      runAssetOperation,
+    ]
   );
 
   /**
@@ -1421,11 +1556,14 @@ export function AssetProvider({ children }: AssetProviderProps) {
    * - 其他 ID：使用 assetStorageService 更新
    */
   const renameAsset = useCallback(
-    async (id: string, newName: string): Promise<void> => {
+    async (id: string, newName: string): Promise<void> =>
+      runAssetOperation(async () => {
       setLoading(true);
       setError(null);
 
       try {
+          const { assetStorageService, unifiedCacheService } =
+            await getInitializedRuntime();
         // 根据 ID 前缀判断使用哪个服务
         if (id.startsWith('unified-cache-')) {
           // 从 unified-cache 获取的素材
@@ -1483,15 +1621,16 @@ export function AssetProvider({ children }: AssetProviderProps) {
       } finally {
         setLoading(false);
       }
-    },
-    [assets]
+      }),
+    [assets, getInitializedRuntime, runAssetOperation]
   );
 
   const markAssetAsSubject = useCallback(
     async (
       asset: Asset,
       mark: { name: string; prompt?: string }
-    ): Promise<void> => {
+    ): Promise<void> =>
+      runAssetOperation(async () => {
       const name = mark.name.trim();
       const prompt = mark.prompt?.trim();
 
@@ -1500,6 +1639,7 @@ export function AssetProvider({ children }: AssetProviderProps) {
       }
 
       try {
+          const { markAssetAsCharacter } = await getInitializedRuntime();
         await markAssetAsCharacter(asset, {
           name,
           ...(prompt && { prompt }),
@@ -1513,7 +1653,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
 
         setAssets((prev) =>
           prev.map((item) =>
-            item.id === asset.id || normalizeAssetUrl(item.url) === normalizedUrl
+              item.id === asset.id ||
+              normalizeAssetUrl(item.url) === normalizedUrl
               ? {
                   ...item,
                   category: AssetCategoryEnum.CHARACTER,
@@ -1532,8 +1673,8 @@ export function AssetProvider({ children }: AssetProviderProps) {
         setError(error.message);
         throw err;
       }
-    },
-    []
+      }),
+    [getInitializedRuntime, runAssetOperation]
   );
 
   /**

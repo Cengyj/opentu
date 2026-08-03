@@ -12,9 +12,13 @@ import React, {
   useState,
   useCallback,
 } from 'react';
-import { Trash2, RotateCcw, EyeOff } from 'lucide-react';
 import type { WorkflowMessageData } from '../../types/chat.types';
 import { ConfirmDialog } from '../dialog/ConfirmDialog';
+import {
+  EyeOffIcon,
+  RotateCcwIcon,
+  Trash2Icon,
+} from '../icons/startup-icons';
 import { HoverTip } from '../shared/hover';
 import './workzone-content.scss';
 
@@ -354,7 +358,7 @@ export const WorkZoneContent: React.FC<WorkZoneContentProps> = ({
                 handleHideForeverClick();
               }}
             >
-              <EyeOff size={14} />
+              <EyeOffIcon size={14} />
             </button>
           </HoverTip>
         )}
@@ -375,7 +379,7 @@ export const WorkZoneContent: React.FC<WorkZoneContentProps> = ({
                 onDelete();
               }}
             >
-              <Trash2 size={14} />
+              <Trash2Icon size={14} />
             </button>
           </HoverTip>
         )}
@@ -445,7 +449,7 @@ export const WorkZoneContent: React.FC<WorkZoneContentProps> = ({
                 void handleRetry();
               }}
             >
-              <RotateCcw size={12} />
+              <RotateCcwIcon size={12} />
               <span>{isRetrying ? '重试中...' : '从失败步骤重试'}</span>
             </button>
           )}

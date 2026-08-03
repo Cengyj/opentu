@@ -111,7 +111,7 @@ import { isVideoElement } from '../../../plugins/with-video';
 import { VideoFrameSelector } from '../../video-frame-selector/video-frame-selector';
 import { insertVideoFrame } from '../../../utils/video-frame';
 import { isToolElement } from '../../../plugins/with-tool';
-import { isWorkZoneElement } from '../../../plugins/with-workzone';
+import { getPopupToolbarSelectedElements } from './popup-toolbar-selection';
 import { splitAndInsertImages } from '../../../utils/image-splitter';
 import {
   smartDownload,
@@ -122,7 +122,7 @@ import { MessagePlugin } from 'tdesign-react';
 import { taskQueueService } from '../../../services/task-queue';
 import { mergeVideos } from '../../../services/video-merge-webcodecs';
 import { insertImageFromUrl } from '../../../data/image';
-import { calculateEditedImagePoints } from '../../../utils/image';
+import { calculateEditedImagePoints } from '../../../utils/image-edit-layout';
 import { isFrameElement } from '../../../types/frame.types';
 import { isCardElement } from '../../../types/card.types';
 import { duplicateFrame, focusFrame } from '../../../utils/frame-duplicate';
@@ -205,10 +205,7 @@ const cancelPopupToolbarFrame = (frameId: number) => {
 export const PopupToolbar = () => {
   const board = useBoard();
   // 过滤掉 WorkZone 元素，避免点击 WorkZone 时弹出 popup-toolbar
-  const allSelectedElements = getSelectedElements(board);
-  const selectedElements = allSelectedElements.filter(
-    (element) => !isWorkZoneElement(element)
-  );
+  const selectedElements = getPopupToolbarSelectedElements(board);
   const { openDialog } = useDrawnix();
   const { language, t } = useI18n();
   const [movingOrDragging, setMovingOrDragging] = useState(false);

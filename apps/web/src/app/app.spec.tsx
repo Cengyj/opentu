@@ -35,7 +35,7 @@ vi.mock('@drawnix/drawnix/runtime', () => ({
   },
 }));
 
-vi.mock('@drawnix/drawnix', () => ({
+vi.mock('@drawnix/drawnix/app', () => ({
   Drawnix: () => <div data-testid="drawnix" />,
 }));
 

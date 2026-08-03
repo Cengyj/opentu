@@ -29,7 +29,7 @@ import { TokenGuide } from './TokenGuide';
 import { RecycleBin } from './RecycleBin';
 import { ConfirmDialog, useConfirmDialog } from '../dialog/ConfirmDialog';
 import { LockOnIcon, LockOffIcon } from 'tdesign-icons-react';
-import { safeReload } from '../../utils/active-tasks';
+import { safeReload } from '../../utils/safe-reload';
 import './sync-settings.scss';
 import { HoverTip } from '../shared';
 

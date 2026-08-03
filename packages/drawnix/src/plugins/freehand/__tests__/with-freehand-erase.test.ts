@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { withFreehandErase } from '../with-freehand-erase';
+import {
+  type PreciseEraseRuntimeLoader,
+  withFreehandErase,
+} from '../with-freehand-erase';
+import { createRetriableModuleLoader } from '../../../utils/retriable-module-loader';
 
 const mocks = vi.hoisted(() => {
   let resolveFirstErase: (() => void) | null = null;
@@ -110,6 +114,15 @@ function createBoard() {
   };
 }
 
+function createPreciseEraseRuntime() {
+  return {
+    executePreciseErase: mocks.executePreciseErase,
+    findElementsInEraserPath: mocks.findElementsInEraserPath,
+    findUnsupportedElementsInEraserPath:
+      mocks.findUnsupportedElementsInEraserPath,
+  } as unknown as Awaited<ReturnType<PreciseEraseRuntimeLoader>>;
+}
+
 describe('withFreehandErase async gesture isolation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -124,7 +137,9 @@ describe('withFreehandErase async gesture isolation', () => {
     board.pointerDown(pointerEvent(0, 0));
     board.pointerMove(pointerEvent(10, 0));
     board.pointerUp(pointerEvent(10, 0));
-    expect(mocks.executePreciseErase).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => {
+      expect(mocks.executePreciseErase).toHaveBeenCalledTimes(1);
+    });
 
     board.pointerDown(pointerEvent(100, 0));
     board.pointerMove(pointerEvent(110, 0));
@@ -139,5 +154,134 @@ describe('withFreehandErase async gesture isolation', () => {
 
     expect(mocks.executePreciseErase).toHaveBeenCalledTimes(2);
     expect(basePointerUp).not.toHaveBeenCalled();
+  });
+
+  it('loads the precise erase runtime only after a completed multi-point gesture', async () => {
+    const board = createBoard();
+    const loadRuntime = vi.fn(
+      async () => createPreciseEraseRuntime()
+    );
+    withFreehandErase(board as never, loadRuntime);
+
+    board.pointerDown(pointerEvent(0, 0));
+    board.pointerMove(pointerEvent(10, 0));
+    expect(loadRuntime).not.toHaveBeenCalled();
+
+    board.pointerUp(pointerEvent(10, 0));
+    await vi.waitFor(() => {
+      expect(loadRuntime).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('retries a failed runtime load on the next gesture and keeps the completed element snapshot', async () => {
+    const board = createBoard();
+    const completedElements = [...board.children];
+    const importRuntime = vi
+      .fn<PreciseEraseRuntimeLoader>()
+      .mockRejectedValueOnce(new Error('chunk unavailable'))
+      .mockResolvedValue(createPreciseEraseRuntime());
+    const loadRuntime = createRetriableModuleLoader(importRuntime);
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    withFreehandErase(board as never, loadRuntime);
+    board.pointerDown(pointerEvent(0, 0));
+    board.pointerMove(pointerEvent(10, 0));
+    board.pointerUp(pointerEvent(10, 0));
+
+    await vi.waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith(
+        'Precise erase error:',
+        expect.objectContaining({ message: 'chunk unavailable' })
+      );
+    });
+
+    board.pointerDown(pointerEvent(100, 0));
+    board.pointerMove(pointerEvent(110, 0));
+    board.pointerUp(pointerEvent(110, 0));
+    board.children = [{ id: 'late-shape', type: 'geometry' }];
+
+    await vi.waitFor(() => {
+      expect(importRuntime).toHaveBeenCalledTimes(2);
+      expect(mocks.findElementsInEraserPath).toHaveBeenLastCalledWith(
+        completedElements,
+        [
+          [100, 0],
+          [110, 0],
+        ],
+        20
+      );
+    });
+
+    consoleError.mockRestore();
+  });
+
+  it('shares an in-flight runtime import without merging concurrent gestures', async () => {
+    const board = createBoard();
+    let resolveRuntime: (
+      runtime: Awaited<ReturnType<PreciseEraseRuntimeLoader>>
+    ) => void = () => undefined;
+    const importRuntime = vi.fn(
+      () =>
+        new Promise<Awaited<ReturnType<PreciseEraseRuntimeLoader>>>(
+          (resolve) => {
+            resolveRuntime = resolve;
+          }
+        )
+    );
+    const loadRuntime = createRetriableModuleLoader(importRuntime);
+
+    withFreehandErase(board as never, loadRuntime);
+    board.pointerDown(pointerEvent(0, 0));
+    board.pointerMove(pointerEvent(10, 0));
+    board.pointerUp(pointerEvent(10, 0));
+    board.pointerDown(pointerEvent(100, 0));
+    board.pointerMove(pointerEvent(110, 0));
+    board.pointerUp(pointerEvent(110, 0));
+
+    await vi.waitFor(() => {
+      expect(importRuntime).toHaveBeenCalledTimes(1);
+    });
+    resolveRuntime(createPreciseEraseRuntime());
+
+    await vi.waitFor(() => {
+      expect(mocks.executePreciseErase).toHaveBeenCalledTimes(2);
+      expect(mocks.findElementsInEraserPath.mock.calls).toEqual([
+        [board.children, [[0, 0], [10, 0]], 20],
+        [board.children, [[100, 0], [110, 0]], 20],
+      ]);
+    });
+  });
+
+  it('continues the existing unsupported-element cleanup after precise execution fails', async () => {
+    const board = createBoard();
+    const unsupportedElement = { id: 'unsupported', type: 'custom' };
+    const executeError = new Error('clipper failed');
+    const runtime = {
+      executePreciseErase: vi.fn().mockRejectedValue(executeError),
+      findElementsInEraserPath: vi.fn(() => [board.children[0]]),
+      findUnsupportedElementsInEraserPath: vi.fn(() => [unsupportedElement]),
+    } as unknown as Awaited<ReturnType<PreciseEraseRuntimeLoader>>;
+    const consoleError = vi
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+
+    withFreehandErase(board as never, async () => runtime);
+    board.pointerDown(pointerEvent(0, 0));
+    board.pointerMove(pointerEvent(10, 0));
+    board.pointerUp(pointerEvent(10, 0));
+
+    await vi.waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith(
+        'Precise erase error:',
+        executeError
+      );
+      expect(mocks.removeElements).toHaveBeenCalledWith(board, [
+        unsupportedElement,
+      ]);
+    });
+
+    consoleError.mockRestore();
   });
 });

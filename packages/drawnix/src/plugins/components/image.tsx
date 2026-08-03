@@ -1,17 +1,16 @@
 import type { ImageProps } from '@plait/common';
-import { RectangleClient } from '@plait/core';
-import { Loading, MessagePlugin } from 'tdesign-react';
+import { Loading } from 'tdesign-react/es/loading';
 import classNames from 'classnames';
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import { Video } from './video';
-import { generateImage } from '../../mcp/tools/image-generation';
-import { getImageRegion } from '../../services/ppt';
 import {
-  insertMediaIntoFrame,
-  removePPTImagePlaceholder,
-  setFramePPTImageStatus,
-  setPPTImagePlaceholderStatus,
-} from '../../utils/frame-insertion-utils';
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import { Video } from './video';
+import { generatePPTImageFromPlaceholder } from './ppt-image-placeholder-controller';
+import { MessagePlugin } from '../../utils/message-plugin';
 import {
   clearVirtualUrlImageError,
   handleVirtualUrlImageError,
@@ -153,6 +152,8 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const svgOverlayRef = useRef<Image3DOverlayRef | null>(null);
   const pptImageGenerationLockRef = useRef(false);
+  const [pptImageGenerationStarting, setPPTImageGenerationStarting] =
+    useState(false);
 
   const clearSWRecovery = useCallback(() => {
     cleanupSWRecoveryRef.current?.();
@@ -442,56 +443,28 @@ export const Image: React.FC<ImageProps> = (props: ImageProps) => {
       return;
 
     pptImageGenerationLockRef.current = true;
-    setPPTImagePlaceholderStatus(props.board, pptFrameId, 'loading');
-    setFramePPTImageStatus(props.board, pptFrameId, 'loading');
+    setPPTImageGenerationStarting(true);
 
     try {
-      const result = await generateImage({
+      await generatePPTImageFromPlaceholder({
+        board: props.board,
+        frameId: pptFrameId,
         prompt: pptPrompt,
-        size: '16x9',
       });
-
-      if (result.success && (result.data as any)?.url) {
-        removePPTImagePlaceholder(props.board, pptFrameId);
-
-        const frame = props.board.children.find(
-          (el: any) => el.id === pptFrameId
-        );
-        if (frame) {
-          const frameRect = RectangleClient.getRectangleByPoints(frame.points!);
-          const imgRegion = getImageRegion({
-            x: frameRect.x,
-            y: frameRect.y,
-            width: frameRect.width,
-            height: frameRect.height,
-          });
-          await insertMediaIntoFrame(
-            props.board,
-            (result.data as any).url,
-            'image',
-            pptFrameId,
-            { width: frameRect.width, height: frameRect.height },
-            { width: 800, height: 450 },
-            imgRegion
-          );
-        }
-        setFramePPTImageStatus(props.board, pptFrameId, 'generated');
-      } else {
-        setPPTImagePlaceholderStatus(props.board, pptFrameId, 'placeholder');
-        setFramePPTImageStatus(props.board, pptFrameId, 'placeholder');
-        MessagePlugin.error(result.error || '图片生成失败');
-      }
-    } catch (error: any) {
-      setPPTImagePlaceholderStatus(props.board, pptFrameId, 'placeholder');
-      setFramePPTImageStatus(props.board, pptFrameId, 'placeholder');
-      MessagePlugin.error(error?.message || '图片生成失败');
+    } catch (error) {
+      MessagePlugin.error(
+        error instanceof Error && error.message
+          ? error.message
+          : '图片生成失败'
+      );
     } finally {
+      setPPTImageGenerationStarting(false);
       pptImageGenerationLockRef.current = false;
     }
   }, [props.board, pptFrameId, pptPrompt, pptStatus]);
 
   if (elementData?.pptImagePlaceholder) {
-    const isLoading = pptStatus === 'loading';
+    const isLoading = pptStatus === 'loading' || pptImageGenerationStarting;
 
     return (
       <div

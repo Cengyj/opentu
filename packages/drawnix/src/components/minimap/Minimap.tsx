@@ -20,7 +20,6 @@ import {
   DEFAULT_AUTO_TRIGGER_CONFIG,
   MinimapAutoTriggerConfig,
 } from '../../types/minimap.types';
-import { ChevronRightIcon } from 'tdesign-icons-react';
 import { Z_INDEX } from '../../constants/z-index';
 import { analytics } from '../../utils/posthog-analytics';
 import { HoverTip } from '../shared/hover';
@@ -31,6 +30,22 @@ type ViewportSnapshot = {
   originX: number;
   originY: number;
 };
+
+const MinimapChevronRightIcon: React.FC = () => (
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    width="1em"
+    height="1em"
+  >
+    <path d="m9 18 6-6-6-6" />
+  </svg>
+);
 
 const parseViewBox = (viewBox: string | null) => {
   if (!viewBox) {
@@ -908,7 +923,7 @@ export const Minimap: React.FC<MinimapProps> = ({
             onClick={toggleExpanded}
             data-track="minimap_click_toggle"
           >
-            <ChevronRightIcon />
+            <MinimapChevronRightIcon />
           </button>
         </HoverTip>
       )}

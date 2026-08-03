@@ -14,11 +14,9 @@ import {
   memoryMonitorService,
   crashRecoveryService,
   swChannelClient,
-} from '@drawnix/drawnix/runtime';
-import {
   getAnalyticsReleaseContext,
   registerAnalyticsSuperProperties,
-} from '@drawnix/drawnix';
+} from '@drawnix/drawnix/runtime';
 import { initSWConsoleCapture } from '../utils/sw-console-capture';
 import {
   fetchVersionMetadata,

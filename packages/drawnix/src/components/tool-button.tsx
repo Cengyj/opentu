@@ -3,7 +3,7 @@ import './tool-icon.scss';
 
 import type { CSSProperties } from 'react';
 import React, { useEffect, useRef, useState } from 'react';
-import { PopupPlacement } from 'tdesign-react';
+import type { PopupPlacement } from 'tdesign-react/es/popup/type';
 import { AbortError } from '../errors';
 import { isPromiseLike } from '@aitu/utils';
 import classNames from 'classnames';

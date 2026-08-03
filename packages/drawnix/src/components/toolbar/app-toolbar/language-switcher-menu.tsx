@@ -1,5 +1,5 @@
 import { useContext } from 'react';
-import { MenuIcon } from '../../icons';
+import { MenuIcon } from '../../icons/startup-icons';
 import { useI18n } from '../../../i18n';
 import Menu from '../../menu/menu';
 import MenuItem from '../../menu/menu-item';

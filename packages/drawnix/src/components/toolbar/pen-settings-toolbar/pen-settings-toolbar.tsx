@@ -17,7 +17,7 @@ import {
   setPenDefaultAnchorType,
   setPenStrokeWidth,
 } from '../../../plugins/pen/pen-settings';
-import { PenShape, AnchorType } from '../../../plugins/pen/type';
+import { AnchorType } from '../../../plugins/pen/type';
 import { useI18n, Translations } from '../../../i18n';
 import { useViewportScale } from '../../../hooks/useViewportScale';
 import {
@@ -28,6 +28,7 @@ import {
 import './pen-settings-toolbar.scss';
 import { analytics } from '../../../utils/posthog-analytics';
 import { SizePicker } from '../pencil-settings-toolbar/size-picker';
+import { isPenSettingsToolbarActive } from '../tool-settings-visibility';
 
 const PEN_WIDTH_PRESETS = [1, 2, 4, 8, 12, 16, 24, 32, 48, 64, 96, 100];
 
@@ -76,8 +77,10 @@ export const PenSettingsToolbar: React.FC = () => {
   // 检查是否是钢笔指针（需要同时检查 appState 和 board.pointer）
   // 因为完成钢笔绘制后会通过 BoardTransforms.updatePointerType 更新 board.pointer，
   // 但 appState.pointer 可能没有及时更新
-  const isPenPointer =
-    appState.pointer === PenShape.pen && board.pointer === PenShape.pen;
+  const isPenPointer = isPenSettingsToolbarActive(
+    appState.pointer,
+    board.pointer
+  );
 
   // 当 board 变化时同步设置
   useEffect(() => {

@@ -7,12 +7,14 @@
 
 import React, { useState, useCallback } from 'react';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
-import { useCacheQuotaMonitor } from '../../hooks/useUnifiedCache';
+import { useCacheQuotaMonitor } from '../../hooks/useCacheQuotaMonitor';
 
 export interface CacheQuotaProviderProps {
   children: React.ReactNode;
   /** Callback to open media library */
   onOpenMediaLibrary?: () => void;
+  /** Core Drawnix shell has initialized and completed its first paint. */
+  isStartupOperable?: boolean;
 }
 
 /**
@@ -22,6 +24,7 @@ export interface CacheQuotaProviderProps {
 export const CacheQuotaProvider: React.FC<CacheQuotaProviderProps> = ({
   children,
   onOpenMediaLibrary,
+  isStartupOperable = true,
 }) => {
   const [dialogVisible, setDialogVisible] = useState(false);
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -46,7 +49,7 @@ export const CacheQuotaProvider: React.FC<CacheQuotaProviderProps> = ({
   }, [confirm, dialogVisible, onOpenMediaLibrary]);
 
   // Monitor quota
-  useCacheQuotaMonitor(handleQuotaExceeded);
+  useCacheQuotaMonitor(handleQuotaExceeded, isStartupOperable);
 
   return (
     <>

@@ -19,7 +19,7 @@ import {
   ExportResult,
 } from '../../services/backup-restore';
 import { workspaceService } from '../../services/workspace-service';
-import { safeReload } from '../../utils/active-tasks';
+import { safeReload } from '../../utils/safe-reload';
 import './backup-restore-dialog.scss';
 
 export interface BackupRestoreDialogProps {

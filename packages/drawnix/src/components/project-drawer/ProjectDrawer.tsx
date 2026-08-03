@@ -49,7 +49,7 @@ import {
 } from '../../types/workspace.types';
 import { BaseDrawer } from '../side-drawer';
 import { workspaceExportService } from '../../services/workspace-export-service';
-import { safeReload } from '../../utils/active-tasks';
+import { safeReload } from '../../utils/safe-reload';
 import {
   ContextMenu,
   useContextMenuState,

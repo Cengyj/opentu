@@ -73,6 +73,7 @@ export default defineConfig({
     },
     lib: {
       entry: {
+        app: 'src/app.ts',
         index: 'src/index.ts',
         runtime: 'src/runtime.ts',
       },

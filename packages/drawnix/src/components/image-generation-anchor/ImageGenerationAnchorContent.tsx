@@ -1,9 +1,14 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import classNames from 'classnames';
 import type { PlaitBoard } from '@plait/core';
 import { useImageGenerationAnchorController } from '../../hooks/useImageGenerationAnchorController';
-import { taskQueueService } from '../../services/task-queue';
-import { workflowCompletionService } from '../../services/workflow-completion-service';
+import { loadImageGenerationAnchorTaskRuntime } from '../../services/image-generation-anchor-task-runtime';
 import { ImageGenerationAnchorTransforms } from './image-generation-anchor.transforms';
 import {
   IMAGE_GENERATION_ANCHOR_RETRY_EVENT,
@@ -52,6 +57,8 @@ export const ImageGenerationAnchorContent: React.FC<
 > = ({ board, element, selected }) => {
   const { viewModel } = useImageGenerationAnchorController({ anchor: element });
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const mountedRef = useRef(false);
+  const retryAttemptRef = useRef<Promise<void> | null>(null);
   const isGhost = viewModel.anchorType === 'ghost';
   const batchPreview = viewModel.batchPreview;
   const isStack = Boolean(batchPreview);
@@ -102,6 +109,14 @@ export const ImageGenerationAnchorContent: React.FC<
     ]
   );
 
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const stopEventPropagation = useCallback(
     (event: React.PointerEvent | React.MouseEvent) => {
       event.stopPropagation();
@@ -128,48 +143,81 @@ export const ImageGenerationAnchorContent: React.FC<
       }
 
       if (actionType === 'retry') {
-        const relatedTasks = getTasksForImageGenerationAnchor(
-          element,
-          taskQueueService.getAllTasks()
-        );
-        const retryableTask =
-          relatedTasks.find(
-            (task) =>
-              task.status === TaskStatus.FAILED ||
-              task.status === TaskStatus.CANCELLED
-          ) ||
-          relatedTasks.find(
-            (task) =>
-              workflowCompletionService.getPostProcessingStatus(task.id)
-                ?.status === 'failed'
-          ) ||
-          selectPrimaryImageGenerationAnchorTask(element, relatedTasks);
-        const taskId =
-          retryableTask?.id || element.primaryTaskId || element.taskIds[0];
-        if (!taskId) {
-          ImageGenerationAnchorTransforms.updateAnchor(
-            board,
-            element.id,
-            buildImageGenerationAnchorPresentationPatch('failed', {
-              error: '任务未绑定，无法重试',
-            })
-          );
+        if (retryAttemptRef.current) {
           return;
         }
 
-        if (retryableTask) {
-          ImageGenerationAnchorTransforms.updateAnchor(
-            board,
-            element.id,
-            buildImageGenerationAnchorPresentationPatch('retrying')
-          );
-        }
+        const retryAttempt = loadImageGenerationAnchorTaskRuntime()
+          .then(({ taskQueueService, workflowCompletionService }) => {
+            if (!mountedRef.current) {
+              return;
+            }
 
-        window.dispatchEvent(
-          new CustomEvent(IMAGE_GENERATION_ANCHOR_RETRY_EVENT, {
-            detail: { taskId, anchorId: element.id },
+            const relatedTasks = getTasksForImageGenerationAnchor(
+              element,
+              taskQueueService.getAllTasks()
+            );
+            const retryableTask =
+              relatedTasks.find(
+                (task) =>
+                  task.status === TaskStatus.FAILED ||
+                  task.status === TaskStatus.CANCELLED
+              ) ||
+              relatedTasks.find(
+                (task) =>
+                  workflowCompletionService.getPostProcessingStatus(task.id)
+                    ?.status === 'failed'
+              ) ||
+              selectPrimaryImageGenerationAnchorTask(element, relatedTasks);
+            const taskId =
+              retryableTask?.id || element.primaryTaskId || element.taskIds[0];
+            if (!taskId) {
+              ImageGenerationAnchorTransforms.updateAnchor(
+                board,
+                element.id,
+                buildImageGenerationAnchorPresentationPatch('failed', {
+                  error: '任务未绑定，无法重试',
+                })
+              );
+              return;
+            }
+
+            if (retryableTask) {
+              ImageGenerationAnchorTransforms.updateAnchor(
+                board,
+                element.id,
+                buildImageGenerationAnchorPresentationPatch('retrying')
+              );
+            }
+
+            window.dispatchEvent(
+              new CustomEvent(IMAGE_GENERATION_ANCHOR_RETRY_EVENT, {
+                detail: { taskId, anchorId: element.id },
+              })
+            );
           })
-        );
+          .catch((error: unknown) => {
+            if (!mountedRef.current) {
+              return;
+            }
+
+            ImageGenerationAnchorTransforms.updateAnchor(
+              board,
+              element.id,
+              buildImageGenerationAnchorPresentationPatch('failed', {
+                error:
+                  error instanceof Error && error.message
+                    ? error.message
+                    : '任务状态加载失败，无法重试',
+              })
+            );
+          })
+          .finally(() => {
+            if (retryAttemptRef.current === retryAttempt) {
+              retryAttemptRef.current = null;
+            }
+          });
+        retryAttemptRef.current = retryAttempt;
         return;
       }
 

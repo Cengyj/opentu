@@ -33,7 +33,7 @@ import { FreehandShape } from '../../../plugins/freehand/type';
 import { PenShape } from '../../../plugins/pen/type';
 import { finishPenOnToolSwitch } from '../../../plugins/pen/with-pen-create';
 import { DrawnixPointerType, useSetPointer } from '../../../hooks/use-drawnix';
-import { addImage } from '../../../utils/image';
+import { openImageFilePicker } from '../../../utils/image-file-actions';
 import { useI18n } from '../../../i18n';
 import { BoardCreationMode, setCreationMode } from '@plait/common';
 import { Popover, PopoverContent, PopoverTrigger } from '../../popover/popover';
@@ -201,7 +201,7 @@ export const QuickCreationToolbar: React.FC<QuickCreationToolbarProps> = ({
 
   const handleImageClick = () => {
     resetAllPopovers();
-    addImage(board);
+    void openImageFilePicker(board);
     onClose();
   };
 

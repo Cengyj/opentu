@@ -31,7 +31,7 @@ import {
   GeometryShapes,
   getSelectedDrawElements,
 } from '@plait/draw';
-import { scrollToPointIfNeeded } from '../utils/selection-utils';
+import { scrollToPointIfNeeded } from '../utils/viewport-scroll';
 
 /** 新形状与源元素的默认距离 */
 const FLOWCHART_DISTANCE = 100;
@@ -134,33 +134,54 @@ function createFlowchartNode(
 
   switch (direction) {
     case Direction.right:
-      newCenterX = sourceCenterX + sourceWidth / 2 + FLOWCHART_DISTANCE + sourceWidth / 2;
+      newCenterX =
+        sourceCenterX + sourceWidth / 2 + FLOWCHART_DISTANCE + sourceWidth / 2;
       newCenterY = sourceCenterY;
       break;
     case Direction.bottom:
       newCenterX = sourceCenterX;
-      newCenterY = sourceCenterY + sourceHeight / 2 + FLOWCHART_DISTANCE + sourceHeight / 2;
+      newCenterY =
+        sourceCenterY +
+        sourceHeight / 2 +
+        FLOWCHART_DISTANCE +
+        sourceHeight / 2;
       break;
     case Direction.left:
-      newCenterX = sourceCenterX - sourceWidth / 2 - FLOWCHART_DISTANCE - sourceWidth / 2;
+      newCenterX =
+        sourceCenterX - sourceWidth / 2 - FLOWCHART_DISTANCE - sourceWidth / 2;
       newCenterY = sourceCenterY;
       break;
     case Direction.top:
       newCenterX = sourceCenterX;
-      newCenterY = sourceCenterY - sourceHeight / 2 - FLOWCHART_DISTANCE - sourceHeight / 2;
+      newCenterY =
+        sourceCenterY -
+        sourceHeight / 2 -
+        FLOWCHART_DISTANCE -
+        sourceHeight / 2;
       break;
     default:
-      newCenterX = sourceCenterX + sourceWidth / 2 + FLOWCHART_DISTANCE + sourceWidth / 2;
+      newCenterX =
+        sourceCenterX + sourceWidth / 2 + FLOWCHART_DISTANCE + sourceWidth / 2;
       newCenterY = sourceCenterY;
   }
 
   // 碰撞检测：如果目标位置有重叠，向垂直方向偏移（锯齿形分布）
   let offset = 0;
-  const offsetStep = direction === Direction.right || direction === Direction.left
-    ? sourceHeight + 20
-    : sourceWidth + 20;
+  const offsetStep =
+    direction === Direction.right || direction === Direction.left
+      ? sourceHeight + 20
+      : sourceWidth + 20;
 
-  while (hasOverlapAtPosition(board, newCenterX, newCenterY, sourceWidth, sourceHeight, sourceElement.id)) {
+  while (
+    hasOverlapAtPosition(
+      board,
+      newCenterX,
+      newCenterY,
+      sourceWidth,
+      sourceHeight,
+      sourceElement.id
+    )
+  ) {
     offset += offsetStep;
     if (direction === Direction.right || direction === Direction.left) {
       newCenterY = sourceCenterY + offset;
@@ -178,15 +199,24 @@ function createFlowchartNode(
   ];
 
   // 获取源元素的形状类型
-  const sourceShape = (sourceElement as PlaitDrawElement & { shape?: GeometryShapes }).shape;
+  const sourceShape = (
+    sourceElement as PlaitDrawElement & { shape?: GeometryShapes }
+  ).shape;
   const targetShape = sourceShape || 'rectangle';
-  const newShapeElement = createDefaultGeometry(board, newShapePoints, targetShape as GeometryShapes);
+  const newShapeElement = createDefaultGeometry(
+    board,
+    newShapePoints,
+    targetShape as GeometryShapes
+  );
 
   // 设置默认白色填充
   newShapeElement.fill = '#ffffff';
 
   // 复制源元素样式
-  if (PlaitDrawElement.isShapeElement(sourceElement) && !PlaitDrawElement.isText(sourceElement)) {
+  if (
+    PlaitDrawElement.isShapeElement(sourceElement) &&
+    !PlaitDrawElement.isText(sourceElement)
+  ) {
     const typedSource = sourceElement as PlaitDrawElement & {
       fill?: string;
       strokeColor?: string;
@@ -207,18 +237,34 @@ function createFlowchartNode(
   const sourceHitIndex = directionToHitIndex(direction);
   const targetHitIndex = getOppositeHitIndex(sourceHitIndex);
 
-  const sourceEdgeCenterPoints = RectangleClient.getEdgeCenterPoints(sourceRect);
+  const sourceEdgeCenterPoints =
+    RectangleClient.getEdgeCenterPoints(sourceRect);
   const arrowLineStartPoint = sourceEdgeCenterPoints[sourceHitIndex];
-  const rotatedStartPoint = rotatePointsByElement(arrowLineStartPoint, sourceElement) || arrowLineStartPoint;
+  const rotatedStartPoint =
+    rotatePointsByElement(arrowLineStartPoint, sourceElement) ||
+    arrowLineStartPoint;
   const sourceConnection = PlaitDrawElement.isShapeElement(sourceElement)
-    ? getHitConnection(board, rotatedStartPoint, sourceElement as Parameters<typeof getHitConnection>[2])
+    ? getHitConnection(
+        board,
+        rotatedStartPoint,
+        sourceElement as Parameters<typeof getHitConnection>[2]
+      )
     : undefined;
 
-  const newShapeRect = RectangleClient.getRectangleByPoints(newShapeElement.points);
-  const targetEdgeCenterPoints = RectangleClient.getEdgeCenterPoints(newShapeRect);
+  const newShapeRect = RectangleClient.getRectangleByPoints(
+    newShapeElement.points
+  );
+  const targetEdgeCenterPoints =
+    RectangleClient.getEdgeCenterPoints(newShapeRect);
   const arrowLineEndPoint = targetEdgeCenterPoints[targetHitIndex];
-  const rotatedEndPoint = rotatePointsByElement(arrowLineEndPoint, newShapeElement) || arrowLineEndPoint;
-  const targetConnection = getHitConnection(board, rotatedEndPoint, newShapeElement);
+  const rotatedEndPoint =
+    rotatePointsByElement(arrowLineEndPoint, newShapeElement) ||
+    arrowLineEndPoint;
+  const targetConnection = getHitConnection(
+    board,
+    rotatedEndPoint,
+    newShapeElement
+  );
 
   // 创建肘形箭头线
   const arrowLineElement = createArrowLineElement(
@@ -245,7 +291,7 @@ function createFlowchartNode(
   // 选中新形状并滚动到视口
   const newElementId = newShapeElement.id;
   setTimeout(() => {
-    const insertedElement = board.children.find(el => el.id === newElementId);
+    const insertedElement = board.children.find((el) => el.id === newElementId);
     if (insertedElement) {
       clearSelectedElement(board);
       addSelectedElement(board, insertedElement);
@@ -275,14 +321,18 @@ function getConnectedElements(
     };
 
     if (arrowLine.source?.boundId === element.id && arrowLine.target?.boundId) {
-      const targetElement = board.children.find(el => el.id === arrowLine.target!.boundId);
+      const targetElement = board.children.find(
+        (el) => el.id === arrowLine.target!.boundId
+      );
       if (targetElement) {
         outgoing.push(targetElement);
       }
     }
 
     if (arrowLine.target?.boundId === element.id && arrowLine.source?.boundId) {
-      const sourceElement = board.children.find(el => el.id === arrowLine.source!.boundId);
+      const sourceElement = board.children.find(
+        (el) => el.id === arrowLine.source!.boundId
+      );
       if (sourceElement) {
         incoming.push(sourceElement);
       }
@@ -303,7 +353,9 @@ function navigateToConnectedElement(
   forward: boolean
 ): boolean {
   const { incoming, outgoing } = getConnectedElements(board, currentElement);
-  const targets = forward ? [...outgoing, ...incoming] : [...incoming, ...outgoing];
+  const targets = forward
+    ? [...outgoing, ...incoming]
+    : [...incoming, ...outgoing];
 
   if (targets.length === 0) return false;
 
@@ -358,8 +410,15 @@ export const withFlowchartShortcut = (board: PlaitBoard) => {
         const selectedElements = getSelectedElements(board);
         if (selectedElements.length === 1) {
           const element = selectedElements[0];
-          if (PlaitDrawElement.isDrawElement(element) && PlaitDrawElement.isShapeElement(element)) {
-            const navigated = navigateToConnectedElement(board, element, !event.shiftKey);
+          if (
+            PlaitDrawElement.isDrawElement(element) &&
+            PlaitDrawElement.isShapeElement(element)
+          ) {
+            const navigated = navigateToConnectedElement(
+              board,
+              element,
+              !event.shiftKey
+            );
             if (navigated) {
               event.preventDefault();
               return;

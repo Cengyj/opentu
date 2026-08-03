@@ -10,7 +10,7 @@ import { ArrowLineShape, BasicShapes } from '@plait/draw';
 import { FreehandShape } from '../../plugins/freehand/type';
 import { LassoPointerType } from '../../plugins/with-lasso-selection';
 import { PenShape } from '../../plugins/pen/type';
-import { saveAsImage } from '../../utils/image';
+import { exportBoardImage } from '../../utils/image-file-actions';
 import { saveAsJSON } from '../../data/json';
 import { AlignmentTransforms } from '../../transforms/alignment';
 import { DistributeTransforms } from '../../transforms/distribute';
@@ -360,7 +360,9 @@ export function buildDefaultCommands(
       keywords: ['export', 'image', 'png', 'screenshot', '导出', '图片', '截图'],
       category: 'export',
       shortcut: '⇧⌘E',
-      perform: (board) => saveAsImage(board, true),
+      perform: (board) => {
+        void exportBoardImage(board, true);
+      },
     },
     {
       id: 'export-json',

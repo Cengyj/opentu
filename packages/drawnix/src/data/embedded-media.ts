@@ -1,6 +1,6 @@
 import { PlaitElement } from '@plait/core';
 import { EmbeddedMediaItem } from './types';
-import { unifiedCacheService } from '../services/unified-cache-service';
+import { loadUnifiedCacheService } from '../services/unified-cache-runtime';
 
 /**
  * 将 Base64 字符串转换为 Blob
@@ -98,6 +98,7 @@ const collectEmbeddedMedia = async (
   virtualUrls: Set<string>
 ): Promise<EmbeddedMediaItem[]> => {
   const embeddedMedia: EmbeddedMediaItem[] = [];
+  const unifiedCacheService = await loadUnifiedCacheService();
 
   for (const url of virtualUrls) {
     try {
@@ -146,6 +147,7 @@ export const restoreEmbeddedMedia = async (
   embeddedMedia?: EmbeddedMediaItem[]
 ): Promise<void> => {
   if (!embeddedMedia || embeddedMedia.length === 0) return;
+  const unifiedCacheService = await loadUnifiedCacheService();
 
   for (const item of embeddedMedia) {
     try {

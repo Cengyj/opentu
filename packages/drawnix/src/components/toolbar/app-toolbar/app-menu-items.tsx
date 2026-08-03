@@ -10,7 +10,7 @@ import {
   CloudIcon,
   CleanBrokenLinksIcon,
   CommandPaletteIcon,
-} from '../../icons';
+} from '../../icons/startup-icons';
 import { useBoard, useListRender } from '@plait-board/react-board';
 import {
   BoardTransforms,
@@ -24,10 +24,10 @@ import {
 } from '@plait/core';
 import { PlaitDrawElement } from '@plait/draw';
 import { isVideoElement } from '../../../plugins/with-video';
-import { MessagePlugin } from 'tdesign-react';
+import { MessagePlugin } from '../../../utils/message-plugin';
 import { loadFromJSON, saveAsJSON } from '../../../data/json';
 import MenuItem from '../../menu/menu-item';
-import { saveAsImage } from '../../../utils/image';
+import { exportBoardImage } from '../../../utils/image-file-actions';
 import { useDrawnix } from '../../../hooks/use-drawnix';
 import { useI18n } from '../../../i18n';
 import Menu from '../../menu/menu';
@@ -105,7 +105,7 @@ export const SaveAsImage = () => {
       data-testid="image-export-button"
       data-track="toolbar_click_menu_export"
       onSelect={() => {
-        saveAsImage(board, true);
+        void exportBoardImage(board, true);
       }}
       submenu={
         <Menu onSelect={() => {
@@ -118,7 +118,7 @@ export const SaveAsImage = () => {
           <MenuItem
             data-track="toolbar_click_menu_export_png"
             onSelect={() => {
-              saveAsImage(board, true);
+              void exportBoardImage(board, true);
             }}
             aria-label={t('menu.exportImage.png')}
           >
@@ -127,7 +127,7 @@ export const SaveAsImage = () => {
           <MenuItem
             data-track="toolbar_click_menu_export_jpg"
             onSelect={() => {
-              saveAsImage(board, false);
+              void exportBoardImage(board, false);
             }}
             aria-label={t('menu.exportImage.jpg')}
           >

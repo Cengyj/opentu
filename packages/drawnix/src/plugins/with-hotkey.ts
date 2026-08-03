@@ -5,7 +5,10 @@ import {
   PlaitPointerType,
 } from '@plait/core';
 import { isHotkey } from 'is-hotkey';
-import { addImage, saveAsImage } from '../utils/image';
+import {
+  exportBoardImage,
+  openImageFilePicker,
+} from '../utils/image-file-actions';
 import { saveAsJSON } from '../data/json';
 import { DrawnixState } from '../hooks/use-drawnix';
 import { BoardCreationMode, setCreationMode } from '@plait/common';
@@ -166,7 +169,7 @@ export const buildDrawnixHotkeyPlugin = (
         !PlaitBoard.hasBeenTextEditing(board)
       ) {
         if (isHotkey(['mod+shift+e'], { byKey: true })(event)) {
-          saveAsImage(board, true);
+          void exportBoardImage(board, true);
           event.preventDefault();
           return;
         }
@@ -186,7 +189,7 @@ export const buildDrawnixHotkeyPlugin = (
           return;
         }
         if (isHotkey(['mod+u'])(event)) {
-          addImage(board);
+          void openImageFilePicker(board);
         }
 
         // 对齐快捷键 (Alt/Option + 字母) - 仅在多选时生效

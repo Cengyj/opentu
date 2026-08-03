@@ -5,9 +5,10 @@
 
 import { logDebug, logInfo, logSuccess, logWarning, logError } from './sync-log-service';
 import { CryptoUtils } from '../../utils/crypto-utils';
-
-/** Token 存储键 */
-const GITHUB_TOKEN_KEY = 'github_sync_token';
+import {
+  GITHUB_SYNC_TOKEN_STORAGE_KEY,
+  hasStoredGitHubSyncToken,
+} from './token-storage';
 
 /** Token 验证缓存键 */
 const TOKEN_VALIDATED_KEY = 'github_token_validated';
@@ -33,7 +34,7 @@ class TokenService {
     try {
       // 加密存储
       const encryptedToken = await CryptoUtils.encrypt(token);
-      localStorage.setItem(GITHUB_TOKEN_KEY, encryptedToken);
+      localStorage.setItem(GITHUB_SYNC_TOKEN_STORAGE_KEY, encryptedToken);
       
       // 更新缓存
       this.cachedToken = token;
@@ -57,7 +58,9 @@ class TokenService {
     }
 
     try {
-      const encryptedToken = localStorage.getItem(GITHUB_TOKEN_KEY);
+      const encryptedToken = localStorage.getItem(
+        GITHUB_SYNC_TOKEN_STORAGE_KEY
+      );
       if (!encryptedToken) {
         return null;
       }
@@ -78,7 +81,7 @@ class TokenService {
    * 清除 Token
    */
   clearToken(): void {
-    localStorage.removeItem(GITHUB_TOKEN_KEY);
+    localStorage.removeItem(GITHUB_SYNC_TOKEN_STORAGE_KEY);
     localStorage.removeItem(TOKEN_VALIDATED_KEY);
     this.cachedToken = null;
     this.tokenValidated = false;
@@ -88,7 +91,7 @@ class TokenService {
    * 检查是否已配置 Token
    */
   hasToken(): boolean {
-    return !!localStorage.getItem(GITHUB_TOKEN_KEY);
+    return hasStoredGitHubSyncToken();
   }
 
   /**

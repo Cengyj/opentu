@@ -28,29 +28,21 @@ import {
 import { Z_INDEX } from '../../constants/z-index';
 import { useI18n } from '../../i18n';
 import { PlaitElement } from '@plait/core';
-import { safeReload } from '../../utils/active-tasks';
+import { safeReload } from '../../utils/safe-reload';
 import { useConfirmDialog } from '../dialog/ConfirmDialog';
 import './performance-panel.scss';
 import { HoverTip } from '../shared';
+import {
+  IMAGE_COUNT_THRESHOLD,
+  PERFORMANCE_PANEL_CHECK_INTERVAL_MS,
+  PERFORMANCE_PANEL_STORAGE_KEY,
+  readPerformancePanelSettings,
+  shouldShowPerformancePanel,
+  type PerformancePanelPersistedSettings,
+} from '../startup/operational-monitor-policy';
 
-// 存储键 - 只保存位置和固定状态，dismissed 不持久化
-const STORAGE_KEY = 'drawnix_performance_panel_settings';
-
-// 默认位置（右下角）
-const DEFAULT_POSITION = { x: -1, y: -1 }; // -1 表示使用默认位置
-
-// 内存阈值
-const MEMORY_AUTO_SHOW_THRESHOLD = 80; // 80% 自动显示面板
-const MEMORY_WITH_IMAGE_THRESHOLD = 60; // 60% 配合图片数量
 const WARNING_THRESHOLD = 80; // 80% 显示警告样式
 const CRITICAL_THRESHOLD = 95; // 95% 显示严重警告
-const IMAGE_COUNT_THRESHOLD = 100; // 图片元素阈值
-
-// 持久化设置（保存到 localStorage）
-interface PersistedSettings {
-  position: { x: number; y: number };
-  pinned: boolean;
-}
 
 // 运行时状态（不持久化，刷新页面后重置）
 interface RuntimeState {
@@ -82,26 +74,8 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
   }, [elements]);
 
   // 持久化设置（位置和固定状态）
-  const [persistedSettings, setPersistedSettings] = useState<PersistedSettings>(
-    () => {
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          return {
-            position: parsed.position || DEFAULT_POSITION,
-            pinned: parsed.pinned || false,
-          };
-        }
-      } catch {
-        // ignore
-      }
-      return {
-        position: DEFAULT_POSITION,
-        pinned: false,
-      };
-    }
-  );
+  const [persistedSettings, setPersistedSettings] =
+    useState<PerformancePanelPersistedSettings>(readPerformancePanelSettings);
 
   // 运行时状态（不持久化，刷新页面后重置）
   const [runtimeState, setRuntimeState] = useState<RuntimeState>({
@@ -115,11 +89,14 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
 
   // 保存持久化设置到 localStorage
   const savePersistedSettings = useCallback(
-    (newSettings: Partial<PersistedSettings>) => {
+    (newSettings: Partial<PerformancePanelPersistedSettings>) => {
       setPersistedSettings((prev) => {
         const updated = { ...prev, ...newSettings };
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+          localStorage.setItem(
+            PERFORMANCE_PANEL_STORAGE_KEY,
+            JSON.stringify(updated)
+          );
         } catch {
           // ignore
         }
@@ -138,7 +115,10 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
   // 启动内存监控
   useEffect(() => {
     checkMemory();
-    checkIntervalRef.current = setInterval(checkMemory, 5000); // 每 5 秒检查一次
+    checkIntervalRef.current = setInterval(
+      checkMemory,
+      PERFORMANCE_PANEL_CHECK_INTERVAL_MS
+    );
 
     return () => {
       if (checkIntervalRef.current) {
@@ -148,25 +128,21 @@ export const PerformancePanel: React.FC<PerformancePanelProps> = ({
   }, [checkMemory]);
 
   // 计算是否应该显示面板
-  const shouldShow = useMemo(() => {
-    if (!memoryStats) return false;
-    if (persistedSettings.pinned) return true;
-    if (runtimeState.dismissed) return false;
-
-    // 内存使用超过 80% 自动显示
-    const isHighMemory = memoryStats.usagePercent >= MEMORY_AUTO_SHOW_THRESHOLD;
-    // 图片超过 100 且内存超过 60% 时显示
-    const isImageAndMemory =
-      imageCount >= IMAGE_COUNT_THRESHOLD &&
-      memoryStats.usagePercent >= MEMORY_WITH_IMAGE_THRESHOLD;
-
-    return isHighMemory || isImageAndMemory;
-  }, [
-    memoryStats,
-    imageCount,
-    persistedSettings.pinned,
-    runtimeState.dismissed,
-  ]);
+  const shouldShow = useMemo(
+    () =>
+      shouldShowPerformancePanel({
+        memoryStats,
+        imageCount,
+        pinned: persistedSettings.pinned,
+        dismissed: runtimeState.dismissed,
+      }),
+    [
+      imageCount,
+      memoryStats,
+      persistedSettings.pinned,
+      runtimeState.dismissed,
+    ]
+  );
 
   // 计算警告级别
   const warningLevel = useMemo(() => {

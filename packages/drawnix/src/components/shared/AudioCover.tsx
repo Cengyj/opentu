@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Music4 } from 'lucide-react';
 import { normalizeImageDataUrl } from '@aitu/utils';
+import { Music4Icon } from '../icons/startup-icons';
 
 interface AudioCoverProps {
   src?: string;
@@ -68,7 +68,7 @@ export const AudioCover: React.FC<AudioCoverProps> = ({
   if (!currentSrc || loadFailed) {
     return (
       <div className={fallbackClassName} aria-label={alt}>
-        <Music4 size={iconSize} />
+        <Music4Icon size={iconSize} />
       </div>
     );
   }

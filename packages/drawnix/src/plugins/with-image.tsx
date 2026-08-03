@@ -20,22 +20,34 @@ import {
   isSupportedAudioFileType,
   getSupportedVideoFileMimeType,
 } from '../data/blob';
-import { insertImage, insertImageFromUrlAndSelect } from '../data/image';
-import { insertVideoFromUrl } from '../data/video';
-import {
-  insertAudioFromUrl,
-  getAudioFileDuration,
-  extractAudioCoverArt,
-} from '../data/audio';
-import { unifiedCacheService } from '../services/unified-cache-service';
-import { assetStorageService } from '../services/asset-storage-service';
 import { isHitImage, MindElement, ImageData } from '@plait/mind';
 import { ImageViewer } from '../libs/image-viewer';
 import { AssetSource, AssetType } from '../types/asset.types';
+import { createRetriableModuleLoader } from '../utils/retriable-module-loader';
 
 const MULTI_DROP_COLUMNS = 3;
 const MULTI_DROP_COLUMN_WIDTH = 440;
 const MULTI_DROP_ROW_HEIGHT = 300;
+
+const loadMediaInsertionRuntime = createRetriableModuleLoader(async () => {
+  const [image, video, audio, assetStorage, unifiedCache] = await Promise.all([
+    import('../data/image'),
+    import('../data/video'),
+    import('../data/audio'),
+    import('../services/asset-storage-service'),
+    import('../services/unified-cache-service'),
+  ]);
+  return {
+    insertImage: image.insertImage,
+    insertImageFromUrlAndSelect: image.insertImageFromUrlAndSelect,
+    insertVideoFromUrl: video.insertVideoFromUrl,
+    insertAudioFromUrl: audio.insertAudioFromUrl,
+    getAudioFileDuration: audio.getAudioFileDuration,
+    extractAudioCoverArt: audio.extractAudioCoverArt,
+    assetStorageService: assetStorage.assetStorageService,
+    unifiedCacheService: unifiedCache.unifiedCacheService,
+  };
+});
 
 type DroppedMediaKind = 'image' | 'video' | 'audio';
 
@@ -126,7 +138,11 @@ function restoreDropViewportAnchor(
   setTimeout(restore, 0);
 }
 
-function getDropPointByIndex(origin: Point, index: number, total: number): Point {
+function getDropPointByIndex(
+  origin: Point,
+  index: number,
+  total: number
+): Point {
   if (total <= 1) {
     return origin;
   }
@@ -139,7 +155,10 @@ function getDropPointByIndex(origin: Point, index: number, total: number): Point
   ];
 }
 
-function getDroppedFileName(file: File, fallbackPrefix: DroppedMediaKind): string {
+function getDroppedFileName(
+  file: File,
+  fallbackPrefix: DroppedMediaKind
+): string {
   const trimmedName = file.name?.trim();
   return trimmedName || `${fallbackPrefix}-${Date.now()}`;
 }
@@ -150,6 +169,8 @@ async function insertDroppedVideo(
   mimeType: string,
   point: Point
 ): Promise<void> {
+  const { assetStorageService, insertVideoFromUrl } =
+    await loadMediaInsertionRuntime();
   const videoBlob =
     file.type === mimeType ? file : file.slice(0, file.size, mimeType);
 
@@ -162,7 +183,15 @@ async function insertDroppedVideo(
     mimeType,
   });
 
-  await insertVideoFromUrl(board, asset.url, point, true, undefined, true, true);
+  await insertVideoFromUrl(
+    board,
+    asset.url,
+    point,
+    true,
+    undefined,
+    true,
+    true
+  );
 }
 
 async function insertDroppedAudio(
@@ -171,6 +200,8 @@ async function insertDroppedAudio(
   mimeType: string,
   point: Point
 ): Promise<void> {
+  const audioRuntime = await loadMediaInsertionRuntime();
+  const { assetStorageService, unifiedCacheService } = audioRuntime;
   const fileName = getDroppedFileName(file, 'audio');
   const title = fileName.replace(/\.[^.]+$/, '');
 
@@ -189,8 +220,8 @@ async function insertDroppedAudio(
   });
 
   const [duration, coverBlob] = await Promise.all([
-    getAudioFileDuration(file),
-    extractAudioCoverArt(file),
+    audioRuntime.getAudioFileDuration(file),
+    audioRuntime.extractAudioCoverArt(file),
   ]);
 
   let previewImageUrl: string | undefined;
@@ -203,7 +234,7 @@ async function insertDroppedAudio(
     previewImageUrl = coverUrl;
   }
 
-  await insertAudioFromUrl(
+  await audioRuntime.insertAudioFromUrl(
     board,
     asset.url,
     {
@@ -231,6 +262,7 @@ async function insertDroppedMediaFiles(
 
     try {
       if (mediaFile.kind === 'image') {
+        const { insertImage } = await loadMediaInsertionRuntime();
         await insertImage(
           board,
           mediaFile.file,
@@ -363,7 +395,11 @@ export const withImagePlugin = (board: PlaitBoard) => {
       isSupportedImageFileType(clipboardData.files[0].type)
     ) {
       const imageFile = clipboardData.files[0];
-      insertImage(board, imageFile, targetPoint, false).catch(() => {});
+      void loadMediaInsertionRuntime()
+        .then(({ insertImage }) =>
+          insertImage(board, imageFile, targetPoint, false)
+        )
+        .catch(() => {});
       return;
     }
     insertFragment(clipboardData, targetPoint, operationType);
@@ -375,17 +411,14 @@ export const withImagePlugin = (board: PlaitBoard) => {
       const mediaFiles = getDroppedMediaFiles(event.dataTransfer.files);
       if (mediaFiles.length > 0) {
         const anchor = getDropViewportAnchor(board, event);
-        insertDroppedMediaFiles(
-          board,
-          mediaFiles,
-          anchor.point,
-          anchor
-        ).catch((err) => {
-          console.error(
-            '[withImagePlugin] Failed to insert dropped media files:',
-            err
-          );
-        });
+        insertDroppedMediaFiles(board, mediaFiles, anchor.point, anchor).catch(
+          (err) => {
+            console.error(
+              '[withImagePlugin] Failed to insert dropped media files:',
+              err
+            );
+          }
+        );
         return true;
       }
     }
@@ -399,12 +432,16 @@ export const withImagePlugin = (board: PlaitBoard) => {
           toHostPoint(board, event.x, event.y)
         );
         // 异步插入图片并选中
-        insertImageFromUrlAndSelect(board, imageUrl, point).catch((err) => {
-          console.error(
-            '[withImagePlugin] Failed to insert image from URL:',
-            err
-          );
-        });
+        void loadMediaInsertionRuntime()
+          .then(({ insertImageFromUrlAndSelect }) =>
+            insertImageFromUrlAndSelect(board, imageUrl, point)
+          )
+          .catch((err) => {
+            console.error(
+              '[withImagePlugin] Failed to insert image from URL:',
+              err
+            );
+          });
         return true;
       }
     }

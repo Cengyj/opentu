@@ -1,13 +1,15 @@
 import React from 'react';
 import {
-  DiscAlbum,
-  Film,
-  Images,
-  Music4,
-  Clapperboard,
-  History,
-} from 'lucide-react';
-import { BatchIcon, BookOpenIcon, MessageIcon } from '../components/icons';
+  BatchIcon,
+  BookOpenIcon,
+  ClapperboardIcon,
+  DiscAlbumIcon,
+  FilmIcon,
+  HistoryIcon,
+  ImagesIcon,
+  MessageIcon,
+  Music4Icon,
+} from '../components/icons/startup-icons';
 import { ToolCategory, type ToolDefinition } from '../types/toolbox.types';
 import {
   COMIC_CREATOR_TOOL_ID,
@@ -29,7 +31,7 @@ export const BUILT_IN_TOOL_MANIFESTS: ToolDefinition[] = [
     name: '多图生成',
     description:
       '适合故事分镜、教程步骤、产品手册、营销图文等多页图片，一键规划提示词、批量出图并导出 ZIP/PPTX/PDF',
-    icon: <Images size={18} strokeWidth={1.75} />,
+    icon: <ImagesIcon size={18} strokeWidth={1.75} />,
     category: ToolCategory.AI_TOOLS,
     component: COMIC_CREATOR_TOOL_ID,
     supportsMultipleWindows: true,
@@ -43,7 +45,7 @@ export const BUILT_IN_TOOL_MANIFESTS: ToolDefinition[] = [
     id: 'video-analyzer',
     name: '爆款视频生成',
     description: 'AI 分析视频内容，提取镜头、脚本、风格等结构化数据',
-    icon: <Clapperboard size={18} strokeWidth={1.75} />,
+    icon: <ClapperboardIcon size={18} strokeWidth={1.75} />,
     category: ToolCategory.AI_TOOLS,
     component: 'video-analyzer',
     supportsMultipleWindows: true,
@@ -57,7 +59,7 @@ export const BUILT_IN_TOOL_MANIFESTS: ToolDefinition[] = [
     id: 'mv-creator',
     name: '爆款MV生成',
     description: '输入创意，AI 生成音乐和分镜视频，一站式 MV 创作',
-    icon: <Film size={18} strokeWidth={1.75} />,
+    icon: <FilmIcon size={18} strokeWidth={1.75} />,
     category: ToolCategory.AI_TOOLS,
     component: 'mv-creator',
     supportsMultipleWindows: true,
@@ -81,7 +83,7 @@ export const BUILT_IN_TOOL_MANIFESTS: ToolDefinition[] = [
     id: 'music-analyzer',
     name: '爆款音乐生成',
     description: '分析音频、改写歌词，并一键送入 Suno 生成音乐',
-    icon: <DiscAlbum size={18} strokeWidth={1.75} />,
+    icon: <DiscAlbumIcon size={18} strokeWidth={1.75} />,
     category: ToolCategory.AI_TOOLS,
     component: 'music-analyzer',
     supportsMultipleWindows: true,
@@ -116,7 +118,7 @@ export const BUILT_IN_TOOL_MANIFESTS: ToolDefinition[] = [
     id: 'prompt-history',
     name: '我的提示词',
     description: '按任务分类管理初始提示词、发送提示词和生成结果预览',
-    icon: <History size={18} strokeWidth={1.75} />,
+    icon: <HistoryIcon size={18} strokeWidth={1.75} />,
     category: ToolCategory.CONTENT_TOOLS,
     component: 'prompt-history',
     defaultWidth: 1120,
@@ -158,7 +160,7 @@ export const BUILT_IN_TOOL_MANIFESTS: ToolDefinition[] = [
     id: MUSIC_PLAYER_TOOL_ID,
     name: '音乐播放器',
     description: '从素材库选择音频并后台播放，可与画布播放控件联动',
-    icon: <Music4 size={18} strokeWidth={1.75} />,
+    icon: <Music4Icon size={18} strokeWidth={1.75} />,
     category: ToolCategory.UTILITIES,
     component: MUSIC_PLAYER_TOOL_ID,
     defaultWidth: 520,

@@ -5,30 +5,21 @@
  * Shows a QR code image on click for user feedback.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '../popover/popover';
 import { useBoard } from '@plait-board/react-board';
 import { PlaitBoard } from '@plait/core';
 import { Z_INDEX } from '../../constants/z-index';
-import { WeComIcon } from '../icons';
+import { WeComIcon } from '../icons/startup-icons';
 import { ToolButton } from '../tool-button';
 import './feedback-button.scss';
 
 const QR_CODE_URL = 'https://static.foropencode.com/wx.png';
-const SERVICE_QR_CODE_URL = '/logo/cardid.jpg';
 
 export const FeedbackButton: React.FC = () => {
   const board = useBoard();
   const container = PlaitBoard.getBoardContainer(board);
   const [open, setOpen] = useState(false);
-
-  // 预加载图片
-  useEffect(() => {
-    const img1 = new Image();
-    img1.src = QR_CODE_URL;
-    const img2 = new Image();
-    img2.src = SERVICE_QR_CODE_URL;
-  }, []);
 
   return (
     <Popover placement="right-end" sideOffset={12} open={open} onOpenChange={setOpen}>
@@ -53,20 +44,12 @@ export const FeedbackButton: React.FC = () => {
           <div className="feedback-qrcode-grid">
             <div className="feedback-qrcode-item">
               <img
-                src={QR_CODE_URL}
+                src={open ? QR_CODE_URL : undefined}
                 alt="用户反馈群二维码"
                 className="feedback-qrcode-image"
               />
               <div className="feedback-qrcode-text">用户反馈群</div>
             </div>
-            {/* <div className="feedback-qrcode-item">
-              <img
-                src={SERVICE_QR_CODE_URL}
-                alt="客服二维码"
-                className="feedback-qrcode-image"
-              />
-              <div className="feedback-qrcode-text">客服</div>
-            </div> */}
           </div>
         </div>
       </PopoverContent>

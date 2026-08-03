@@ -5,7 +5,7 @@
  * Card 在画布上仅作只读展示，编辑通过知识库进行
  */
 import React, { useCallback } from 'react';
-import { BookOpen } from 'lucide-react';
+import { BookOpenIcon } from '../icons/startup-icons';
 import { HoverTip } from '../shared/hover';
 import MarkdownReadonly from '../MarkdownReadonly';
 import {
@@ -151,7 +151,7 @@ export const CardElement: React.FC<CardElementProps> = ({ element }) => {
                 flexShrink: 0,
               }}
             >
-              <BookOpen size={14} />
+              <BookOpenIcon size={14} strokeWidth={2} />
             </button>
           </HoverTip>
         )}

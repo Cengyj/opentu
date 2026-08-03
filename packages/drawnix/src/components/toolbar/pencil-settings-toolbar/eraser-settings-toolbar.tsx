@@ -17,7 +17,6 @@ import {
   setEraserShape,
   setEraserWidth,
 } from '../../../plugins/freehand/freehand-settings';
-import { FreehandShape } from '../../../plugins/freehand/type';
 import { useI18n } from '../../../i18n';
 import { useViewportScale } from '../../../hooks/useViewportScale';
 import { updateEraserCursor } from '../../../hooks/usePencilCursor';
@@ -26,6 +25,7 @@ import { SizePicker } from './size-picker';
 import './pencil-settings-toolbar.scss';
 import { HoverTip } from '../../shared/hover';
 import { analytics } from '../../../utils/posthog-analytics';
+import { isEraserSettingsToolbarActive } from '../tool-settings-visibility';
 
 // 预设橡皮擦大小（步长更大，最大256px）
 const ERASER_WIDTH_PRESETS = [16, 32, 48, 64, 96, 128, 192, 256];
@@ -55,7 +55,7 @@ export const EraserSettingsToolbar: React.FC = () => {
   const [showCursorPreview, setShowCursorPreview] = useState(false);
 
   // 检查是否是橡皮擦指针
-  const isEraserPointer = appState.pointer === FreehandShape.eraser;
+  const isEraserPointer = isEraserSettingsToolbarActive(appState.pointer);
 
   // 当 board 变化时同步设置
   useEffect(() => {

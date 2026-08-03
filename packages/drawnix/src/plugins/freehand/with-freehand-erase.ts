@@ -14,14 +14,20 @@ import { PlaitDrawElement } from '@plait/draw';
 import { getFreehandSettings } from './freehand-settings';
 import { isFrameElement } from '../../types/frame.types';
 import { isPlaitVideo } from '../../interfaces/video';
-import {
-    executePreciseErase,
-    findElementsInEraserPath,
-    findUnsupportedElementsInEraserPath,
-} from '../../transforms/precise-erase';
 import { shouldDelegateToHandPointer } from '../hand-mode';
+import { createRetriableModuleLoader } from '../../utils/retriable-module-loader';
 
-export const withFreehandErase = (board: PlaitBoard) => {
+type PreciseEraseRuntime = typeof import('../../transforms/precise-erase');
+export type PreciseEraseRuntimeLoader = () => Promise<PreciseEraseRuntime>;
+
+const loadDefaultPreciseEraseRuntime = createRetriableModuleLoader(
+    () => import('../../transforms/precise-erase')
+);
+
+export const withFreehandErase = (
+    board: PlaitBoard,
+    loadPreciseEraseRuntime: PreciseEraseRuntimeLoader = loadDefaultPreciseEraseRuntime
+) => {
     const { pointerDown, pointerMove, pointerUp, globalPointerUp } = board;
 
     let isErasing = false;
@@ -61,7 +67,9 @@ export const withFreehandErase = (board: PlaitBoard) => {
     const complete = async () => {
         if (isErasing) {
             // 先释放当前手势状态；后续异步擦除只能读取本笔快照，不能清空下一笔。
-            const completedPath = eraserPath;
+            const completedPath = eraserPath.map(
+                ([x, y]) => [x, y] as Point
+            );
             const completedElementIds = new Set(elementsToDelete);
             isErasing = false;
             elementsToDelete.clear();
@@ -71,27 +79,48 @@ export const withFreehandErase = (board: PlaitBoard) => {
             deleteMarkedElements(completedElementIds);
 
             if (completedPath.length >= 2) {
-                const settings = getFreehandSettings(board);
+                // Settings and elements belong to the completed gesture. A
+                // delayed chunk must not read a later gesture's mutable state.
+                const completedSettings = getFreehandSettings(board);
+                const completedElements = [...board.children];
+
+                let preciseEraseRuntime: PreciseEraseRuntime;
+                try {
+                    preciseEraseRuntime = await loadPreciseEraseRuntime();
+                } catch (error) {
+                    console.error('Precise erase error:', error);
+                    return;
+                }
+
                 // 对非 Freehand 的支持元素使用布尔运算
-                const targetElements = findElementsInEraserPath(board, completedPath, settings.eraserWidth)
-                    .filter(el => !Freehand.isFreehand(el));
+                const targetElements = preciseEraseRuntime.findElementsInEraserPath(
+                    completedElements,
+                    completedPath,
+                    completedSettings.eraserWidth
+                ).filter(el => !Freehand.isFreehand(el));
                 if (targetElements.length > 0) {
                     try {
-                        await executePreciseErase(
+                        await preciseEraseRuntime.executePreciseErase(
                             board,
                             completedPath,
-                            settings.eraserWidth,
-                            settings.eraserShape,
+                            completedSettings.eraserWidth,
+                            completedSettings.eraserShape,
                             targetElements
                         );
                     } catch (error) {
                         console.error('Precise erase error:', error);
                     }
                 }
-                // 直接删除不支持布尔运算的非 Freehand 元素，跳过 Frame/图片/视频
-                const unsupportedElements = findUnsupportedElementsInEraserPath(board, completedPath, settings.eraserWidth)
-                    .filter(el => !Freehand.isFreehand(el) && !isFrameElement(el) && !isPlaitVideo(el)
-                        && !(PlaitDrawElement.isDrawElement(el) && PlaitDrawElement.isImage(el)));
+
+                // Preserve the existing post-execute live-board lookup for
+                // unsupported elements; only supported target selection is a
+                // completion-time snapshot.
+                const unsupportedElements = preciseEraseRuntime.findUnsupportedElementsInEraserPath(
+                    board,
+                    completedPath,
+                    completedSettings.eraserWidth
+                ).filter(el => !Freehand.isFreehand(el) && !isFrameElement(el) && !isPlaitVideo(el)
+                    && !(PlaitDrawElement.isDrawElement(el) && PlaitDrawElement.isImage(el)));
                 if (unsupportedElements.length > 0) {
                     CoreTransforms.removeElements(board, unsupportedElements);
                 }

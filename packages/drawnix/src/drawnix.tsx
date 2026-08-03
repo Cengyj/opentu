@@ -55,7 +55,7 @@ import {
   getAudioPlaybackSourceFromElement,
   getCanvasAudioPlaybackQueue,
   isAudioElement,
-} from './data/audio';
+} from './data/audio-playback';
 import {
   AUDIO_PLAYLIST_CANVAS_AUDIO_ID,
   AUDIO_PLAYLIST_CANVAS_AUDIO_LABEL,
@@ -72,10 +72,7 @@ import { withTextResize } from './plugins/with-text-resize';
 import { withImageGenerationAnchor } from './plugins/with-image-generation-anchor';
 import { withWorkZone } from './plugins/with-workzone';
 import { MultiSelectionHandles } from './components/multi-selection-handles';
-import {
-  ChatDrawerProvider,
-  useChatDrawer,
-} from './contexts/ChatDrawerContext';
+import { ChatDrawerProvider } from './contexts/ChatDrawerContext';
 import { useWorkspace } from './hooks/useWorkspace';
 import { Board as WorkspaceBoard } from './types/workspace.types';
 import { toolTestHelper } from './utils/tool-test-helper';
@@ -105,12 +102,12 @@ import {
   classifyApiCredentialError,
 } from './utils/api-auth-error-event';
 import { MessagePlugin } from './utils/message-plugin';
-import { calculateEditedImagePoints } from './utils/image';
+import { calculateEditedImagePoints } from './utils/image-edit-layout';
 import { isCardElement } from './types/card.types';
 import { isFrameElement } from './types/frame.types';
 import { openCardInKnowledgeBase } from './utils/card-actions';
 import { useI18n } from './i18n';
-import { safeReload } from './utils/active-tasks';
+import { safeReload } from './utils/safe-reload';
 import { useTabSync } from './hooks/useTabSync';
 import { canvasAudioPlaybackService } from './services/canvas-audio-playback-service';
 import { useCanvasAudioPlaybackSelector } from './hooks/useCanvasAudioPlayback';
@@ -124,9 +121,17 @@ import {
   PPT_EDITOR_OPEN_EVENT,
   requestOpenPPTEditor,
 } from './services/ppt/ppt-ui-events';
-import { syncEditedPPTSlideImage } from './utils/frame-insertion-utils';
 import type { MediaLibraryModalProps } from './types/asset.types';
 import { SelectionMode } from './types/asset.types';
+import { DeferredChatDrawer } from './components/startup/DeferredChatDrawer';
+import { MountAfterFirstActivation } from './components/startup/MountAfterFirstActivation';
+import { usePostPaintOperability } from './components/startup/use-post-paint-operability';
+import {
+  isEraserSettingsToolbarActive,
+  isPenSettingsToolbarActive,
+  isPencilSettingsToolbarActive,
+} from './components/toolbar/tool-settings-visibility';
+import { getPopupToolbarSelectedElements } from './components/toolbar/popup-toolbar/popup-toolbar-selection';
 const PopupToolbar = lazy(() =>
   import('./components/toolbar/popup-toolbar/popup-toolbar').then((module) => ({
     default: module.PopupToolbar,
@@ -174,12 +179,6 @@ const DeferredAIInputBar = lazy(() =>
     default: module.DeferredAIInputBar,
   }))
 );
-const ChatDrawer = lazy(() =>
-  import('./components/chat-drawer/ChatDrawer').then((module) => ({
-    default: module.ChatDrawer,
-  }))
-);
-
 type MediaLibraryOpenConfig = Pick<
   MediaLibraryModalProps,
   | 'mode'
@@ -192,11 +191,6 @@ type MediaLibraryOpenConfig = Pick<
   keepProjectDrawerOpen?: boolean;
 };
 
-interface SWIdlePrefetchStatusMessage {
-  type: 'SW_IDLE_PREFETCH_STATUS';
-  completedGroups?: string[];
-}
-
 const TOOL_WINDOW_GROUPS: IdlePrefetchGroup[] = [
   'tool-windows',
   'runtime-static-assets',
@@ -205,6 +199,11 @@ const TOOL_WINDOW_GROUPS: IdlePrefetchGroup[] = [
 const DrawnixDeferredFeatures = lazy(() =>
   import('./components/startup/DrawnixDeferredFeatures').then((module) => ({
     default: module.DrawnixDeferredFeatures,
+  }))
+);
+const DrawnixOperationalMonitors = lazy(() =>
+  import('./components/startup/DrawnixOperationalMonitors').then((module) => ({
+    default: module.DrawnixOperationalMonitors,
   }))
 );
 const DrawnixDeferredRuntime = lazy(() =>
@@ -290,10 +289,11 @@ function detectMobileViewport(): boolean {
     return false;
   }
 
-  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-  const compactViewport = window.matchMedia?.('(max-width: 768px)').matches ?? false;
-  const touchCapable =
-    navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
+  const coarsePointer =
+    window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  const compactViewport =
+    window.matchMedia?.('(max-width: 768px)').matches ?? false;
+  const touchCapable = navigator.maxTouchPoints > 0 || 'ontouchstart' in window;
 
   return compactViewport || (coarsePointer && touchCapable);
 }
@@ -335,6 +335,13 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   });
 
   const [board, setBoard] = useState<DrawnixBoard | null>(null);
+  const [isAIInputShellMounted, setIsAIInputShellMounted] = useState(false);
+  const isStartupOperable = usePostPaintOperability(
+    board !== null && isAIInputShellMounted
+  );
+  const handleAIInputShellMounted = useCallback(() => {
+    setIsAIInputShellMounted(true);
+  }, []);
   const [projectDrawerOpen, setProjectDrawerOpen] = useState(false);
   const [toolboxDrawerOpen, setToolboxDrawerOpen] = useState(false);
   const [taskPanelExpanded, setTaskPanelExpanded] = useState(false);
@@ -346,8 +353,8 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   const [backupRestoreOpen, setBackupRestoreOpen] = useState(false);
   const [cloudSyncOpen, setCloudSyncOpen] = useState(false);
   const [deferredRuntimeEnabled, setDeferredRuntimeEnabled] = useState(false);
-  const [versionUpdateEnabled, setVersionUpdateEnabled] = useState(false);
-  const [performancePanelEnabled, setPerformancePanelEnabled] = useState(false);
+  const [operationalMonitorsEnabled, setOperationalMonitorsEnabled] =
+    useState(false);
   const [toolWindowManagerEnabled, setToolWindowManagerEnabled] =
     useState(false);
   const [minimizedToolsBarEnabled, setMinimizedToolsBarEnabled] =
@@ -603,78 +610,6 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   }, [enableToolWindows]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) {
-      return;
-    }
-
-    let resolvedBySW = false;
-    const isLocalDevHost =
-      window.location.hostname === 'localhost' ||
-      window.location.hostname === '127.0.0.1';
-
-    const handleIdlePrefetchStatus = (
-      event: MessageEvent<SWIdlePrefetchStatusMessage>
-    ) => {
-      if (event.data?.type !== 'SW_IDLE_PREFETCH_STATUS') {
-        return;
-      }
-
-      if (
-        !TOOL_WINDOW_GROUPS.every((group) =>
-          event.data.completedGroups?.includes(group)
-        )
-      ) {
-        return;
-      }
-
-      resolvedBySW = true;
-      setMinimizedToolsBarEnabled(true);
-    };
-
-    navigator.serviceWorker.addEventListener(
-      'message',
-      handleIdlePrefetchStatus
-    );
-
-    const message = { type: 'SW_IDLE_PREFETCH_STATUS_GET' as const };
-    const controller = navigator.serviceWorker.controller;
-    if (controller) {
-      controller.postMessage(message);
-    } else {
-      navigator.serviceWorker.ready
-        .then((registration) => {
-          registration.active?.postMessage(message);
-        })
-        .catch(() => {
-          // Ignore status sync failures; runtime still loads on direct interaction.
-        });
-    }
-
-    const fallbackTimer = window.setTimeout(() => {
-      if (resolvedBySW || minimizedToolsBarEnabled) {
-        return;
-      }
-
-      // idle prefetch 只是优化项，不应阻塞常驻工具条显示。
-      // 开发态或 manifest 缺失时，超时后直接放行显示，点击工具时再按需启完整运行时。
-      if (!isLocalDevHost) {
-        console.warn(
-          '[Drawnix] SW idle prefetch status unresolved, enabling minimized tools bar fallback'
-        );
-      }
-      setMinimizedToolsBarEnabled(true);
-    }, 2200);
-
-    return () => {
-      window.clearTimeout(fallbackTimer);
-      navigator.serviceWorker.removeEventListener(
-        'message',
-        handleIdlePrefetchStatus
-      );
-    };
-  }, [minimizedToolsBarEnabled]);
-
-  useEffect(() => {
     const idleCallback = (
       window as Window & {
         requestIdleCallback?: (
@@ -688,8 +623,7 @@ export const Drawnix: React.FC<DrawnixProps> = ({
     let idleId: number | undefined;
     const timer = window.setTimeout(() => {
       const enableNonCriticalUi = () => {
-        setVersionUpdateEnabled(true);
-        setPerformancePanelEnabled(true);
+        setOperationalMonitorsEnabled(true);
       };
 
       if (typeof idleCallback === 'function') {
@@ -855,8 +789,6 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   );
 
   const shouldRenderDeferredFeatures =
-    versionUpdateEnabled ||
-    performancePanelEnabled ||
     toolWindowManagerEnabled ||
     appState.openCommandPalette ||
     appState.openCanvasSearch ||
@@ -869,10 +801,13 @@ export const Drawnix: React.FC<DrawnixProps> = ({
   return (
     <I18nProvider>
       <RecentColorsProvider>
-        <AssetProvider>
+        <AssetProvider isStartupOperable={isStartupOperable}>
           <AudioPlaylistProvider>
             <ToolbarConfigProvider>
-              <CacheQuotaProvider onOpenMediaLibrary={handleOpenMediaLibrary}>
+              <CacheQuotaProvider
+                onOpenMediaLibrary={handleOpenMediaLibrary}
+                isStartupOperable={isStartupOperable}
+              >
                 <ChatDrawerProvider>
                   <DrawnixContext.Provider value={contextValue}>
                     <DrawnixContent
@@ -917,12 +852,13 @@ export const Drawnix: React.FC<DrawnixProps> = ({
                       isDataReady={isDataReady}
                       onCreateProjectForMemory={handleCreateProjectForMemory}
                       currentBoardId={currentBoardId}
+                      isStartupOperable={isStartupOperable}
+                      onAIInputShellMounted={handleAIInputShellMounted}
                       deferredRuntimeEnabled={deferredRuntimeEnabled}
                       shouldRenderDeferredFeatures={
                         shouldRenderDeferredFeatures
                       }
-                      versionUpdateEnabled={versionUpdateEnabled}
-                      performancePanelEnabled={performancePanelEnabled}
+                      operationalMonitorsEnabled={operationalMonitorsEnabled}
                       toolWindowManagerEnabled={toolWindowManagerEnabled}
                       minimizedToolsBarEnabled={minimizedToolsBarEnabled}
                       enableToolWindows={enableToolWindows}
@@ -958,8 +894,7 @@ interface DrawnixContentProps {
   backupRestoreOpen: boolean;
   deferredRuntimeEnabled: boolean;
   shouldRenderDeferredFeatures: boolean;
-  versionUpdateEnabled: boolean;
-  performancePanelEnabled: boolean;
+  operationalMonitorsEnabled: boolean;
   toolWindowManagerEnabled: boolean;
   minimizedToolsBarEnabled: boolean;
   enableToolWindows: () => void;
@@ -990,6 +925,8 @@ interface DrawnixContentProps {
   isDataReady: boolean;
   onCreateProjectForMemory: () => Promise<void>;
   currentBoardId?: string | null;
+  isStartupOperable: boolean;
+  onAIInputShellMounted: () => void;
 }
 
 const DrawnixContent: React.FC<DrawnixContentProps> = ({
@@ -1010,8 +947,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   backupRestoreOpen,
   deferredRuntimeEnabled,
   shouldRenderDeferredFeatures,
-  versionUpdateEnabled,
-  performancePanelEnabled,
+  operationalMonitorsEnabled,
   toolWindowManagerEnabled,
   minimizedToolsBarEnabled,
   enableToolWindows,
@@ -1042,9 +978,10 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   isDataReady,
   onCreateProjectForMemory,
   currentBoardId,
+  isStartupOperable,
+  onAIInputShellMounted,
 }) => {
   const { setAppState: updateState } = useDrawnix();
-  const { chatDrawerRef } = useChatDrawer();
   const { language } = useI18n();
   const playbackError = useCanvasAudioPlaybackSelector((state) => state.error);
   const hasCanvasAudioPlayerActivity = useCanvasAudioPlaybackSelector(
@@ -1084,6 +1021,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
   const [quickToolbarPosition, setQuickToolbarPosition] = useState<
     [number, number] | null
   >(null);
+  const [popupToolbarRequested, setPopupToolbarRequested] = useState(false);
 
   // 浮动文本输入状态（文本工具单击画布时使用）
   const [inlineTextInput, setInlineTextInput] = useState<{
@@ -1093,6 +1031,22 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
     zoom: number;
   } | null>(null);
   const inlineTextRef = useRef<HTMLDivElement>(null);
+
+  const handleBoardSelectionChange = useCallback(
+    (selection: Selection | null) => {
+      onSelectionChange(selection);
+      if (board && getPopupToolbarSelectedElements(board).length > 0) {
+        setPopupToolbarRequested(true);
+      }
+    },
+    [board, onSelectionChange]
+  );
+
+  useEffect(() => {
+    if (board && getPopupToolbarSelectedElements(board).length > 0) {
+      setPopupToolbarRequested(true);
+    }
+  }, [board]);
 
   // 媒体预览状态
   const [mediaPreviewVisible, setMediaPreviewVisible] = useState(false);
@@ -1201,10 +1155,15 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
 
       try {
         // 导入必要服务
-        const { unifiedCacheService } = await import(
-          './services/unified-cache-service'
-        );
-        const { Transforms } = await import('@plait/core');
+        const [
+          { unifiedCacheService },
+          { Transforms },
+          { syncEditedPPTSlideImage },
+        ] = await Promise.all([
+          import('./services/unified-cache-service'),
+          import('@plait/core'),
+          import('./utils/frame-insertion-utils'),
+        ]);
 
         const taskId = `edited-image-${Date.now()}`;
         const stableUrl = `/__aitu_cache__/image/${taskId}.png`;
@@ -1594,7 +1553,7 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
           onChange={(data: BoardChangeData) => {
             onChange && onChange(data);
           }}
-          onSelectionChange={onSelectionChange}
+          onSelectionChange={handleBoardSelectionChange}
           onViewportChange={onViewportChange}
           onThemeChange={onThemeChange}
           onValueChange={onValueChange}
@@ -1643,22 +1602,41 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             </Suspense>
           )}
 
-          <Suspense fallback={null}>
-            <PopupToolbar></PopupToolbar>
-          </Suspense>
-          <Suspense fallback={null}>
-            <LinkPopup></LinkPopup>
-          </Suspense>
+          <MountAfterFirstActivation active={popupToolbarRequested}>
+            <Suspense fallback={null}>
+              <PopupToolbar></PopupToolbar>
+            </Suspense>
+          </MountAfterFirstActivation>
+          <MountAfterFirstActivation active={Boolean(appState.linkState)}>
+            <Suspense fallback={null}>
+              <LinkPopup></LinkPopup>
+            </Suspense>
+          </MountAfterFirstActivation>
           <ClosePencilToolbar></ClosePencilToolbar>
-          <Suspense fallback={null}>
-            <PencilSettingsToolbar></PencilSettingsToolbar>
-          </Suspense>
-          <Suspense fallback={null}>
-            <PenSettingsToolbar></PenSettingsToolbar>
-          </Suspense>
-          <Suspense fallback={null}>
-            <EraserSettingsToolbar></EraserSettingsToolbar>
-          </Suspense>
+          <MountAfterFirstActivation
+            active={isPencilSettingsToolbarActive(appState.pointer)}
+          >
+            <Suspense fallback={null}>
+              <PencilSettingsToolbar></PencilSettingsToolbar>
+            </Suspense>
+          </MountAfterFirstActivation>
+          <MountAfterFirstActivation
+            active={isPenSettingsToolbarActive(
+              appState.pointer,
+              board?.pointer
+            )}
+          >
+            <Suspense fallback={null}>
+              <PenSettingsToolbar></PenSettingsToolbar>
+            </Suspense>
+          </MountAfterFirstActivation>
+          <MountAfterFirstActivation
+            active={isEraserSettingsToolbarActive(appState.pointer)}
+          >
+            <Suspense fallback={null}>
+              <EraserSettingsToolbar></EraserSettingsToolbar>
+            </Suspense>
+          </MountAfterFirstActivation>
           {appState.openDialogTypes.size > 0 && (
             <Suspense fallback={null}>
               <TTDDialog container={containerRef.current}></TTDDialog>
@@ -1669,15 +1647,18 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
               <SettingsDialog container={containerRef.current}></SettingsDialog>
             </Suspense>
           )}
-          <Suspense fallback={null}>
-            <CleanConfirm container={containerRef.current}></CleanConfirm>
-          </Suspense>
+          <MountAfterFirstActivation active={appState.openCleanConfirm}>
+            <Suspense fallback={null}>
+              <CleanConfirm container={containerRef.current}></CleanConfirm>
+            </Suspense>
+          </MountAfterFirstActivation>
           <Suspense fallback={null}>
             <DeferredAIInputBar
               isDataReady={isDataReady}
               activationKey={0}
               onEnableToolWindows={enableToolWindows}
               onEnableRuntime={enableGenerationRuntime}
+              onShellMounted={onAIInputShellMounted}
             />
           </Suspense>
           {/* Quick Creation Toolbar - 双击空白区域显示的快捷工具栏 */}
@@ -1753,24 +1734,28 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
             </Suspense>
           )}
           {/* ViewNavigation - 视图导航（缩放 + 小地图） */}
-          <ViewNavigation />
+          <ViewNavigation isStartupOperable={isStartupOperable} />
         </Wrapper>
-        <Suspense fallback={null}>
-          <ChatDrawer ref={chatDrawerRef} />
-        </Suspense>
+        <DeferredChatDrawer />
         {deferredRuntimeEnabled && (
           <Suspense fallback={null}>
             <DrawnixDeferredRuntime board={board} value={value} />
+          </Suspense>
+        )}
+        {operationalMonitorsEnabled && (
+          <Suspense fallback={null}>
+            <DrawnixOperationalMonitors
+              container={containerRef.current}
+              elements={board?.children || value}
+              onCreateProject={onCreateProjectForMemory}
+            />
           </Suspense>
         )}
         {shouldRenderDeferredFeatures && (
           <Suspense fallback={null}>
             <DrawnixDeferredFeatures
               board={board}
-              value={value}
               containerRef={containerRef}
-              versionUpdateEnabled={versionUpdateEnabled}
-              performancePanelEnabled={performancePanelEnabled}
               toolWindowManagerEnabled={toolWindowManagerEnabled}
               projectDrawerOpen={projectDrawerOpen}
               toolboxDrawerOpen={toolboxDrawerOpen}
@@ -1786,7 +1771,6 @@ const DrawnixContent: React.FC<DrawnixContentProps> = ({
               setCloudSyncOpen={setCloudSyncOpen}
               handleOpenMediaLibrary={handleOpenMediaLibrary}
               handleBeforeSwitch={handleBeforeSwitch}
-              onCreateProjectForMemory={onCreateProjectForMemory}
             />
           </Suspense>
         )}

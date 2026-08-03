@@ -12,7 +12,7 @@ export type {
   CrashRecoveryState,
   CrashInfo,
 } from './services/crash-recovery-service';
-export { safeReload } from './utils/active-tasks';
+export { safeReload } from './utils/safe-reload';
 export { useDocumentTitle } from './hooks/useDocumentTitle';
 export { markTabSyncVersion } from './hooks/useTabSync';
 
@@ -27,6 +27,10 @@ export { memoryMonitorService } from './services/memory-monitor-service';
 export { swChannelClient } from './services/sw-channel/client';
 export { unifiedLogService } from './services/unified-log-service';
 export { MessagePlugin } from './utils/message-plugin';
+export {
+  getAnalyticsReleaseContext,
+  registerAnalyticsSuperProperties,
+} from './utils/posthog-analytics';
 export {
   requestServiceWorkerIdlePrefetch,
   type IdlePrefetchGroup,

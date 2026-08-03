@@ -25,6 +25,7 @@ import { useI18n } from '../../i18n';
 import { useDrawnix } from '../../hooks/use-drawnix';
 import { ToolTransforms } from '../../plugins/with-tool';
 import { processToolUrl } from '../../utils/url-template';
+import { resolveSafeExternalToolUrl } from '../../utils/external-tool-url';
 import { useDeviceType } from '../../hooks/useDeviceType';
 import { toolRegistry } from '../../tools/registry';
 import { winboxManagerService } from '../../services/winbox-manager-service';
@@ -355,6 +356,11 @@ export const ToolWinBoxManager: React.FC = () => {
           toolId: state.toolId,
           instanceIndex,
         };
+        const resolvedToolUrl = tool.url
+          ? resolveSafeExternalToolUrl(processToolUrl(tool.url).url, {
+              baseUrl: window.location.origin,
+            })
+          : null;
 
         // 确定窗口是否可见
         const isVisible = status === 'open';
@@ -415,9 +421,9 @@ export const ToolWinBoxManager: React.FC = () => {
                 >
                   <InternalComponent {...componentProps} />
                 </Suspense>
-              ) : tool.url ? (
+              ) : resolvedToolUrl?.ok ? (
                 <iframe
-                  src={processToolUrl(tool.url).url}
+                  src={resolvedToolUrl.url}
                   title={tool.name}
                   style={{ width: '100%', height: '100%', border: 'none' }}
                   sandbox={
@@ -427,9 +433,17 @@ export const ToolWinBoxManager: React.FC = () => {
                 />
               ) : (
                 <div
-                  style={{ padding: 20, textAlign: 'center', color: '#999' }}
+                  style={{
+                    padding: 20,
+                    textAlign: 'center',
+                    color: resolvedToolUrl ? '#f5222d' : '#999',
+                  }}
                 >
-                  {language === 'zh'
+                  {resolvedToolUrl
+                    ? language === 'zh'
+                      ? '工具地址无效或协议不受支持'
+                      : 'Invalid or unsupported tool URL'
+                    : language === 'zh'
                     ? '未定义的工具内容'
                     : 'Undefined tool content'}
                 </div>

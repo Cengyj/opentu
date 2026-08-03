@@ -18,11 +18,15 @@ import { svgToDataUrl } from '../utils/svg-utils';
 import {
   AUDIO_NODE_DEFAULT_HEIGHT,
   AUDIO_NODE_DEFAULT_WIDTH,
-  isAudioNodeElement,
   type AudioNodeMetadata,
 } from '../types/audio-node.types';
 import { AudioNodeTransforms } from './audio-node-transforms';
-import type { CanvasAudioPlaybackSource } from '../services/canvas-audio-playback-service';
+
+export {
+  getAudioPlaybackSourceFromElement,
+  getCanvasAudioPlaybackQueue,
+  isAudioElement,
+} from './audio-playback';
 
 export const AUDIO_CARD_DEFAULT_WIDTH = AUDIO_NODE_DEFAULT_WIDTH;
 export const AUDIO_CARD_DEFAULT_HEIGHT = AUDIO_NODE_DEFAULT_HEIGHT;
@@ -322,66 +326,6 @@ function buildAudioCardSvg(
       ${waveform}
     </svg>
   `.trim();
-}
-
-function isLegacyAudioImageElement(element: any): element is AudioImageElement {
-  if (!element) {
-    return false;
-  }
-
-  if (element.isAudio === true || element.audioType === 'music-card') {
-    return true;
-  }
-
-  return typeof element.audioUrl === 'string' && element.audioUrl.length > 0;
-}
-
-export function isAudioElement(element: any): boolean {
-  return isAudioNodeElement(element) || isLegacyAudioImageElement(element);
-}
-
-export function getAudioPlaybackSourceFromElement(
-  element: any
-): CanvasAudioPlaybackSource | null {
-  if (isAudioNodeElement(element)) {
-    return {
-      elementId: element.id,
-      audioUrl: element.audioUrl,
-      title: element.title,
-      duration: element.duration,
-      previewImageUrl: element.previewImageUrl,
-      clipId: element.clipId,
-      providerTaskId: element.providerTaskId,
-      clipIds: element.clipIds,
-    };
-  }
-
-  if (isLegacyAudioImageElement(element)) {
-    return {
-      elementId: element.id,
-      audioUrl: element.audioUrl,
-      title: element.audioTitle,
-      duration: element.audioDuration,
-      previewImageUrl: element.previewImageUrl,
-      clipId: element.audioClipId,
-      providerTaskId: element.audioProviderTaskId,
-      clipIds: element.audioClipIds,
-    };
-  }
-
-  return null;
-}
-
-export function getCanvasAudioPlaybackQueue(
-  elements: any[] | undefined | null
-): CanvasAudioPlaybackSource[] {
-  if (!Array.isArray(elements) || elements.length === 0) {
-    return [];
-  }
-
-  return elements
-    .map((element) => getAudioPlaybackSourceFromElement(element))
-    .filter((source): source is CanvasAudioPlaybackSource => Boolean(source?.audioUrl));
 }
 
 export async function buildAudioImageElement(

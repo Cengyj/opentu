@@ -19,6 +19,7 @@
   var LEGACY_CDN_API_GLOBAL_KEY = '__AITU_CDN_API__';
   var STORAGE_KEY = 'opentu-cdn-preference';
   var LEGACY_STORAGE_KEY = 'aitu-cdn-preference';
+  var selectionPromise = null;
 
   function setCDNPreference(value) {
     window[CDN_GLOBAL_KEY] = value;
@@ -140,17 +141,33 @@
       // 忽略解析错误
     }
 
+    if (selectionPromise) {
+      return selectionPromise;
+    }
+
     // 并行测试所有 CDN
     var tests = CDN_SOURCES.map(testCDN);
-    
-    return Promise.all(tests).then(function(results) {
+
+    selectionPromise = Promise.all(tests).then(function(results) {
       // 过滤成功的结果并按延迟排序
       var successfulResults = results
         .filter(function(r) { return r.success; })
         .sort(function(a, b) { return a.latency - b.latency; });
 
       if (successfulResults.length === 0) {
-        return { cdn: 'local', latency: 0, timestamp: Date.now(), allResults: results };
+        var localPreference = {
+          cdn: 'local',
+          latency: 0,
+          timestamp: Date.now(),
+          allResults: results,
+        };
+        setCDNPreference(localPreference);
+        try {
+          localStorage.setItem(CONFIG.storageKey, JSON.stringify(localPreference));
+        } catch (e) {
+          // 忽略存储错误
+        }
+        return localPreference;
       }
 
       var best = successfulResults[0];
@@ -173,6 +190,13 @@
       
       return preference;
     });
+
+    selectionPromise.then(
+      function() { selectionPromise = null; },
+      function() { selectionPromise = null; }
+    );
+
+    return selectionPromise;
   }
 
   /**
@@ -200,6 +224,7 @@
       localStorage.removeItem(LEGACY_STORAGE_KEY);
       delete window[CDN_GLOBAL_KEY];
       delete window[LEGACY_CDN_GLOBAL_KEY];
+      selectionPromise = null;
     } catch (e) {
       // 忽略
     }

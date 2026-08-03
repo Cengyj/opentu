@@ -22,7 +22,7 @@
     "jotai": "^2.18.0",
     "katex": "^0.16.27",
     "localforage": "^1.10.0",
-    "mermaid": "10.9.3",
+    "mermaid": "10.9.6",
     "postmessage-duplex": "^1.2.0",
     "pptxgenjs": "^4.0.1",
     "web-vitals": "^5.1.0"
@@ -35,6 +35,11 @@
       "types": "./index.d.ts",
       "import": "./index.mjs",
       "require": "./index.js"
+    },
+    "./app": {
+      "types": "./app.d.ts",
+      "import": "./app.mjs",
+      "require": "./app.js"
     },
     "./runtime": {
       "types": "./runtime.d.ts",

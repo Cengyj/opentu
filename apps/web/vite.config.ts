@@ -11,12 +11,13 @@ import { visualizer } from 'rollup-plugin-visualizer';
 
 const require = createRequire(import.meta.url);
 const workspaceRoot = path.resolve(__dirname, '../..');
-const { resolveReleaseManifest } = require('../../scripts/release-identity.cjs') as {
-  resolveReleaseManifest: (
-    manifest: Record<string, unknown>,
-    env?: NodeJS.ProcessEnv
-  ) => { version: string; releaseId: string };
-};
+const { resolveReleaseManifest } =
+  require('../../scripts/release-identity.cjs') as {
+    resolveReleaseManifest: (
+      manifest: Record<string, unknown>,
+      env?: NodeJS.ProcessEnv
+    ) => { version: string; releaseId: string };
+  };
 
 const shouldRewriteEntryAssetsToCDN =
   process.env.AITU_REWRITE_ENTRY_ASSETS_TO_CDN === '1';
@@ -71,6 +72,40 @@ function releaseIdentityHtmlPlugin(): Plugin {
   };
 }
 
+const INDEX_HTML_RAW_BLOCK_PATTERN =
+  /<(script|style|pre|textarea)\b[\s\S]*?<\/\1>/gi;
+
+function stripLineIndentation(source: string): string {
+  return source.replace(/^[ \t]+/gm, '');
+}
+
+/**
+ * Vite leaves the large inline boot contract formatted in production HTML.
+ * Strip indentation without making the maintained source unreadable. Content
+ * whose leading whitespace is observable stays byte-for-byte intact.
+ */
+export function compactProductionIndexHtml(html: string): string {
+  let compacted = '';
+  let cursor = 0;
+
+  for (const match of html.matchAll(INDEX_HTML_RAW_BLOCK_PATTERN)) {
+    const block = match[0];
+    const tagName = match[1].toLowerCase();
+    const blockStart = match.index ?? cursor;
+
+    compacted += stripLineIndentation(html.slice(cursor, blockStart));
+    compacted +=
+      tagName === 'pre' ||
+      tagName === 'textarea' ||
+      (tagName === 'script' && block.includes('`'))
+        ? block
+        : stripLineIndentation(block);
+    cursor = blockStart + block.length;
+  }
+
+  return compacted + stripLineIndentation(html.slice(cursor));
+}
+
 const IDLE_PREFETCH_GROUPS = [
   'ai-chat',
   'tool-windows',
@@ -83,10 +118,14 @@ const IDLE_PREFETCH_GROUPS = [
   'offline-static-assets',
 ] as const;
 
-const IDLE_PREFETCH_DEFAULTS = [
-  'tool-windows',
-  'runtime-static-assets',
-] as const;
+// 普通页面启动不主动下载任何延后分组。高频分组由真实交互显式请求，
+// release 升级仍通过 full-prewarm 路径覆盖全部静态资源。
+const IDLE_PREFETCH_DEFAULTS = [] as const;
+
+// Rollup 4 otherwise folds the dependency closure of a named manual chunk into
+// that chunk. Deferred feature groups must own only modules explicitly assigned
+// by resolveManualChunk so shared runtime modules remain independently loadable.
+export const ONLY_EXPLICIT_MANUAL_CHUNKS = true;
 
 type IdlePrefetchGroup = (typeof IDLE_PREFETCH_GROUPS)[number];
 
@@ -374,6 +413,172 @@ function normalizePathForChunking(id: string): string {
   return id.replace(/\\/g, '/');
 }
 
+function resolveNodeModulePackageName(id: string): string | undefined {
+  const normalizedId = normalizePathForChunking(id).replace(/^\0/, '');
+  const nodeModulesMarker = '/node_modules/';
+  const packageStart = normalizedId.lastIndexOf(nodeModulesMarker);
+
+  if (packageStart === -1) {
+    return undefined;
+  }
+
+  const packagePath = normalizedId.slice(
+    packageStart + nodeModulesMarker.length
+  );
+  const [firstSegment, secondSegment] = packagePath.split('/');
+
+  if (!firstSegment || firstSegment === '.pnpm') {
+    return undefined;
+  }
+
+  if (firstSegment.startsWith('@')) {
+    return secondSegment ? `${firstSegment}/${secondSegment}` : undefined;
+  }
+
+  return firstSegment;
+}
+
+const FRAMEWORK_RUNTIME_PACKAGES = new Set([
+  '@babel/runtime',
+  'immer',
+  'is-hotkey',
+  'lodash-es',
+  'react',
+  'react-dom',
+  'react-is',
+  'rxjs',
+  'scheduler',
+  'tslib',
+  'use-sync-external-store',
+]);
+
+const PLAIT_RUNTIME_PACKAGES = new Set([
+  '@plait/common',
+  '@plait/core',
+  '@plait/draw',
+  '@plait/layouts',
+  '@plait/mind',
+  '@plait/text-plugins',
+  'hachure-fill',
+  'path-data-parser',
+  'points-on-curve',
+  'points-on-path',
+  'roughjs',
+]);
+
+const SLATE_PACKAGES = new Set([
+  '@juggle/resize-observer',
+  'compute-scroll-into-view',
+  'direction',
+  'lodash',
+  'scroll-into-view-if-needed',
+  'slate',
+  'slate-dom',
+  'slate-history',
+  'slate-react',
+]);
+
+const TDESIGN_RUNTIME_PACKAGES = new Set([
+  '@floating-ui/core',
+  '@floating-ui/dom',
+  '@floating-ui/react',
+  '@floating-ui/react-dom',
+  '@floating-ui/utils',
+  '@popperjs/core',
+  'classnames',
+  'dayjs',
+  'dom-helpers',
+  'hoist-non-react-statics',
+  'performance-now',
+  'prop-types',
+  'raf',
+  'react-fast-compare',
+  'react-transition-group',
+  'tabbable',
+  'tdesign-react',
+]);
+
+const UI_ICON_PACKAGES = new Set(['lucide-react', 'tdesign-icons-react']);
+
+/**
+ * Keep the unavoidable canvas framework in a small number of stable domain
+ * chunks. Packages shared by bootstrap and Drawnix deliberately live outside
+ * the Plait chunk so a lightweight bootstrap import cannot pull the canvas
+ * engine back into the entry chunk.
+ */
+export function resolveStartupVendorChunk(
+  id: string,
+  context?: ManualChunkContext
+): string | undefined {
+  const packageName = resolveNodeModulePackageName(id);
+  if (!packageName) {
+    return undefined;
+  }
+
+  if (FRAMEWORK_RUNTIME_PACKAGES.has(packageName)) {
+    return 'framework-runtime';
+  }
+  if (PLAIT_RUNTIME_PACKAGES.has(packageName)) {
+    return 'canvas-plait';
+  }
+  if (SLATE_PACKAGES.has(packageName)) {
+    return 'canvas-slate';
+  }
+
+  // TDesign and icon packages are also used by deferred drawers, dialogs and
+  // tools. Assigning every module in those packages to a shared startup chunk
+  // makes one shell component pull the deferred components into the entry
+  // graph. Only name UI vendor modules that are statically reachable from an
+  // actual startup shell root; Rollup can keep the remaining modules with the
+  // deferred feature that owns them.
+  const isStartupShellDependency =
+    context &&
+    isStaticallyReachableFromEntry(
+      id,
+      isStartupShellEntry,
+      context.getModuleInfo
+    );
+
+  if (TDESIGN_RUNTIME_PACKAGES.has(packageName) && isStartupShellDependency) {
+    return 'ui-tdesign';
+  }
+  if (UI_ICON_PACKAGES.has(packageName) && isStartupShellDependency) {
+    return 'ui-icons';
+  }
+
+  return undefined;
+}
+
+/**
+ * Small source contracts used by the initial Drawnix shell must not be owned by
+ * whichever deferred feature happens to import them most often. Otherwise
+ * Rollup can place the contract in that deferred chunk and make the shell load
+ * the entire feature graph just to read a constant.
+ */
+export function resolveStartupSourceChunk(id: string): string | undefined {
+  const normalizedId = normalizePathForChunking(id);
+  if (
+    normalizedId.endsWith(
+      '/packages/drawnix/src/components/icons/startup-icons.tsx'
+    )
+  ) {
+    // Keep the shell's local SVG implementations with the existing icon
+    // vendor request. This preserves one request while preventing shared icon
+    // markup from inflating the Drawnix application chunk.
+    return 'ui-icons';
+  }
+
+  if (
+    normalizedId.endsWith(
+      '/packages/drawnix/src/services/ai-input-ui-events.ts'
+    )
+  ) {
+    return 'drawnix-app';
+  }
+
+  return undefined;
+}
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -618,7 +823,9 @@ function collectIdlePrefetchGroupEntriesFromBundle(
   );
 }
 
-function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
+export function resolveIdlePrefetchGroup(
+  id: string
+): IdlePrefetchGroup | undefined {
   const normalizedId = normalizePathForChunking(id);
 
   if (
@@ -627,9 +834,7 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
     normalizedId.includes('/packages/drawnix/src/services/chat-service') ||
     normalizedId.includes(
       '/packages/drawnix/src/services/chat-storage-service'
-    ) ||
-    normalizedId.includes('/packages/drawnix/src/types/chat.types') ||
-    normalizedId.includes('/packages/drawnix/src/types/chat-ui.types')
+    )
   ) {
     return 'ai-chat';
   }
@@ -669,6 +874,8 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
   if (
     normalizedId.includes('/node_modules/.pnpm/@milkdown+') ||
     normalizedId.includes('/node_modules/@milkdown/') ||
+    normalizedId.includes('/node_modules/.pnpm/codemirror@') ||
+    normalizedId.includes('/node_modules/codemirror/') ||
     normalizedId.includes('/node_modules/.pnpm/@codemirror+') ||
     normalizedId.includes('/node_modules/@codemirror/') ||
     normalizedId.includes('/node_modules/.pnpm/@lezer+') ||
@@ -676,7 +883,16 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
     normalizedId.includes('/node_modules/.pnpm/prosemirror-') ||
     normalizedId.includes('/node_modules/prosemirror-') ||
     normalizedId.includes('/node_modules/.pnpm/katex@') ||
-    normalizedId.includes('/node_modules/katex/')
+    normalizedId.includes('/node_modules/katex/') ||
+    normalizedId.includes(
+      '/packages/drawnix/src/components/MarkdownEditor/'
+    ) ||
+    normalizedId.includes(
+      '/packages/drawnix/src/components/knowledge-base/'
+    ) ||
+    normalizedId.includes(
+      '/packages/drawnix/src/services/kb-knowledge-extraction/'
+    )
   ) {
     return 'editor-engines';
   }
@@ -701,6 +917,9 @@ function resolveIdlePrefetchGroup(id: string): IdlePrefetchGroup | undefined {
     ) ||
     normalizedId.includes(
       '/packages/drawnix/src/components/startup/DeferredSyncSettings.tsx'
+    ) ||
+    normalizedId.endsWith(
+      '/packages/drawnix/src/plugins/components/ppt-image-placeholder-runtime.ts'
     ) ||
     normalizedId.includes(
       '/packages/drawnix/src/services/asset-integration-service'
@@ -777,8 +996,38 @@ function isWebMainEntry(id: string): boolean {
   );
 }
 
-function isStaticallyReachableFromWebMain(
+function isWebBootstrapEntry(id: string): boolean {
+  const normalizedId = normalizePathForChunking(id);
+  return (
+    normalizedId.endsWith('/apps/web/src/app/bootstrap.tsx') ||
+    normalizedId.endsWith('/src/app/bootstrap.tsx')
+  );
+}
+
+function isDrawnixAppEntry(id: string): boolean {
+  const normalizedId = normalizePathForChunking(id);
+  return normalizedId.endsWith('/packages/drawnix/src/app.ts');
+}
+
+function isDeferredAIInputBarEntry(id: string): boolean {
+  const normalizedId = normalizePathForChunking(id);
+  return normalizedId.endsWith(
+    '/packages/drawnix/src/components/startup/DeferredAIInputBar.tsx'
+  );
+}
+
+function isStartupShellEntry(id: string): boolean {
+  return (
+    isWebMainEntry(id) ||
+    isWebBootstrapEntry(id) ||
+    isDrawnixAppEntry(id) ||
+    isDeferredAIInputBarEntry(id)
+  );
+}
+
+function isStaticallyReachableFromEntry(
   id: string,
+  isEntry: (candidateId: string) => boolean,
   getModuleInfo: ManualChunkContext['getModuleInfo'],
   visited = new Set<string>()
 ): boolean {
@@ -787,7 +1036,7 @@ function isStaticallyReachableFromWebMain(
   }
   visited.add(id);
 
-  if (isWebMainEntry(id)) {
+  if (isEntry(id)) {
     return true;
   }
 
@@ -797,7 +1046,7 @@ function isStaticallyReachableFromWebMain(
   }
 
   return moduleInfo.importers.some((importerId) =>
-    isStaticallyReachableFromWebMain(importerId, getModuleInfo, visited)
+    isStaticallyReachableFromEntry(importerId, isEntry, getModuleInfo, visited)
   );
 }
 
@@ -809,13 +1058,43 @@ function resolveManualChunk(
     return 'startup-runtime';
   }
 
+  const vendorChunk = resolveStartupVendorChunk(id, context);
+  if (vendorChunk) {
+    return vendorChunk;
+  }
+
+  const startupSourceChunk = resolveStartupSourceChunk(id);
+  if (startupSourceChunk) {
+    return startupSourceChunk;
+  }
+
   const group = resolveIdlePrefetchGroup(id);
   if (
     (group === undefined || group === 'tool-windows') &&
     context &&
-    isStaticallyReachableFromWebMain(id, context.getModuleInfo)
+    isStaticallyReachableFromEntry(id, isWebMainEntry, context.getModuleInfo)
   ) {
     return 'startup-app';
+  }
+
+  if (
+    (group === undefined || group === 'tool-windows') &&
+    context &&
+    isStaticallyReachableFromEntry(
+      id,
+      isWebBootstrapEntry,
+      context.getModuleInfo
+    )
+  ) {
+    return 'bootstrap';
+  }
+
+  if (
+    (group === undefined || group === 'tool-windows') &&
+    context &&
+    isStaticallyReachableFromEntry(id, isDrawnixAppEntry, context.getModuleInfo)
+  ) {
+    return 'drawnix-app';
   }
 
   return group;
@@ -1022,6 +1301,40 @@ function deferEntryAssetsPlugin(): Plugin {
         await writeFileWithFdRetry(indexHtmlPath, nextHtml);
         console.log(
           `[EntryAssets] Deferred ${deferredTags.length} entry asset tag(s) to body end`
+        );
+      },
+    },
+  };
+}
+
+function compactProductionIndexHtmlPlugin(): Plugin {
+  return {
+    name: 'compact-production-index-html',
+    apply: 'build',
+    closeBundle: {
+      sequential: true,
+      order: 'post',
+      async handler() {
+        const indexHtmlPath = path.resolve(
+          __dirname,
+          '../../dist/apps/web/index.html'
+        );
+        if (!fs.existsSync(indexHtmlPath)) {
+          return;
+        }
+
+        const html = (await readFileWithFdRetry(
+          indexHtmlPath,
+          'utf8'
+        )) as string;
+        const compactedHtml = compactProductionIndexHtml(html);
+        if (compactedHtml === html) {
+          return;
+        }
+
+        await writeFileWithFdRetry(indexHtmlPath, compactedHtml);
+        console.log(
+          `[IndexHtml] Removed ${Buffer.byteLength(html) - Buffer.byteLength(compactedHtml)} bytes of production indentation`
         );
       },
     },
@@ -1253,6 +1566,7 @@ export default defineConfig({
     }),
     deferEntryAssetsPlugin(),
     rewriteEntryAssetsToCDNPlugin(),
+    compactProductionIndexHtmlPlugin(),
     rewriteManifestAssetsToCDNPlugin(),
     precacheManifestPlugin(),
     idlePrefetchManifestPlugin(),
@@ -1289,6 +1603,7 @@ export default defineConfig({
     },
     rollupOptions: {
       output: {
+        onlyExplicitManualChunks: ONLY_EXPLICIT_MANUAL_CHUNKS,
         manualChunks(id, context) {
           return resolveManualChunk(id, context);
         },

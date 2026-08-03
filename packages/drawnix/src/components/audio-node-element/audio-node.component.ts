@@ -15,7 +15,7 @@ import {
   drawPrimaryHandle,
   hasResizeHandle,
 } from '@plait/common';
-import { getCanvasAudioPlaybackQueue } from '../../data/audio';
+import { getCanvasAudioPlaybackQueue } from '../../data/audio-playback';
 import type { PlaitAudioNode } from '../../types/audio-node.types';
 import { AudioNodeGenerator } from './audio-node.generator';
 

@@ -29,7 +29,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
   ImageUploadIcon,
-} from '../icons';
+} from '../icons/startup-icons';
 import { useBoard } from '@plait-board/react-board';
 import {
   ATTACHED_ELEMENT_CLASS_NAME,
@@ -48,13 +48,10 @@ import {
 import { FreehandPanel, FREEHANDS } from './freehand-panel/freehand-panel';
 import { ShapePicker } from '../shape-picker';
 import { ArrowPicker } from '../arrow-picker';
-import { MessagePlugin } from 'tdesign-react';
+import { MessagePlugin } from '../../utils/message-plugin';
 import { SelectionMode, Asset, AssetType } from '../../types/asset.types';
-import { insertImageFromUrl } from '../../data/image';
-import { insertVideoFromUrl } from '../../data/video';
-import { insertAudioFromUrl } from '../../data/audio';
-import { executeCanvasInsertion } from '../../services/canvas-operations';
 import { logCanvasInsertionDebug } from '../../utils/canvas-insertion-layout';
+import { createRetriableModuleLoader } from '../../utils/retriable-module-loader';
 import { Popover, PopoverContent, PopoverTrigger } from '../popover/popover';
 import { FreehandShape } from '../../plugins/freehand/type';
 import { PenShape } from '../../plugins/pen/type';
@@ -67,7 +64,7 @@ import {
   useDrawnix,
   useSetPointer,
 } from '../../hooks/use-drawnix';
-import { addImage } from '../../utils/image';
+import { openImageFilePicker } from '../../utils/image-file-actions';
 import { useI18n, Translations } from '../../i18n';
 import { ToolbarSectionProps } from './toolbar.types';
 import { useToolbarConfig } from '../../hooks/use-toolbar-config';
@@ -94,6 +91,22 @@ const MinimizedToolsBar = lazy(() =>
     default: module.MinimizedToolsBar,
   }))
 );
+
+const loadMediaInsertionRuntime = createRetriableModuleLoader(async () => {
+  const [image, video, audio, canvasOperations] = await Promise.all([
+    import('../../data/image'),
+    import('../../data/video'),
+    import('../../data/audio'),
+    import('../../services/canvas-operations'),
+  ]);
+
+  return {
+    insertImageFromUrl: image.insertImageFromUrl,
+    insertVideoFromUrl: video.insertVideoFromUrl,
+    insertAudioFromUrl: audio.insertAudioFromUrl,
+    executeCanvasInsertion: canvasOperations.executeCanvasInsertion,
+  };
+});
 
 export enum PopupKey {
   'shape' = 'shape',
@@ -291,12 +304,13 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
   const handleInsertAsset = useCallback(
     async (asset: Asset) => {
       try {
+        const runtime = await loadMediaInsertionRuntime();
         if (asset.type === AssetType.IMAGE) {
-          await insertImageFromUrl(board, asset.url);
+          await runtime.insertImageFromUrl(board, asset.url);
         } else if (asset.type === AssetType.VIDEO) {
-          await insertVideoFromUrl(board, asset.url);
+          await runtime.insertVideoFromUrl(board, asset.url);
         } else if (asset.type === AssetType.AUDIO) {
-          await insertAudioFromUrl(board, asset.url, {
+          await runtime.insertAudioFromUrl(board, asset.url, {
             title: asset.name,
             duration: asset.duration,
             previewImageUrl: asset.thumbnail,
@@ -327,6 +341,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
         zoom: (board as any)?.viewport?.zoom || 1,
       });
 
+      const { executeCanvasInsertion } = await loadMediaInsertionRuntime();
       const insertionResult = await executeCanvasInsertion({
         items: assets.map((asset) => {
           if (asset.type === AssetType.IMAGE) {
@@ -547,7 +562,7 @@ export const CreationToolbar: React.FC<ToolbarSectionProps> = ({
 
     // 特殊按钮处理
     if (button.key === 'image') {
-      addImage(board);
+      void openImageFilePicker(board);
     } else if (button.key === 'media-library') {
       handleOpenMediaLibrary();
     } else if (button.key === 'ai-image') {

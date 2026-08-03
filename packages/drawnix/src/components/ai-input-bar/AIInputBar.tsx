@@ -608,6 +608,10 @@ interface AIInputBarProps {
   onEnableToolWindows?: () => void;
   /** 确保生成任务后台运行时已启用 */
   onEnableRuntime?: () => void;
+  /** 轻量启动壳在完整组件挂载前收集的草稿 */
+  initialPrompt?: string;
+  /** 输入事件监听器完成注册后的通知 */
+  onReady?: () => void;
 }
 
 /**
@@ -799,7 +803,14 @@ const SelectionWatcher: React.FC<{
 SelectionWatcher.displayName = 'SelectionWatcher';
 
 export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
-  ({ className, isDataReady, onEnableToolWindows, onEnableRuntime }) => {
+  ({
+    className,
+    isDataReady,
+    onEnableToolWindows,
+    onEnableRuntime,
+    initialPrompt = '',
+    onReady,
+  }) => {
     // console.log('[AIInputBar] Component rendering');
 
     const { language } = useI18n();
@@ -1098,7 +1109,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           );
 
     // State
-    const [prompt, setPrompt] = useState('');
+    const [prompt, setPrompt] = useState(initialPrompt);
     const [isInspirationSendGuideActive, setIsInspirationSendGuideActive] =
       useState(false);
     const [isPromptOptimizeOpen, setIsPromptOptimizeOpen] = useState(false);
@@ -1151,8 +1162,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
     );
     const [selectedAgentAudioModelRef, setSelectedAgentAudioModelRef] =
       useState<ModelRef | null>(getModelRefFromConfig(initialAudioModel));
-    const imageBindingCapabilityRevision =
-      useImageBindingCapabilityRevision();
+    const imageBindingCapabilityRevision = useImageBindingCapabilityRevision();
     const [selectedSkillMediaTypes, setSelectedSkillMediaTypes] = useState<
       SkillMediaType[]
     >([]);
@@ -2253,6 +2263,10 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
       textModels,
       videoModels,
     ]);
+
+    useEffect(() => {
+      onReady?.();
+    }, [onReady]);
 
     // 处理灵感模版选择：将提示词替换到输入框并切换到 Agent 模式
     const handleSelectInspirationPrompt = useCallback(

@@ -43,9 +43,21 @@ export enum ToolMessageType {
 }
 
 /**
+ * Host capabilities granted to a trusted iframe tool manifest. External and
+ * user-authored tools receive no host mutation capability unless a trusted
+ * runtime registration explicitly grants one.
+ */
+export type ToolBridgeCapability =
+  | 'insert-text'
+  | 'insert-image'
+  | 'request-data'
+  | 'close-self'
+  | 'generate-image';
+
+/**
  * 通信消息基础接口
  */
-export interface ToolMessage<T = any> {
+export interface ToolMessage<T = unknown> {
   /** 协议版本 */
   version: '1.0';
 
@@ -79,7 +91,7 @@ export interface InitPayload {
   theme: 'light' | 'dark';
 
   /** 工具配置 */
-  config?: Record<string, any>;
+  config?: Record<string, string | number | boolean | null>;
 }
 
 /**

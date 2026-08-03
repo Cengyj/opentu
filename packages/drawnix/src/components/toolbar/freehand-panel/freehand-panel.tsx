@@ -8,7 +8,7 @@ import {
   VectorPenIcon,
   LaserPointerIcon,
   MaskBrushIcon,
-} from '../../icons';
+} from '../../icons/startup-icons';
 import { BoardTransforms } from '@plait/core';
 import React from 'react';
 import { BoardCreationMode, setCreationMode } from '@plait/common';

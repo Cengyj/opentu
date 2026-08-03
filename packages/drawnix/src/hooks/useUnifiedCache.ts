@@ -8,6 +8,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { unifiedCacheService, type CacheInfo, type StorageUsage } from '../services/unified-cache-service';
 
+export { useCacheQuotaMonitor } from './useCacheQuotaMonitor';
+
 /**
  * Hook for managing cache of a specific URL
  */
@@ -142,31 +144,5 @@ export function useCacheStats() {
     isLoading,
     reload: loadStats,
     formatSize: unifiedCacheService.formatSize.bind(unifiedCacheService),
-  };
-}
-
-/**
- * Hook for cache quota monitoring
- */
-export function useCacheQuotaMonitor(onQuotaExceeded?: () => void) {
-  const [isQuotaExceeded, setIsQuotaExceeded] = useState(false);
-
-  useEffect(() => {
-    const handleQuotaExceeded = () => {
-      setIsQuotaExceeded(true);
-      onQuotaExceeded?.();
-    };
-
-    const unsubscribe = unifiedCacheService.onQuotaExceeded(handleQuotaExceeded);
-    return unsubscribe;
-  }, [onQuotaExceeded]);
-
-  const resetQuotaFlag = useCallback(() => {
-    setIsQuotaExceeded(false);
-  }, []);
-
-  return {
-    isQuotaExceeded,
-    resetQuotaFlag,
   };
 }

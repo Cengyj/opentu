@@ -206,7 +206,7 @@
   icon 显示单独启用；点击 icon 时再按需启完整 `tool-window runtime`
 - `toolWindowService` 恢复 launcher 状态时优先读取完整工具定义，保证首屏图标和标题完整
 - `SW` 在 `activate` 后自动消费 idle prefetch 默认分组，并把完成状态广播给页面
-- 页面监听 `SW_IDLE_PREFETCH_STATUS`，但只把它当优化信号；超时后直接放行常驻工具条，避免功能被优化链路反向阻塞
+- Service Worker 预热只负责缓存资源，不触发页面挂载；常驻工具条只在明确 `?tool` 启动意图或真实工具交互后启用
 - `idle prefetch` 仍用小并发，但不能再裁剪总任务数，否则完成分组永远不闭环
 
 ### 这次最值得固化的规则

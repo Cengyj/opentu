@@ -19,11 +19,20 @@ import {
   hasResizeHandle,
 } from '@plait/common';
 import { PlaitTool } from '../../types/toolbox.types';
-import { ToolGenerator } from './tool.generator';
+import type { ToolGenerator } from './tool.generator';
 import {
   registerToolGenerator,
   unregisterToolGenerator,
 } from '../../plugins/with-tool-focus';
+import { createRetriableModuleLoader } from '../../utils/retriable-module-loader';
+
+interface ToolGeneratorRuntime {
+  ToolGenerator: typeof import('./tool.generator').ToolGenerator;
+}
+
+const loadToolGeneratorRuntime = createRetriableModuleLoader(
+  (): Promise<ToolGeneratorRuntime> => import('./tool.generator')
+);
 
 /**
  * 工具元素组件
@@ -34,13 +43,11 @@ export class ToolComponent
   extends CommonElementFlavour<PlaitTool, PlaitBoard>
   implements OnContextChanged<PlaitTool, PlaitBoard>
 {
-  toolGenerator!: ToolGenerator;
+  toolGenerator?: ToolGenerator;
   activeGenerator!: ActiveGenerator<PlaitTool>;
   private renderedG?: SVGGElement;
-
-  constructor() {
-    super();
-  }
+  private generatorLoadAttempt: Promise<void> | null = null;
+  private destroyed = false;
 
   /**
    * 初始化生成器
@@ -58,12 +65,66 @@ export class ToolComponent
         return hasResizeHandle(this.board, this.element);
       },
     });
+  }
 
-    // 初始化工具渲染生成器
-    this.toolGenerator = new ToolGenerator(this.board);
+  private drawToolElement(): void {
+    if (!this.toolGenerator || this.destroyed) {
+      return;
+    }
 
-    // 注册 ToolGenerator 以支持焦点管理
-    registerToolGenerator(this.board, this.element.id, this.toolGenerator);
+    if (!this.toolGenerator.canDraw(this.element)) {
+      console.warn('Cannot draw tool element:', this.element);
+      return;
+    }
+
+    const g = this.toolGenerator.draw(this.element);
+    if (this.destroyed) {
+      g.remove();
+      return;
+    }
+
+    this.renderedG = g;
+    this.getElementG().appendChild(g);
+
+    if (this.selected) {
+      this.activeGenerator.processDrawing(
+        this.element,
+        PlaitBoard.getActiveHost(this.board),
+        { selected: true }
+      );
+    }
+  }
+
+  private ensureToolGenerator(): void {
+    if (this.toolGenerator || this.generatorLoadAttempt || this.destroyed) {
+      return;
+    }
+
+    const loadAttempt = loadToolGeneratorRuntime()
+      .then(({ ToolGenerator }) => {
+        if (this.destroyed) {
+          return;
+        }
+
+        this.toolGenerator = new ToolGenerator(this.board);
+        registerToolGenerator(this.board, this.element.id, this.toolGenerator);
+        this.drawToolElement();
+      })
+      .catch((error: unknown) => {
+        if (!this.destroyed) {
+          console.error(
+            `[ToolComponent] Failed to load tool renderer for ${this.element.id}:`,
+            error
+          );
+        }
+      })
+      .finally(() => {
+        if (this.generatorLoadAttempt === loadAttempt) {
+          this.generatorLoadAttempt = null;
+        }
+      });
+
+    this.generatorLoadAttempt = loadAttempt;
   }
 
   /**
@@ -72,26 +133,9 @@ export class ToolComponent
    */
   initialize(): void {
     super.initialize();
+    this.destroyed = false;
     this.initializeGenerator();
-
-    // console.log('ToolComponent initialize - element:', this.element);
-    // console.log('ToolComponent initialize - points:', this.element.points);
-
-    // 检查是否可以绘制
-    if (!this.toolGenerator.canDraw(this.element)) {
-      console.warn('Cannot draw tool element:', this.element);
-      return;
-    }
-
-    // 绘制初始状态
-    const g = this.toolGenerator.draw(this.element);
-    this.renderedG = g;
-
-    // 获取元素容器并添加到 DOM
-    const elementG = this.getElementG();
-    elementG.appendChild(g);
-
-    // console.log('ToolComponent initialized:', this.element.id);
+    this.ensureToolGenerator();
   }
 
   /**
@@ -102,6 +146,13 @@ export class ToolComponent
     value: PlaitPluginElementContext<PlaitTool, PlaitBoard>,
     previous: PlaitPluginElementContext<PlaitTool, PlaitBoard>
   ): void {
+    if (!this.toolGenerator) {
+      // The eventual renderer reads the latest element from this component, so
+      // updates received during chunk loading do not need a second replay path.
+      this.ensureToolGenerator();
+      return;
+    }
+
     // 检查 viewport (zoom/scroll) 是否改变
     const viewportChanged =
       value.board.viewport.zoom !== previous.board.viewport.zoom ||
@@ -124,7 +175,7 @@ export class ToolComponent
       } else {
         // 如果找不到 g 元素，重新绘制
         console.warn('ToolComponent: g element not found, redrawing');
-        this.initialize();
+        this.drawToolElement();
       }
 
       // 更新选中状态高亮
@@ -164,6 +215,7 @@ export class ToolComponent
    * 在元素被销毁时调用
    */
   destroy(): void {
+    this.destroyed = true;
     super.destroy();
 
     // 取消注册 ToolGenerator
@@ -174,9 +226,8 @@ export class ToolComponent
     if (this.activeGenerator) {
       this.activeGenerator.destroy();
     }
-    if (this.toolGenerator) {
-      this.toolGenerator.destroy();
-    }
+    this.toolGenerator?.destroy();
+    this.toolGenerator = undefined;
     this.renderedG = undefined;
     // console.log('ToolComponent destroyed');
   }

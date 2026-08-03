@@ -472,18 +472,10 @@
     </style>
     <link
       rel="icon"
-      type="image/svg+xml"
-      sizes="16x16"
-      href="./icons/favicon-16x16.svg"
-    />
-    <link
-      rel="icon"
-      type="image/svg+xml"
+      type="image/png"
       sizes="32x32"
-      href="./icons/favicon-32x32.svg"
+      href="./icons/favicon-32x32.png"
     />
-    <link rel="icon" type="image/svg+xml" href="./icons/favicon-new.svg" />
-    <link rel="icon" type="image/ico" href="./favicon.ico" />
 
     <!-- PWA Manifest -->
     <link rel="manifest" href="./manifest.json?v=1.0.2" />
@@ -690,6 +682,7 @@
         var BOOT_IMPORT_RECOVERY_ACK_TIMEOUT_MS = 4000;
         var BOOT_IMPORT_RECOVERY_MAX_ATTEMPTS = 3;
         var BOOT_IMPORT_RECOVERY_RETRY_DELAY_MS = 250;
+        var BOOT_CDN_CONFIG_LOAD_TIMEOUT_MS = 1200;
         var forceLocalBootAssets = false;
         window.__OPENTU_START_MAIN_ENTRY__ = new Promise(function (resolve) {
           resolveMainEntryReady = resolve;
@@ -1262,44 +1255,93 @@
           return true;
         };
 
-        function appendManagedBootScript(localPath, onload, onfinalerror) {
+        function appendManagedBootScript(
+          localPath,
+          onload,
+          onfinalerror,
+          timeoutMs
+        ) {
           var preferredUrl = toPreferredBootAssetUrl(localPath);
           var script = document.createElement('script');
           script.async = true;
           script.setAttribute('data-cdn-fallback-managed', '1');
           script.setAttribute('data-local-src', localPath);
+          var completed = false;
+          var fallbackStarted = false;
+          var timeoutTimer = 0;
 
-          var handleFinalFailure = function () {
-            if (typeof onfinalerror === 'function') {
-              onfinalerror();
+          var clearLoadTimeout = function () {
+            if (timeoutTimer) {
+              window.clearTimeout(timeoutTimer);
+              timeoutTimer = 0;
             }
           };
 
-          if (!preferredUrl || preferredUrl === localPath) {
-            script.src = localPath;
-            script.onload = onload;
-            script.onerror = handleFinalFailure;
-            document.head.appendChild(script);
-            return;
-          }
+          var complete = function (callback) {
+            if (completed) {
+              return;
+            }
+            completed = true;
+            clearLoadTimeout();
+            if (typeof callback === 'function') {
+              callback();
+            }
+          };
 
-          script.src = preferredUrl;
-          script.onload = onload;
-          script.onerror = function () {
+          var handleFinalFailure = function () {
+            complete(onfinalerror);
+          };
+
+          var armLoadTimeout = function (onTimeout) {
+            clearLoadTimeout();
+            if (typeof timeoutMs !== 'number' || timeoutMs <= 0) {
+              return;
+            }
+            timeoutTimer = window.setTimeout(onTimeout, timeoutMs);
+          };
+
+          var appendLocalFallback = function () {
+            if (completed || fallbackStarted) {
+              return;
+            }
+            fallbackStarted = true;
+            clearLoadTimeout();
+            if (script.parentNode) {
+              script.parentNode.removeChild(script);
+            }
+
             var localScript = document.createElement('script');
             localScript.async = true;
             localScript.src = localPath;
             localScript.setAttribute('data-cdn-fallback-managed', '1');
             localScript.setAttribute('data-fallback-attempted', '1');
-            localScript.onload = onload;
+            localScript.onload = function () {
+              complete(onload);
+            };
             localScript.onerror = handleFinalFailure;
-            if (script.parentNode) {
-              script.parentNode.removeChild(script);
-            }
             document.head.appendChild(localScript);
+            armLoadTimeout(handleFinalFailure);
           };
 
+          if (!preferredUrl || preferredUrl === localPath) {
+            script.src = localPath;
+            script.onload = function () {
+              complete(onload);
+            };
+            script.onerror = handleFinalFailure;
+            document.head.appendChild(script);
+            armLoadTimeout(handleFinalFailure);
+            return;
+          }
+
+          script.src = preferredUrl;
+          script.onload = function () {
+            complete(onload);
+          };
+          script.onerror = appendLocalFallback;
+
           document.head.appendChild(script);
+          armLoadTimeout(appendLocalFallback);
         }
 
         function clampProgress(value) {
@@ -1661,7 +1703,8 @@
                 resolveMainEntryReady();
                 resolveMainEntryReady = null;
               }
-            }
+            },
+            BOOT_CDN_CONFIG_LOAD_TIMEOUT_MS
           );
         }
 

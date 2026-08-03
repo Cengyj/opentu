@@ -2,7 +2,11 @@ import classNames from 'classnames';
 import { Island } from './island';
 import Stack from './stack';
 import { ToolButton } from './tool-button';
-import { StraightArrowIcon, ElbowArrowIcon, CurveArrowIcon } from './icons';
+import {
+  StraightArrowIcon,
+  ElbowArrowIcon,
+  CurveArrowIcon,
+} from './icons/startup-icons';
 import { useBoard } from '@plait-board/react-board';
 import { BoardTransforms } from '@plait/core';
 import React from 'react';

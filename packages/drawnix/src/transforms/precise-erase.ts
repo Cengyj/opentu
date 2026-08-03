@@ -552,7 +552,7 @@ function getElementBoundingBox(element: PlaitElement): RectangleClient | null {
  * 检测与橡皮擦路径相交的元素
  */
 export function findElementsInEraserPath(
-  board: PlaitBoard,
+  elements: readonly PlaitElement[],
   eraserPath: Point[],
   eraserWidth: number
 ): PlaitElement[] {
@@ -569,7 +569,7 @@ export function findElementsInEraserPath(
 
   const intersectingElements: PlaitElement[] = [];
 
-  for (const element of board.children) {
+  for (const element of elements) {
     // 跳过不支持布尔运算的元素
     if (!canElementBePreciseErased(element)) {
       continue;

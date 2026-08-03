@@ -1,18 +1,40 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  collectRequiredStartupGraph,
+  collectStaticImportAssets,
+  validateIdlePrefetchDefaults,
+} = require('./startup-bundle-analyzer.cjs');
 
 const DIST_DIR = path.resolve(__dirname, '../dist/apps/web');
 const INDEX_HTML = path.join(DIST_DIR, 'index.html');
 const IDLE_MANIFEST = path.join(DIST_DIR, 'idle-prefetch-manifest.json');
 const DISALLOWED_PREFIXES = [
+  'ai-chat-',
   'diagram-engines-',
   'tool-windows-',
   'external-skills-',
 ];
 const MAX_STARTUP_ASSET_BYTES = 500 * 1024;
-const STATIC_IMPORT_RE =
-  /(?:\bimport\s*(?:[^"'`]*?\bfrom\s*)?|\bexport\s*[^"'`]*?\bfrom\s*)["']\.\/([^"']+)["']/g;
-const DYNAMIC_IMPORT_RE = /\bimport\(["']\.\/([^"']+)["']\)/g;
+const MAX_STARTUP_GRAPH_BYTES = 2_000_000;
+const REQUIRED_STARTUP_DYNAMIC_PREFIXES = [
+  'startup-app-',
+  'bootstrap-',
+  'drawnix-app-',
+];
+// Drawnix 首次渲染会无条件挂载 AI 输入轻壳；完整 AIInputBarRuntime 仅在
+// focus/input/prefill 后由轻壳加载，因此不能作为首屏根。
+const REQUIRED_STARTUP_DYNAMIC_ROOT_RULES = [
+  {
+    parentPrefix: 'drawnix-app-',
+    assetPrefix: 'DeferredAIInputBar-',
+    expectedMatches: 1,
+  },
+];
+// These roots are mounted automatically after the canvas becomes interactive.
+// They may perform lightweight checks, but must not pull feature groups before
+// a matching update, memory-pressure condition, or user action exists.
+const AUTOMATIC_DEFERRED_ROOT_PREFIXES = ['DrawnixOperationalMonitors-'];
 
 function fail(message) {
   console.error(`[startup-validate] ${message}`);
@@ -53,80 +75,36 @@ if (invalidDirectAssets.length > 0) {
   fail(`重模块重新回流到入口 HTML：${invalidDirectAssets.join(', ')}`);
 }
 
-let idleManifest = { groups: {} };
-if (fs.existsSync(IDLE_MANIFEST)) {
+if (!fs.existsSync(IDLE_MANIFEST)) {
+  fail('idle-prefetch-manifest.json 不存在，请检查构建产物生成流程');
+}
+
+let idleManifest;
+try {
   idleManifest = JSON.parse(fs.readFileSync(IDLE_MANIFEST, 'utf8'));
+  validateIdlePrefetchDefaults(idleManifest);
+} catch (error) {
+  fail(
+    `idle-prefetch-manifest.json 无效：${
+      error instanceof Error ? error.message : String(error)
+    }`
+  );
 }
 
-function collectStaticImports(entryAsset, visited = new Set()) {
-  if (visited.has(entryAsset)) {
-    return visited;
-  }
-  visited.add(entryAsset);
-
+function readAssetSource(entryAsset) {
   const fullPath = path.join(DIST_DIR, entryAsset);
   if (!fs.existsSync(fullPath) || !entryAsset.endsWith('.js')) {
-    return visited;
+    return null;
   }
 
-  const source = fs.readFileSync(fullPath, 'utf8');
-  STATIC_IMPORT_RE.lastIndex = 0;
-  let match;
-
-  while ((match = STATIC_IMPORT_RE.exec(source))) {
-    const imported = path.posix.normalize(
-      path.posix.join(path.posix.dirname(entryAsset), match[1])
-    );
-    if (!visited.has(imported)) {
-      collectStaticImports(imported, visited);
-    }
-  }
-
-  return visited;
+  return fs.readFileSync(fullPath, 'utf8');
 }
 
-function collectDirectDynamicImports(entryAsset) {
-  const dynamicImports = new Set();
-  const fullPath = path.join(DIST_DIR, entryAsset);
-  if (!fs.existsSync(fullPath) || !entryAsset.endsWith('.js')) {
-    return dynamicImports;
-  }
-
-  const source = fs.readFileSync(fullPath, 'utf8');
-  DYNAMIC_IMPORT_RE.lastIndex = 0;
-  let match;
-
-  while ((match = DYNAMIC_IMPORT_RE.exec(source))) {
-    dynamicImports.add(
-      path.posix.normalize(
-        path.posix.join(path.posix.dirname(entryAsset), match[1])
-      )
-    );
-  }
-
-  return dynamicImports;
-}
-
-function collectStaticImportAssets(entryAsset) {
-  const imports = new Set();
-  const fullPath = path.join(DIST_DIR, entryAsset);
-  if (!fs.existsSync(fullPath) || !entryAsset.endsWith('.js')) {
-    return imports;
-  }
-
-  const source = fs.readFileSync(fullPath, 'utf8');
-  STATIC_IMPORT_RE.lastIndex = 0;
-  let match;
-
-  while ((match = STATIC_IMPORT_RE.exec(source))) {
-    imports.add(
-      path.posix.normalize(
-        path.posix.join(path.posix.dirname(entryAsset), match[1])
-      )
-    );
-  }
-
-  return imports;
+function collectStaticImportAssetsForFile(entryAsset) {
+  const source = readAssetSource(entryAsset);
+  return source === null
+    ? new Set()
+    : collectStaticImportAssets(source, entryAsset);
 }
 
 function collectJsAssets() {
@@ -147,7 +125,7 @@ function buildStaticChunkGraph() {
   const graph = new Map();
 
   for (const asset of jsAssets) {
-    const imports = Array.from(collectStaticImportAssets(asset)).filter(
+    const imports = Array.from(collectStaticImportAssetsForFile(asset)).filter(
       (importedAsset) => jsAssetSet.has(importedAsset)
     );
     graph.set(asset, imports);
@@ -213,22 +191,64 @@ const entryScripts = scriptMatches.filter(
   (asset) => asset.startsWith('assets/') && asset.endsWith('.js')
 );
 
-const entryDependencyGraph = new Set();
-entryScripts.forEach((asset) => {
-  collectStaticImports(asset, entryDependencyGraph);
-  for (const dynamicAsset of collectDirectDynamicImports(asset)) {
-    collectStaticImports(dynamicAsset, entryDependencyGraph);
-  }
-});
+let entryDependencyGraph;
+try {
+  entryDependencyGraph = collectRequiredStartupGraph({
+    entryAssets: entryScripts,
+    readAsset: readAssetSource,
+    requiredDynamicPrefixes: REQUIRED_STARTUP_DYNAMIC_PREFIXES,
+    requiredDynamicRootRules: REQUIRED_STARTUP_DYNAMIC_ROOT_RULES,
+  });
+} catch (error) {
+  fail(
+    `无法解析首屏依赖图：${
+      error instanceof Error ? error.message : String(error)
+    }`
+  );
+}
 
 const invalidStaticDeps = Array.from(entryDependencyGraph).filter(
   (asset) =>
     asset !== undefined &&
-    DISALLOWED_PREFIXES.some((prefix) => path.basename(asset).startsWith(prefix))
+    asset.endsWith('.js') &&
+    DISALLOWED_PREFIXES.some((prefix) =>
+      path.basename(asset).startsWith(prefix)
+    )
 );
 
 if (invalidStaticDeps.length > 0) {
   fail(`重模块重新回流到入口依赖链：${invalidStaticDeps.join(', ')}`);
+}
+
+const jsAssets = collectJsAssets();
+const automaticDeferredGraphs = {};
+for (const rootPrefix of AUTOMATIC_DEFERRED_ROOT_PREFIXES) {
+  const matchingRoots = jsAssets.filter((asset) =>
+    path.basename(asset).startsWith(rootPrefix)
+  );
+  if (matchingRoots.length !== 1) {
+    fail(
+      `必须存在唯一自动延后根 ${rootPrefix}，实际为 ${matchingRoots.length}`
+    );
+  }
+
+  const graph = collectRequiredStartupGraph({
+    entryAssets: matchingRoots,
+    readAsset: readAssetSource,
+  });
+  const invalidAssets = Array.from(graph).filter(
+    (asset) =>
+      asset.endsWith('.js') &&
+      DISALLOWED_PREFIXES.some((prefix) =>
+        path.basename(asset).startsWith(prefix)
+      )
+  );
+  if (invalidAssets.length > 0) {
+    fail(
+      `自动延后根 ${rootPrefix} 静态依赖重模块：${invalidAssets.join(', ')}`
+    );
+  }
+  automaticDeferredGraphs[rootPrefix] = Array.from(graph).sort();
 }
 
 const chunkCycles = findStronglyConnectedComponents(buildStaticChunkGraph());
@@ -239,10 +259,14 @@ if (chunkCycles.length > 0) {
   fail(`构建产物存在静态 chunk 循环依赖：\n${formattedCycles}`);
 }
 
-const startupAssetGraph = new Set([
-  ...directAssets,
-  ...entryDependencyGraph,
-]);
+const startupAssetGraph = new Set([...directAssets, ...entryDependencyGraph]);
+const missingStartupAssets = Array.from(startupAssetGraph).filter(
+  (asset) => !fs.existsSync(path.join(DIST_DIR, asset))
+);
+if (missingStartupAssets.length > 0) {
+  fail(`首屏依赖图引用不存在的资源：${missingStartupAssets.join(', ')}`);
+}
+
 const startupBudgetReport = Array.from(startupAssetGraph)
   .filter((asset) => asset && (asset.endsWith('.js') || asset.endsWith('.css')))
   .map((asset) => {
@@ -262,10 +286,20 @@ if (oversizedStartupAssets.length > 0) {
   fail(
     `首屏依赖链存在超过 500KB 的资源：\n${oversizedStartupAssets
       .map(
-        ({ asset, size, limit }) =>
-          `- ${asset}: ${size} bytes > ${limit} bytes`
+        ({ asset, size, limit }) => `- ${asset}: ${size} bytes > ${limit} bytes`
       )
       .join('\n')}`
+  );
+}
+
+const startupGraphBytes = startupBudgetReport.reduce(
+  (total, item) => total + item.size,
+  0
+);
+
+if (startupGraphBytes > MAX_STARTUP_GRAPH_BYTES) {
+  fail(
+    `首屏依赖图总大小超过预算：${startupGraphBytes} bytes > ${MAX_STARTUP_GRAPH_BYTES} bytes`
   );
 }
 
@@ -284,8 +318,12 @@ console.log(
       directAssets: sizeReport,
       entryDependencyGraph: Array.from(entryDependencyGraph).sort(),
       startupBudget: startupBudgetReport,
+      startupGraphBytes,
+      startupGraphLimit: MAX_STARTUP_GRAPH_BYTES,
+      automaticDeferredGraphs,
       chunkCycles: [],
       idlePrefetchGroups: Object.keys(idleManifest.groups || {}),
+      idlePrefetchDefaults: idleManifest.defaults,
     },
     null,
     2

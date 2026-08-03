@@ -158,6 +158,18 @@ describe('boot release recovery contract', () => {
     vi.restoreAllMocks();
   });
 
+  it('uses one compact favicon source instead of the legacy oversized ICO', async () => {
+    const html = await readBootHtml();
+    const iconLinks = Array.from(
+      html.matchAll(/<link\b[^>]*\brel=["']icon["'][^>]*>/gi),
+      (match) => match[0]
+    );
+
+    expect(iconLinks).toHaveLength(1);
+    expect(iconLinks[0]).toContain('favicon-32x32.png');
+    expect(iconLinks[0]).not.toContain('favicon.ico');
+  });
+
   it('uses a correlated release-scoped SW request and never deletes release caches directly', async () => {
     const html = await readBootHtml();
     const recoveryStart = html.indexOf(
@@ -474,7 +486,7 @@ describe('boot release recovery contract', () => {
       recoveryEnd
     );
     const versionStateEnd = serviceWorkerSource.indexOf(
-      "event.data.type === 'SW_IDLE_PREFETCH_STATUS_GET'",
+      "event.data.type === 'SW_PREFETCH_GROUPS'",
       versionStateStart
     );
     const versionStateHandler = serviceWorkerSource.slice(
@@ -488,6 +500,10 @@ describe('boot release recovery contract', () => {
     expect(recoveryEnd).toBeGreaterThan(recoveryStart);
     expect(versionStateStart).toBeGreaterThan(recoveryEnd);
     expect(versionStateEnd).toBeGreaterThan(versionStateStart);
+    expect(serviceWorkerSource).not.toContain('SW_IDLE_PREFETCH_STATUS');
+    expect(serviceWorkerSource).not.toContain(
+      'broadcastIdlePrefetchStatus'
+    );
     expect(rememberOwnership).toContain(
       'resolveOrEstablishSWClientReleaseOwnership'
     );
