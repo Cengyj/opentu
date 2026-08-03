@@ -36,6 +36,7 @@
 - 将直接与传递 Mermaid 统一锁定到带安全修复的 `10.9.6`，将其 `uuid@9.0.1` 传递链收敛到 `14.0.1`，并将不可信聊天图表渲染切换为 strict security level
 - 将 Excel 依赖升级到 SheetJS 官方 `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`，以批量模板中文字段和模型基准多工作表往返合同保护现有业务格式
 - 将 Nx 19 / `@swc-node/register` 工具链使用的 `@swc-node/core` 精确锁定为与当前 SWC 依赖图兼容的 `1.13.3`，不在启动优化中进行 Nx、Vite 或 React 大版本迁移
+- 将项目 Node engines 收敛到受支持的 22.x，并将 CI 和 Docker builder 从已经结束维护的 Node 20 升级到精确的 Node `22.23.2`；Docker builder 固定到 linux/amd64 `bookworm-slim` manifest digest，保持 glibc 构建兼容并减少浮动镜像与无关构建包暴露面；依赖清单/frozen install 与源码/release identity 分层，避免普通源码提交重复下载依赖
 
 ## Impact
 
@@ -44,3 +45,4 @@
 - Preserved data/API semantics: 不修改画板、任务、工作流、素材缓存或偏好数据格式；不改变模型/供应商路由；保持 `@drawnix/drawnix` 公开根导出兼容
 - User-visible trade-off: Chat/AI 首次激活可出现局部 loading，但画布和输入轻壳布局不得跳动，且必须立即给出可访问的加载反馈
 - Dependency scope: 继续使用 SheetJS API，但依赖来源改为上游官方 `0.20.3` tarball；Mermaid/uuid 与 SWC 工具链采用精确、可审计的兼容锁定。锁文件、Excel 往返、Mermaid strict 渲染、类型检查与生产构建是同一升级合同，不引入新的 Excel 格式或业务字段迁移
+- Build runtime scope: 仅升级 CI 和 Docker 的构建 Node；最终 Nginx 运行时、浏览器 JavaScript 目标、应用数据与网络协议不变

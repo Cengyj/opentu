@@ -11,6 +11,7 @@
 - 继续追踪入口图后，应用菜单、MoreTools、Minimap、Asset/统一缓存运行时和 `precise-erase` 被确认是剩余可延后边界。全部边界和 CacheQuota 启动门槛完成后，最终生产构建把 `drawnix-app` 降至 481,924B、入口静态图降至 1,941,175B；所有单文件均不超过 512,000B，入口静态图低于 2,000,000B 预算。
 - 用户手册响应证据区分了两个 URL：`/user-manual/` 收到 SPA 应用壳，`/user-manual/index.html` 收到 18,467B 的真实静态手册首页，含 `opentu-document=user-manual` 和 `opentu-manual-version=1.0.2`。当前生成目录包含 21 个 HTML 页面；菜单和发布校验因此必须以显式文档 URL 为合同。
 - 生产审计最终结果为 464 个 production dependencies、0 vulnerabilities，exit 0。包含开发工具链的完整审计覆盖 1,592 个 dependencies，仍因 3 个 moderate vulnerabilities 以 exit 1 结束：2 个来自 `@swc/cli → downloader → file-type`，1 个来自 Nx 19 `nx graph` CORS；没有 high 或 critical。本 change 不以缺少兼容矩阵的 Nx/SWC 大版本升级掩盖该剩余开发工具链风险。
+- Node 官方发布计划确认 Node 20 已于 2026-04-30 结束维护，而 Node 22 维护至 2027-04-30；修改前 CI 与 Docker builder 仍使用 Node 20。本机 Node `22.22.2` 已完成本 change 的 2,218 个测试、类型检查与生产构建，Vite `6.4.3` 和 Vitest `3.2.7` 的 engines 明确包含 `>=22.0.0`。修改前 Node 20 完整 builder 基础镜像为 398,366,825B/413 个 Debian 包；候选 Node `22.23.2-bookworm-slim` linux/amd64 manifest 为 `sha256:0f65470961851f2354dc8e560853e2f428ea928436135fc7e35780ab100c7e00`，镜像为 79,895,607B/88 个 Debian 包并包含 Corepack `0.34.6`。
 
 ## Goals / Non-Goals
 
@@ -67,6 +68,7 @@
 - Decision: AssetContext 保持同步 context/API 外壳，IndexedDB/同步/缓存运行时只在统一 `isStartupOperable` 门槛成立后的浏览器空闲回调（500ms fallback）或更早的第一次显式存储访问时加载，两条路径共享同一个初始化 Promise；CacheQuota 监听在门槛成立前不注册 idle 调度也不加载缓存 runtime。RetryImage、统一缓存和画布音频缓存使用同一类可重试动态边界。Minimap 在空闲或用户展开时加载，而不是阻塞首屏。
   - Alternatives considered: 移除 AssetProvider，或让每个消费者自行加载/初始化存储。
   - Why not chosen: 移除 provider 会改变现有消费者合同；分散初始化会产生重复读取、重复订阅和竞态。轻壳保留唯一状态所有权，运行时只承载延后实现。
+  - Declaration boundary: 延迟缓存 runtime 只导出显式、稳定的 `UnifiedCacheService` 公共接口，不通过 `typeof import` 推导带 private IndexedDB 状态的实现 singleton 类型；该接口只约束声明边界，不创建第二个缓存服务。
 - Decision: `precise-erase` 只在已完成的有效多点擦除手势中动态加载；Freehand 整体删除保持同步执行，精细擦除使用本笔路径、设置和支持元素快照。模块加载单飞但每笔手势独立执行，加载失败允许下一笔重试。
   - Alternatives considered: 启动时静态加载布尔运算，或合并并发手势为一次执行。
   - Why not chosen: 静态加载为所有用户支付精细擦除成本；合并手势会改变编辑语义。unsupported 元素仍按原有 precise execute 后的 live board 规则处理。
@@ -85,6 +87,9 @@
 - Decision: 仅将 `@swc-node/core` 固定为当前 Nx 19 / `@swc-node/register` / SWC 图已验证的 `1.13.3`，不把启动与安全修复扩大成 Nx、Vite、Vitest、React 的大版本迁移。
   - Alternatives considered: 同时升级整套构建工具。
   - Why not chosen: 当前 Vite/Vitest 与 Nx peer 迁移需要独立兼容矩阵，不能用无关大版本变化污染启动优化和依赖安全证据。
+- Decision: 项目 engines 限制为 Node 22.x，CI 与 Docker builder 使用精确 Node `22.23.2`；Dockerfile 使用 linux/amd64 `bookworm-slim` manifest digest，而不是浮动 major tag。依赖清单与 workspace manifests 先形成 frozen-install 层，源码和 release identity 只使后续生产构建层失效；最终静态站仍复制到既有、已锁定的 Nginx 运行时。
+  - Alternatives considered: 继续使用浮动 `node:20`、升级到尚未完成项目兼容矩阵的 Node 24，或改用 Alpine/musl builder。
+  - Why not chosen: Node 20 已 EOL；Node 24 与当前 Nx 19 没有本 change 的完整兼容证据；Alpine 会额外改变 libc。Node 22 已由当前完整工具链验证，bookworm-slim 保持 glibc 并将 builder 基础镜像字节减少约 79.9%、Debian 包数减少约 78.7%。
 
 ## Invariants
 
@@ -124,6 +129,8 @@
   - Mitigation: package 与 lockfile 原子锁定完整 HTTPS URL，冻结锁安装；以批量模板中文字段、模型基准工作表顺序和结构化值往返合同保护真实消费者。
 - `uuid@14` 与 `@swc-node/core@1.13.3` 是传递/工具链兼容锁，未来上游升级可能使 override 过时。
   - Mitigation: 每次依赖升级重新执行 `pnpm why`、冻结锁安装、类型检查、生产构建和生产审计；不能只删除 override 后接受漂移解析。
+- 精简且精确锁定的 Node builder 不包含完整镜像中的 Git、Python 或编译工具，未来新增原生源码依赖可能使冻结锁安装失败；digest 若没有维护也会停留在旧安全补丁。
+  - Mitigation: 当前锁文件无 Git 依赖且 amd64 glibc 原生依赖均有锁定的预编译包，最终 Docker build 必须复验；未来依赖若确需编译工具，应显式增加最小、版本化的 build package 并同层清理，不回退到浮动完整镜像。Node 安全发布时须同步更新 engines/CI patch、Docker tag/digest 和本节构建证据。
 - 动态菜单、存储或精细擦除加载失败可能让首次操作没有结果，迟到模块也可能在组件卸载或下一笔手势后执行。
   - Mitigation: 统一使用可重试单飞 loader；轻壳保留当前意图，组件卸载后忽略迟到模块，擦除运行时只消费完成手势的不可变快照。对应并发、失败重试和卸载合同必须通过。
 - 手册显式路径若在部署或 Service Worker 中再次被应用壳替代，会重现“Resource unavailable”而 HTTP 状态仍可能是 200。
@@ -142,6 +149,7 @@
 9. 将 SheetJS 锁定到官方 `0.20.3` tarball；锁定 Mermaid `10.9.6`、uuid `14.0.1` 和 `@swc-node/core` `1.13.3`，运行 Excel 往返、聊天 strict、冻结锁、审计、类型检查和生产构建回归。
 10. 将完整应用菜单、MoreTools、Minimap、Asset/缓存运行时和精细擦除迁移到真实激活边界，保留原动作、状态所有权、错误和并发语义。
 11. 将用户手册菜单固定为显式 `./user-manual/index.html`，由手册完整性、SW 路由和 release static 合同验证 21 页文档不会被 SPA shell 替代。
+12. 将项目 engines、CI 与 Docker builder 同步到 Node 22；CI 使用精确 patch，Docker builder 固定 linux/amd64 bookworm-slim manifest，并将 frozen install 与源码/release identity 分层；通过最终 `pnpm install --frozen-lockfile && pnpm build` 和静态发布合同确认兼容。
 
 ## Acceptance Thresholds
 
@@ -155,6 +163,8 @@
 - `pnpm install --frozen-lockfile` 必须保持 package/lock 一致；`pnpm audit --prod --json` 在当前审计源下不得报告已知生产漏洞。
 - Excel 合同必须保持批量模板中文字段、模型基准工作表顺序和结构化值往返；聊天 Mermaid 合同必须证明 `securityLevel: 'strict'`，依赖树必须只解析到已锁定的 Mermaid/uuid/SheetJS/SWC 版本。
 - 应用菜单打开的 URL 必须为 `/user-manual/index.html`，响应必须包含手册文档标记且不包含应用 `#root`；手册首页必须能跳转到 `advanced-settings.html` 等独立页面。
+- `NX_DAEMON=false pnpm exec nx build drawnix` 必须完成 JavaScript 与 `vite-plugin-dts` 声明输出，且不得包含 declaration diagnostics 或遗漏公开入口声明。
+- 项目 engines 必须限制为受验证的 Node 22.x，CI 与 Docker builder 必须使用同一精确 Node `22.23.2`；Docker builder 必须解析到已记录的 linux/amd64 manifest，冻结锁安装与根生产构建必须在精简镜像内通过，最终运行镜像仍只包含既有 Nginx 静态服务边界。
 
 ## Verification Evidence (2026-08-03)
 
@@ -167,8 +177,10 @@
 - CacheQuota 启动门槛合同为 3 files / 14 tests，目标 ESLint 0 errors，`drawnix:typecheck` exit 0；`isStartupOperable` 成立前零 idle 调度、零缓存 runtime 加载。
 - 最终全量 `pnpm test` 为 292 files / 2,218 tests（2,217 passed、1 skipped、0 failed），exit 0；`drawnix:typecheck`、`web:typecheck` 均 exit 0，`check:cycles` 为 0 cycles，`git diff --check` exit 0。
 - 最终 `NX_DAEMON=false pnpm exec nx build web` exit 0；`drawnix-app` 为 481,924B，入口静态图为 1,941,175B，所有单文件均不超过 512,000B。startup analyzer 9/9、release static 44/44、manual contract 14/14 均通过。
-- 用户手册 21 个生成页面完整性与版本合同已通过；实际静态首页为 18,467B，包含 `opentu-document=user-manual` 与 `opentu-manual-version=1.0.2`。最终菜单浏览器验收仍以 `tasks.md` 未勾选的 8.4 为准。
+- 最终 `NX_DAEMON=false pnpm exec nx build drawnix` exit 0；`vite-plugin-dts` 在 20.710s 完成声明生成，`unified-cache-runtime.d.ts` 只暴露显式缓存合同，`task-queue/index.d.ts` 以 `typeof _service` 引用现有 singleton，构建输出无 `TS4094` 或其他 TypeScript error。对应边界回归 5 files / 16 tests、目标 ESLint 与 `drawnix:typecheck` 均 exit 0。
+- 用户手册 21 个生成页面完整性与版本合同已通过；实际静态首页为 18,467B，包含 `opentu-document=user-manual` 与 `opentu-manual-version=1.0.2`。最终菜单浏览器验收也已完成：显式 URL、marker/version、sidebar/main、无 `#root` 与 `advanced-settings.html` 导航均正确。
 - SheetJS `0.20.3` 官方 tarball 的 SHA-512 integrity 已按锁文件值验证；生产审计覆盖 464 dependencies、0 vulnerabilities，exit 0。完整工具链审计覆盖 1,592 dependencies，剩余 3 moderate（2 个 `@swc/cli → downloader → file-type`、1 个 Nx 19 `nx graph` CORS），0 high/critical，exit 1。
+- Node 官方计划证据为 v20 end `2026-04-30`、v22 end `2027-04-30`；本机 Node `22.22.2` 已通过上述完整测试/类型/构建。Node `22.23.2-bookworm-slim` 候选经 registry manifest 与本机 inspect 确认为 linux/amd64、79,895,607B、88 个 Debian 包、Corepack `0.34.6`，对比现有 Node `20.20.2` 完整 builder 的 398,366,825B、413 个包，分别减少 79.9% 与 78.7%；该收益属于构建拉取/缓存/攻击面，不冒充浏览器启动或最终 Nginx 镜像体积收益。
 - 全仓 lint 仍为 exit 1：当前 433 errors / 2,441 warnings；HEAD 基线为 439 errors / 2,471 warnings，差值为 -6 errors / -30 warnings，本 change 新增 diagnostics 为 0。该结果不得误报为全仓 lint 通过。
 - 最终 10 次 cold/SW-off 语义门槛原始 operable 为 `[375,302,288,297,317,325,313,294,317,312]ms`，中位 313ms、最大 375ms；请求为 `[16,18,18,18,18,18,18,18,18,18]`，正文为 1 次 1,986,782B、9 次 1,989,484B。10/10 样本的 `unified-cache-service`、Asset runtime、Minimap、Chat/AI/工具/编辑器等禁止启动资源均为 0，页面错误、HTTP 和 request failure 均为 0。
 - 最终四组各 5 次 operable 原始值：cold/SW-off `[463,327,312,298,340]ms`（中位/最大 327/463），cold/SW-on `[316,337,323,313,326]ms`（323/337），warm/SW-off `[306,89,66,83,69]ms`（83/306），warm/SW-on `[329,736,736,116,69]ms`（329/736）。冷样本均为 18 请求、1,989,484B；warm 样本源站网络请求和正文均为 0。warm/SW-on 第 2 次记录到一次 `startup-app` `net::ERR_ABORTED`，但页面可操作；原探针未记录足以证明其阶段或原因的数据，因此不作归因。等待稳定 2 秒后追加 5 次 warm/SW-on 为 `[136,108,113,94,120]ms`，5/5 controller 正确且无 request/HTTP/page error，原异常未复现。

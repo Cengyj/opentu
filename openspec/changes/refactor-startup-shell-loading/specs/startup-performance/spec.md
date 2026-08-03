@@ -157,6 +157,16 @@
 - **THEN** 审计不得包含已知生产漏洞
 - **AND** Excel 往返与 Mermaid strict 合同必须同时通过，不能只以审计结果代替业务兼容验证
 
+#### Scenario: 构建 Node 使用受支持且可复现的版本
+
+- **WHEN** 在 CI 或发布 Dockerfile 中安装冻结锁并构建生产产物
+- **THEN** 项目 engines SHALL 限制为已验证且仍受维护的 Node 22.x
+- **AND** CI 与 Docker builder SHALL 使用相同的精确 Node patch 版本
+- **AND** linux/amd64 Docker builder SHALL 通过 manifest digest 固定 glibc slim 基础镜像，而不是使用浮动或已 EOL 的 major tag
+- **AND** 依赖清单未改变时，源码或 release identity 变化不得使 frozen dependency install 层失效
+- **AND** 精简 builder 内的冻结锁安装与根生产构建必须成功
+- **AND** builder 变化不得改变最终 Nginx 运行时、浏览器目标或应用数据/网络合同
+
 ### Requirement: 用户手册必须作为独立静态文档打开
 
 系统 SHALL 从应用菜单打开显式用户手册 HTML，并保证 Service Worker、静态发布和缓存不会用 SPA 应用壳替代该文档。
