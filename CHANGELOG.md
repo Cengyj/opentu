@@ -1,3 +1,13 @@
+## 1.0.5 (2026-08-03)
+
+### 🔧 Chores
+
+- perf: optimize startup and first-use loading (ce7c4a2)
+
+### ❤️  Thank You
+
+- Codex <codex@openai.com>
+
 ## 1.0.4 (2026-08-03)
 
 ### 🔧 Chores

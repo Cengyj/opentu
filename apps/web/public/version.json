@@ -1,7 +1,9 @@
 {
-  "version": "1.0.4",
-  "releaseId": "1.0.4-c272fbf606d9-2026-08-03T10-18-52.814Z",
-  "buildTime": "2026-08-03T10:18:52.814Z",
-  "gitCommit": "c272fbf606d9e9c8484779d142a35fcb97a4acf8",
-  "changelog": []
+  "version": "1.0.5",
+  "releaseId": "1.0.5-ce7c4a2bb541-2026-08-03T13-18-49.499Z",
+  "buildTime": "2026-08-03T13:18:49.499Z",
+  "gitCommit": "ce7c4a2bb541d48c52169b01eec30a6bde2d5dfe",
+  "changelog": [
+    "perf: optimize startup and first-use loading"
+  ]
 }

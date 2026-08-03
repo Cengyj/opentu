@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "1.0.5",
+      "date": "2026-08-03",
+      "changes": {
+        "features": [],
+        "fixes": [],
+        "improvements": [
+          "perf: optimize startup and first-use loading (ce7c4a2)"
+        ]
+      },
+      "type": "patch",
+      "highlights": "构建修复与稳定性改进"
+    },
+    {
       "version": "1.0.4",
       "date": "2026-08-03",
       "changes": {
@@ -806,19 +819,6 @@
       },
       "type": "patch",
       "highlights": "增强错误上下文收集并修复资源错误跟踪 (b1825467)"
-    },
-    {
-      "version": "0.6.57",
-      "date": "2026-04-23",
-      "changes": {
-        "features": [],
-        "fixes": [
-          "老用户沿用旧版壳并修正图层锁定失效路径 (2aed8ef9)"
-        ],
-        "improvements": []
-      },
-      "type": "patch",
-      "highlights": "老用户沿用旧版壳并修正图层锁定失效路径 (2aed8ef9)"
     }
   ]
 }
