@@ -153,6 +153,14 @@ export function DeferredAIInputBar({
   }, []);
 
   useEffect(() => {
+    if (!isDataReady || !isStartupOperable) {
+      return;
+    }
+
+    activate();
+  }, [activate, isDataReady, isStartupOperable]);
+
+  useEffect(() => {
     if (isDataReady) {
       setWorkspaceNoticeVisible(false);
     }

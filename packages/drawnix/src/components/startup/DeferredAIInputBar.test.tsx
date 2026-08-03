@@ -100,11 +100,21 @@ describe('DeferredAIInputBar', () => {
     ).toBe('idle');
   });
 
-  it('keeps the real composer core mounted without scheduling the full runtime while idle', () => {
-    const requestIdleCallback = vi.fn();
-    vi.stubGlobal('requestIdleCallback', requestIdleCallback);
+  it('automatically mounts the full runtime once startup and workspace data are ready', async () => {
+    const { rerender } = render(
+      <DeferredAIInputBar
+        isDataReady={false}
+        isStartupOperable
+        activationKey={0}
+      />
+    );
 
-    render(
+    expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('ai-input-textarea'), {
+      target: { value: '进度完成前输入的草稿' },
+    });
+
+    rerender(
       <DeferredAIInputBar
         isDataReady={true}
         isStartupOperable
@@ -112,19 +122,19 @@ describe('DeferredAIInputBar', () => {
       />
     );
 
-    expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '加载附件工具' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '智能' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '自动模型' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: '参数' })).toBeTruthy();
-    expect(requestIdleCallback).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(screen.queryByTestId('deferred-ai-input-bar')).toBeNull();
+    });
+    expect(
+      (screen.getByTestId('ai-input-textarea') as HTMLTextAreaElement).value
+    ).toBe('进度完成前输入的草稿');
   });
 
-  it('keeps focus and typing in the composer core without loading the runtime', () => {
+  it('keeps focus and typing in the composer core before startup completes', () => {
     render(
       <DeferredAIInputBar
         isDataReady={true}
-        isStartupOperable
+        isStartupOperable={false}
         activationKey={0}
       />
     );
@@ -138,11 +148,11 @@ describe('DeferredAIInputBar', () => {
     expect(runtimeEvents).toEqual([]);
   });
 
-  it('loads the full runtime only after an explicit advanced-control action', async () => {
+  it('allows an explicit advanced-control action to load the runtime early', async () => {
     render(
       <DeferredAIInputBar
         isDataReady={true}
-        isStartupOperable
+        isStartupOperable={false}
         activationKey={0}
       />
     );
@@ -158,7 +168,7 @@ describe('DeferredAIInputBar', () => {
     render(
       <DeferredAIInputBar
         isDataReady={false}
-        isStartupOperable
+        isStartupOperable={false}
         activationKey={0}
       />
     );

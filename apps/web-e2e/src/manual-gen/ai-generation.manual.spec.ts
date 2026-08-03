@@ -39,15 +39,9 @@ test.describe('AI 生成功能手册', () => {
       }),
     });
 
-    // 步骤 0: 高级控件首次使用时加载完整 AI 运行时（带标注）
-    const deferredAIInputBar = page.getByTestId('deferred-ai-input-bar');
-    await expect(deferredAIInputBar).toBeVisible();
-    await deferredAIInputBar
-      .getByRole('button', { name: '自动模型', exact: true })
-      .click();
-
+    // 步骤 0: 启动进度完成后，完整 AI 输入栏已经可用（带标注）
     const aiInputBar = page.getByTestId('ai-input-bar');
-    await expect(aiInputBar).toBeVisible();
+    await expect(aiInputBar).toBeVisible({ timeout: 10000 });
     const textarea = aiInputBar.getByTestId('ai-input-textarea');
     await expect(textarea).toBeVisible();
     await textarea.click();
@@ -143,14 +137,9 @@ test.describe('AI 生成功能手册', () => {
       }),
     });
 
-    // 高级控件首次使用时加载完整 AI 运行时，再聚焦输入框显示灵感板。
-    const deferredAIInputBar = page.getByTestId('deferred-ai-input-bar');
-    await expect(deferredAIInputBar).toBeVisible();
-    await deferredAIInputBar
-      .getByRole('button', { name: '自动模型', exact: true })
-      .click();
+    // 启动进度完成后完整运行时已就绪，再聚焦输入框显示灵感板。
     const aiInputBar = page.getByTestId('ai-input-bar');
-    await expect(aiInputBar).toBeVisible();
+    await expect(aiInputBar).toBeVisible({ timeout: 10000 });
     const textarea = aiInputBar.getByTestId('ai-input-textarea');
     await expect(textarea).toBeVisible();
     await textarea.click();

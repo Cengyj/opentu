@@ -17,23 +17,14 @@ test.describe('@feature 功能测试', () => {
     await page.waitForTimeout(2000);
 
     // === AI 输入栏功能（必须通过）===
-    const aiInput = page.locator('[data-testid="ai-input-textarea"]');
+    // 启动进度完成后自动显示完整 AI 输入栏。
+    const runtimeAIInputBar = page.getByTestId('ai-input-bar');
+    await expect(runtimeAIInputBar).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('deferred-ai-input-bar')).toHaveCount(0);
+    const aiInput = runtimeAIInputBar.getByTestId('ai-input-textarea');
     await expect(aiInput).toBeVisible();
     await aiInput.fill('生成一张美丽的风景图片');
     await expect(aiInput).toHaveValue('生成一张美丽的风景图片');
-
-    // 轻壳保留首屏输入能力；高级控件首次使用时才加载完整运行时。
-    const deferredAIInputBar = page.getByTestId('deferred-ai-input-bar');
-    await expect(deferredAIInputBar).toBeVisible();
-    await deferredAIInputBar
-      .getByRole('button', { name: '自动模型', exact: true })
-      .click();
-
-    const runtimeAIInputBar = page.getByTestId('ai-input-bar');
-    await expect(runtimeAIInputBar).toBeVisible();
-    await expect(runtimeAIInputBar.getByTestId('ai-input-textarea')).toHaveValue(
-      '生成一张美丽的风景图片'
-    );
 
     // 模型选择器（必须通过）
     const modelSelector = page

@@ -65,11 +65,11 @@ test.describe('@smoke 核心功能验证', () => {
     await shapeBtn.click({ force: true }); // force: 避免 tooltip 拦截
     await page.waitForTimeout(100);
     
-    // 4. 首屏仅加载可输入轻壳，完整运行时由高级控件首次使用时激活
-    const deferredAIInputBar = page.getByTestId('deferred-ai-input-bar');
-    await expect(deferredAIInputBar).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('ai-input-bar')).toHaveCount(0);
-    const aiInput = deferredAIInputBar.getByTestId('ai-input-textarea');
+    // 4. 启动进度完成后自动显示完整 AI 输入栏
+    const aiInputBar = page.getByTestId('ai-input-bar');
+    await expect(aiInputBar).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('deferred-ai-input-bar')).toHaveCount(0);
+    const aiInput = aiInputBar.getByTestId('ai-input-textarea');
     await expect(aiInput).toBeVisible();
     await aiInput.fill('测试输入');
     await expect(aiInput).toHaveValue('测试输入');
@@ -133,15 +133,7 @@ test.describe('@smoke 核心功能验证', () => {
     );
     expect(maxRowsMetrics.overflowY).toBe('auto');
     
-    // 5. 模型选择器首次使用时升级完整运行时，并保留轻壳草稿
-    await deferredAIInputBar
-      .getByRole('button', { name: '自动模型', exact: true })
-      .click();
-    const aiInputBar = page.getByTestId('ai-input-bar');
-    await expect(aiInputBar).toBeVisible();
-    await expect(aiInputBar.getByTestId('ai-input-textarea')).toHaveValue(
-      '第1行\n第2行\n第3行\n第4行\n第5行\n第6行\n第7行'
-    );
+    // 5. 模型选择器（必须通过）
     const modelSelector = aiInputBar
       .getByTestId('model-selector')
       .first()
