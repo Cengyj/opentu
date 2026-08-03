@@ -1,9 +1,9 @@
 {
-  "version": "1.0.6",
-  "releaseId": "1.0.6-706b1b01dc9f-2026-08-03T16-58-07.721Z",
-  "buildTime": "2026-08-03T16:58:07.721Z",
-  "gitCommit": "706b1b01dc9f97c5a529c9063298c59d4bdb898f",
+  "version": "1.0.7",
+  "releaseId": "1.0.7-2c9928d122a6-2026-08-03T17-39-19.656Z",
+  "buildTime": "2026-08-03T17:39:19.656Z",
+  "gitCommit": "2c9928d122a6e38d4bfd8cd32d8e9f7b1210ea7e",
   "changelog": [
-    "stabilize deferred AI input CI checks"
+    "reveal full AI input after startup"
   ]
 }

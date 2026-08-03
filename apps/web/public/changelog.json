@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "1.0.7",
+      "date": "2026-08-03",
+      "changes": {
+        "features": [],
+        "fixes": [
+          "reveal full AI input after startup (2c9928d)"
+        ],
+        "improvements": []
+      },
+      "type": "patch",
+      "highlights": "reveal full AI input after startup (2c9928d)"
+    },
+    {
       "version": "1.0.6",
       "date": "2026-08-03",
       "changes": {
@@ -797,21 +810,6 @@
       },
       "type": "patch",
       "highlights": "添加CDN恢复探测和详细日志记录 (7559e132)"
-    },
-    {
-      "version": "0.6.60",
-      "date": "2026-04-23",
-      "changes": {
-        "features": [
-          "支持多供应商分组的模型健康状态显示 (f0eef23c)"
-        ],
-        "fixes": [
-          "稳定 service worker 分阶段加载与版本提交协议 (8051cd18)"
-        ],
-        "improvements": []
-      },
-      "type": "patch",
-      "highlights": "支持多供应商分组的模型健康状态显示 (f0eef23c)"
     }
   ]
 }

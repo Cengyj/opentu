@@ -1,3 +1,17 @@
+## 1.0.7 (2026-08-03)
+
+### 🩹 Fixes
+
+- reveal full AI input after startup (2c9928d)
+
+### 🔧 Chores
+
+- test: activate deferred AI runtime in manual flows (1212e8c)
+
+### ❤️  Thank You
+
+- Codex <codex@openai.com>
+
 ## 1.0.6 (2026-08-03)
 
 ### 🩹 Fixes
