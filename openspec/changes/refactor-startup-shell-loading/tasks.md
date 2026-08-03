@@ -58,7 +58,7 @@
 - [x] 7.5 记录完整工具链审计剩余风险：1,592 dependencies、3 moderate、0 high/critical，exit 1；其中 2 个来自 `@swc/cli → downloader → file-type`、1 个来自 Nx 19 `nx graph` CORS，不把生产审计通过误写为全依赖无风险
 - [x] 7.6 根据 Node 官方发布计划将项目 engines 收敛到 22.x，并将 CI 与 Docker builder 从 2026-04-30 已 EOL 的 Node 20 迁移到精确版本 `22.23.2`；builder 固定 linux/amd64 `bookworm-slim@sha256:0f654709…c7e00`，frozen install 独立于源码和 release identity 形成可复用层；本机 Node 22 全量测试/类型/构建已通过，最终 slim builder 兼容性由本次 amd64 发布镜像构建复验
 - [x] 7.7 修复 Floating UI 四个导出 Hook 的 `TS2742` 非可移植声明，令 Vite 声明 diagnostics fail-closed，并增加独立 CI declaration-only 生成与关键文件/路径泄漏合同（3/3 测试、1,071 个真实声明扫描通过）
-- [ ] 7.8 将 GitHub quality、production build、production artifact smoke 拆成职责独立的 job；以六个 Nx 项目和 Drawnix Hover 的 schema v2 逐诊断 fingerprint/scope baseline 替换必然失败的裸 lint，补充新诊断、重复、动态消息、target/config/tool scope、文件退出扫描、Hover 崩溃、Nx 冷启动 JSON stdout、artifact 部分/完整重跑和单调 ratchet 合同，并等待新提交的 quality、main、smoke、release-e2e 四个 job 实际完成
+- [x] 7.8 将 GitHub quality、production build、production artifact smoke 拆成职责独立的 job；以六个 Nx 项目和 Drawnix Hover 的 schema v2 逐诊断 fingerprint/scope baseline 替换必然失败的裸 lint，补充新诊断、重复、动态消息、target/config/tool scope、文件退出扫描、Hover 崩溃、Nx 冷启动 JSON stdout、artifact 部分/完整重跑和单调 ratchet 合同；提交 `5184f16989dff8bf138def7f5ead7ecf2aee45b6` 的 GitHub run `30796609345` 已确认 quality、main、smoke、release-e2e 四个 job 全部 success
 
 ## 8. User Manual Static Document
 
