@@ -15,7 +15,35 @@ import { DeferredAIInputBar } from './DeferredAIInputBar';
 
 const runtimeEvents: string[] = [];
 
-afterEach(cleanup);
+interface IdleHarness {
+  callbacks: Map<number, () => void>;
+  requestIdleCallback: ReturnType<typeof vi.fn>;
+  cancelIdleCallback: ReturnType<typeof vi.fn>;
+}
+
+function installIdleHarness(): IdleHarness {
+  const callbacks = new Map<number, () => void>();
+  let nextId = 1;
+  const requestIdleCallback = vi.fn((callback: () => void) => {
+    const id = nextId++;
+    callbacks.set(id, callback);
+    return id;
+  });
+  const cancelIdleCallback = vi.fn((id: number) => {
+    callbacks.delete(id);
+  });
+
+  vi.stubGlobal('requestIdleCallback', requestIdleCallback);
+  vi.stubGlobal('cancelIdleCallback', cancelIdleCallback);
+
+  return { callbacks, requestIdleCallback, cancelIdleCallback };
+}
+
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 vi.mock('./AIInputBarRuntime', async () => {
   const ReactModule = await import('react');
@@ -69,6 +97,7 @@ describe('DeferredAIInputBar', () => {
     render(
       <DeferredAIInputBar
         isDataReady={true}
+        isStartupOperable={false}
         activationKey={0}
         onShellMounted={onShellMounted}
       />
@@ -78,8 +107,15 @@ describe('DeferredAIInputBar', () => {
     expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
   });
 
-  it('does not mount the full runtime before the first interaction', () => {
-    render(<DeferredAIInputBar isDataReady={true} activationKey={0} />);
+  it('does not schedule or mount the full runtime before startup is operable', () => {
+    const idle = installIdleHarness();
+    render(
+      <DeferredAIInputBar
+        isDataReady={true}
+        isStartupOperable={false}
+        activationKey={0}
+      />
+    );
 
     expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
     expect(
@@ -87,10 +123,116 @@ describe('DeferredAIInputBar', () => {
         .getByTestId('deferred-ai-input-bar')
         .getAttribute('data-load-status')
     ).toBe('idle');
+    expect(idle.requestIdleCallback).not.toHaveBeenCalled();
+  });
+
+  it('automatically mounts the full runtime when the painted shell becomes idle', async () => {
+    const idle = installIdleHarness();
+    const view = render(
+      <DeferredAIInputBar
+        isDataReady={true}
+        isStartupOperable={false}
+        activationKey={0}
+      />
+    );
+
+    view.rerender(
+      <DeferredAIInputBar
+        isDataReady={true}
+        isStartupOperable
+        activationKey={0}
+      />
+    );
+
+    expect(idle.requestIdleCallback).toHaveBeenCalledTimes(1);
+    expect(idle.requestIdleCallback).toHaveBeenCalledWith(
+      expect.any(Function),
+      { timeout: 1500 }
+    );
+    expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
+
+    act(() => {
+      idle.callbacks.get(1)?.();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('deferred-ai-input-bar')).toBeNull();
+    });
+    expect(screen.getByTestId('ai-input-textarea')).toBeTruthy();
+    expect(document.activeElement).not.toBe(
+      screen.getByTestId('ai-input-textarea')
+    );
+    expect(runtimeEvents).toEqual([]);
+  });
+
+  it('uses a bounded timer fallback when requestIdleCallback is unavailable', async () => {
+    vi.useFakeTimers();
+    render(
+      <DeferredAIInputBar
+        isDataReady={true}
+        isStartupOperable
+        activationKey={0}
+      />
+    );
+
+    act(() => vi.advanceTimersByTime(399));
+    expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByTestId('deferred-ai-input-bar')).toBeNull();
+    expect(screen.getByTestId('ai-input-textarea')).toBeTruthy();
+  });
+
+  it('cancels the idle activation and loads immediately on earlier interaction', async () => {
+    const idle = installIdleHarness();
+    render(
+      <DeferredAIInputBar
+        isDataReady={true}
+        isStartupOperable
+        activationKey={0}
+      />
+    );
+
+    expect(idle.requestIdleCallback).toHaveBeenCalledTimes(1);
+    fireEvent.focus(screen.getByTestId('ai-input-textarea'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('deferred-ai-input-bar')).toBeNull();
+    });
+    expect(idle.cancelIdleCallback).toHaveBeenCalledWith(1);
+    expect(idle.callbacks.has(1)).toBe(false);
+  });
+
+  it('cancels the pending idle activation when the shell unmounts', () => {
+    const idle = installIdleHarness();
+    const view = render(
+      <DeferredAIInputBar
+        isDataReady={true}
+        isStartupOperable
+        activationKey={0}
+      />
+    );
+    const staleCallback = idle.callbacks.get(1);
+
+    view.unmount();
+
+    expect(idle.cancelIdleCallback).toHaveBeenCalledWith(1);
+    act(() => staleCallback?.());
+    expect(screen.queryByTestId('ai-input-textarea')).toBeNull();
   });
 
   it('preserves a draft typed while the full runtime is loading', async () => {
-    render(<DeferredAIInputBar isDataReady={true} activationKey={0} />);
+    render(
+      <DeferredAIInputBar
+        isDataReady={true}
+        isStartupOperable={false}
+        activationKey={0}
+      />
+    );
 
     const shellInput = screen.getByTestId('ai-input-textarea');
     fireEvent.focus(shellInput);
@@ -105,7 +247,13 @@ describe('DeferredAIInputBar', () => {
   });
 
   it('replays one Enter submission after preserving the loading draft', async () => {
-    render(<DeferredAIInputBar isDataReady={true} activationKey={0} />);
+    render(
+      <DeferredAIInputBar
+        isDataReady={true}
+        isStartupOperable={false}
+        activationKey={0}
+      />
+    );
 
     const shellInput = screen.getByTestId('ai-input-textarea');
     fireEvent.change(shellInput, { target: { value: '加载后发送' } });
@@ -122,7 +270,11 @@ describe('DeferredAIInputBar', () => {
   it('replays a structured prefill event after runtime listeners are ready', async () => {
     render(
       <React.StrictMode>
-        <DeferredAIInputBar isDataReady={true} activationKey={0} />
+        <DeferredAIInputBar
+          isDataReady={true}
+          isStartupOperable={false}
+          activationKey={0}
+        />
       </React.StrictMode>
     );
 

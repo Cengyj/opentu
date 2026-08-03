@@ -30,7 +30,7 @@
 - [x] 5.1 先增加会因当前 `ai-chat`/`tool-windows` 回流与总预算而失败的产物级测试
 - [x] 5.2 从轻量 runtime 导出 analytics release API，并移除 bootstrap 对根 barrel 的静态依赖
 - [x] 5.3 增加轻量 Chat controller/命令队列，未打开时不挂载完整 ChatDrawer
-- [x] 5.4 增加等尺寸 AI 输入轻壳，完整 provider/model/workflow 依赖首次交互加载
+- [x] 5.4 增加等尺寸 AI 输入轻壳；完整 provider/model/workflow 依赖在首次交互立即加载，或在 `isStartupOperable` 后由可取消 idle 回调自动挂载；两条路径复用单飞 loader，自动挂载不聚焦、不提交
 - [x] 5.5 统一 Vite、idle manifest 与 validator 禁止组，入口静态图总 raw budget 设为 2,000,000B
 - [x] 5.6 补 Chat/AI 首次打开、命令排队/失败重试、AI 草稿/预填回放和初始化失败自动化回归测试
 - [x] 5.7 修复 CDN 配置无界等待/重复探测与 SW 普通 idle run 全量扩张
@@ -40,11 +40,12 @@
 - [x] 5.11 将可选画布浮层、ToolGenerator/工具设置与生图、PPT 图片操作、刷新活动任务检查移入首次真实操作的延迟边界
 - [x] 5.12 将 AppMenu、MoreTools、Asset/统一缓存、RetryImage/音频缓存、Minimap 和精细擦除移入各自真实激活或空闲边界；CacheQuota idle/runtime 消费统一 `isStartupOperable` 门槛，并增加单飞、失败重试、卸载防迟到与手势快照合同；延迟缓存边界以显式 `UnifiedCacheService` 公共接口约束声明输出，不泄露实现类的私有 IndexedDB 状态，运行时 singleton 与缓存语义不变（最终边界回归 5 files / 16 tests、目标 lint/typecheck 通过）
 - [ ] 5.13 在最终生产产物上复验任务/工作流恢复、初始化失败与 warm offline，不以旧构建或仅单元测试替代浏览器证据
+- [x] 5.14 修复 AI 输入轻壳只在交互后升级的问题：传递统一 `isStartupOperable` 门槛，以 1500ms idle timeout/400ms fallback 自动挂载完整运行时；更早交互取消回调并复用 loader，卸载取消，自动挂载不聚焦、不提交。组件合同 9/9、生产 smoke 3/3、零交互探针均通过
 
 ## 6. Reverification
 
 - [x] 6.1 运行最终相关 Vitest、App/SW 集成测试和 startup validator：`pnpm test` 292 files / 2,218 tests（2,217 passed、1 skipped、0 failed），startup analyzer 9/9、release static 44/44、manual contract 14/14，均 exit 0
-- [ ] 6.2 运行相关 Playwright smoke/feature/visual/responsive；Chromium 1200 已安装到隔离可写缓存，刚构建的 production artifact 经 `web:preview` 运行 smoke 3/3 通过，并修复延迟 AI 输入轻壳/完整运行时切换的测量竞态；feature/visual/responsive 全矩阵尚未全部执行，因此保持未完成
+- [ ] 6.2 运行相关 Playwright smoke/feature/visual/responsive；Chromium 1200 已安装到隔离可写缓存，最新 production artifact 经 `web:preview` 运行 smoke 3/3 通过，主画布合同在不点击/填写轻壳的情况下等待完整 AI 输入栏自动出现后继续验证；零交互独立探针记录 342ms 自动挂载、轻壳归零、无焦点抢占、应用请求失败 0。feature/visual/responsive 全矩阵尚未全部执行，因此保持未完成
 - [x] 6.3 运行 `drawnix:typecheck`、`web:typecheck`、相关回归、cycles、`git diff --check`、`NX_DAEMON=false pnpm exec nx build web`、`NX_DAEMON=false pnpm exec nx build drawnix --skip-nx-cache`、startup contract 与 `verify:startup`：类型检查/build/diff 均 exit 0，Drawnix JS 与 `vite-plugin-dts` 声明生成无 TypeScript diagnostics，0 cycles；独立 declaration-only 合同扫描 1,071 个声明且关键入口/浮层声明完整。最终 `drawnix-app` 481,924B、入口静态图 1,941,175B、所有单文件不超过 512,000B。全仓 lint 仍 exit 1，但当前 433 errors / 2,441 warnings 相对 HEAD 439 / 2,471 减少 6 / 30，本 change 新增 diagnostics 为 0
 - [x] 6.4 用同口径重跑四组各 5 次并报告原始值、中位数、范围、请求/正文和代价；另以 10 次 cold/SW-off 强制门槛确认中位 313ms、最大 375ms、18 请求、1,989,484B，禁止资源和页面/HTTP 失败均为 0。原四组 warm/SW-on 第 2 次有一次 `startup-app` `ERR_ABORTED`，页面仍可操作；稳定 2 秒后追加 5 次均未复现，保留原异常且不推测原因
 - [ ] 6.5 复审 Chat/AI 首次交互、任务/工作流恢复、升级、离线与多标签页路径（最终产物已验证 Chat/AI、菜单/工具/Minimap 和 warm offline；任务/工作流真实恢复、升级与多标签页浏览器路径仍未在本轮重新执行）

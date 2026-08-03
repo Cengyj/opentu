@@ -11,6 +11,7 @@ import './deferred-ai-input-bar.scss';
 
 interface DeferredAIInputBarProps {
   isDataReady: boolean;
+  isStartupOperable: boolean;
   activationKey: number;
   onEnableToolWindows?: () => void;
   onEnableRuntime?: () => void;
@@ -22,8 +23,32 @@ type PendingAIInputEvent =
   | { type: typeof AI_INPUT_FOCUS_EVENT; detail: AIInputFocusEventDetail }
   | { type: typeof AI_INPUT_PREFILL_EVENT; detail: AIInputPrefillEventDetail };
 
+const AI_INPUT_IDLE_TIMEOUT_MS = 1500;
+const AI_INPUT_FALLBACK_DELAY_MS = 400;
+
+function scheduleAIInputRuntimeLoad(callback: () => void): () => void {
+  const idleWindow = window as Window & {
+    requestIdleCallback?: (
+      idleCallback: () => void,
+      options?: { timeout: number }
+    ) => number;
+    cancelIdleCallback?: (id: number) => void;
+  };
+
+  if (typeof idleWindow.requestIdleCallback === 'function') {
+    const idleId = idleWindow.requestIdleCallback(callback, {
+      timeout: AI_INPUT_IDLE_TIMEOUT_MS,
+    });
+    return () => idleWindow.cancelIdleCallback?.(idleId);
+  }
+
+  const timer = window.setTimeout(callback, AI_INPUT_FALLBACK_DELAY_MS);
+  return () => window.clearTimeout(timer);
+}
+
 export function DeferredAIInputBar({
   isDataReady,
+  isStartupOperable,
   activationKey,
   onEnableToolWindows,
   onEnableRuntime,
@@ -46,6 +71,7 @@ export function DeferredAIInputBar({
   const pendingEventsRef = useRef<PendingAIInputEvent[]>([]);
   const replayTimerRef = useRef<number | null>(null);
   const submitTimerRef = useRef<number | null>(null);
+  const cancelIdleLoadRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -64,7 +90,13 @@ export function DeferredAIInputBar({
     onShellMounted?.();
   }, [onShellMounted]);
 
+  const cancelScheduledIdleLoad = useCallback(() => {
+    cancelIdleLoadRef.current?.();
+    cancelIdleLoadRef.current = null;
+  }, []);
+
   const activate = useCallback(() => {
+    cancelScheduledIdleLoad();
     if (runtimeRef.current || loadingRef.current) {
       return;
     }
@@ -92,7 +124,34 @@ export function DeferredAIInputBar({
         );
         setLoadStatus('error');
       });
-  }, []);
+  }, [cancelScheduledIdleLoad]);
+
+  useEffect(() => {
+    if (!isStartupOperable || runtimeRef.current || loadingRef.current) {
+      return;
+    }
+
+    let disposed = false;
+    const cancelScheduledLoad = scheduleAIInputRuntimeLoad(() => {
+      if (disposed) {
+        return;
+      }
+      cancelIdleLoadRef.current = null;
+      activate();
+    });
+    const cancelIdleLoad = () => {
+      disposed = true;
+      cancelScheduledLoad();
+    };
+    cancelIdleLoadRef.current = cancelIdleLoad;
+
+    return () => {
+      if (cancelIdleLoadRef.current === cancelIdleLoad) {
+        cancelIdleLoadRef.current = null;
+      }
+      cancelIdleLoad();
+    };
+  }, [activate, isStartupOperable]);
 
   useEffect(() => {
     if (activationKey <= 0) {

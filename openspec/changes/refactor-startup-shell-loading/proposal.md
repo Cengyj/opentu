@@ -10,6 +10,7 @@
 - 当前生产构建在 1280×720、本机回环网络、冷 origin、SW 关闭的 5 次样本中，画布可操作前每次收到 39 个服务器请求和 5,859,060B 无压缩正文；5/5 样本都包含 `ai-chat-*`、`tool-windows-*` 与 `DeferredAIInputBar-*`，可操作中位数 1174ms（1152–1276ms）。
 - 2026-08-03 复审确认启动页会无上限等待优先 CDN 的 `cdn-config.js`，且冷缓存下页面内三条调用链会重复探测同一 `version.json`；Service Worker 的普通 idle run 会把 manifest 所有分组追加到明确请求/default，当前产物可扩张到约 18.8MB，而不是只预取所请求的组。
 - 后续入口图追踪确认应用菜单、MoreTools、Minimap、Asset/缓存运行时和精细擦除布尔运算会在用户尚未使用这些能力时进入启动资源；按真实激活边界完成拆分并让 CacheQuota idle/runtime 消费统一 `isStartupOperable` 门槛后，最终生产构建的 `drawnix-app` 为 481,924B、入口静态图为 1,941,175B，所有单文件均不超过 512,000B，未通过提高预算完成验收。
+- 2026-08-03 本机复验发现 AI 输入轻壳没有自动升级路径：父级 `activationKey` 固定为 `0`，完整运行时 loader 只被 pointer/focus/input/Enter 或外部事件调用；SW idle prefetch 仅缓存资源，不挂载 React 运行时，因此用户不交互时占位轻壳会无限保留。完整输入栏应在统一 `isStartupOperable` 门槛后的浏览器空闲回调自动挂载，同时保留更早交互立即加载。
 - 用户手册故障的实际响应已定位：目录 URL `/user-manual/` 被 SPA fallback 返回主应用，而显式静态文档 `/user-manual/index.html` 返回带 `opentu-document=user-manual` 标记的真实手册。菜单入口和发布静态合同必须使用显式文档地址，不能依赖目录重写。
 - 生产依赖审计确认 Mermaid 10.9.3 位于实际聊天渲染链且存在已发布补丁；`xlsx@0.18.5` 也位于批量生图与模型基准的真实 Excel 导入/导出链。SheetJS 的 npm registry 版本不是修复来源，但上游官方 CDN 提供同一库的 `0.20.3` tarball，因此本 change 以真实中文字段、多工作表往返合同验证后升级，而不是更换解析器或继续保留已知风险版本。
 

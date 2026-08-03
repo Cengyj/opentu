@@ -65,17 +65,13 @@ test.describe('@smoke 核心功能验证', () => {
     await shapeBtn.click({ force: true }); // force: 避免 tooltip 拦截
     await page.waitForTimeout(100);
     
-    // 4. AI 输入栏交互（必须通过）
-    const deferredInput = page
-      .locator('[data-testid="ai-input-textarea"]')
-      .first();
-    await expect(deferredInput).toBeVisible();
-    await deferredInput.fill('测试输入');
-
+    // 4. AI 输入栏在首屏可操作后的 idle 阶段自动完成升级，不要求点击轻壳
     const aiInputBar = page.getByTestId('ai-input-bar');
     await expect(aiInputBar).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('deferred-ai-input-bar')).toHaveCount(0);
     const aiInput = aiInputBar.getByTestId('ai-input-textarea');
     await expect(aiInput).toBeVisible();
+    await aiInput.fill('测试输入');
     await expect(aiInput).toHaveValue('测试输入');
 
     const getTextareaMetrics = () =>

@@ -50,7 +50,7 @@
 - Decision: Chat 使用轻量 context/controller 记录打开意图，只有首次打开或需要投递消息时才挂载完整 Drawer；挂载前的命令必须排队或由 state 驱动，不能静默丢失。
   - Alternatives considered: 保持 ChatDrawer 初始挂载，仅依赖浏览器缓存。
   - Why not chosen: 冷启动仍需下载、解析和执行完整 Chat 依赖，不符合未触发边界。
-- Decision: AI 输入在首屏保留等尺寸、可聚焦的轻壳以保持现有布局；完整 `WorkflowProvider`、`ModelHealthProvider`、模型目录与生成运行时在首次聚焦/输入/快捷键激活时加载。合格 idle 预取只能 warm cache，不能提前挂载业务副作用。
+- Decision: AI 输入在首屏保留等尺寸、可聚焦的轻壳以保持现有布局；完整 `WorkflowProvider`、`ModelHealthProvider`、模型目录与生成运行时在首次聚焦/输入/快捷键激活时立即加载，或在统一 `isStartupOperable` 门槛成立后的浏览器空闲回调自动挂载。显式交互会取消待执行 idle 回调并复用同一个单飞 loader；自动挂载不获取焦点、不提交请求。SW idle prefetch 仍只负责 warm cache，不能直接挂载 React 运行时或拥有业务副作用。
   - Alternatives considered: 画布可操作后再插入完整 AIInputBar。
   - Why not chosen: 会造成底部布局跳动并改变当前首屏视觉层级。
 - Decision: 可选画布浮层采用“首次真实激活后挂载并保留实例”的边界；PopupToolbar、LinkPopup、Pencil/Pen/Eraser settings 与 CleanConfirm 未激活时不进入 React 渲染图，激活后保持既有关闭动画、焦点和组件状态。
@@ -148,7 +148,7 @@
 1. 先增加产物级失败测试，证明当前 `ai-chat`/`tool-windows` 回流和总预算超限。
 2. 从 `runtime` 子入口导出 analytics release API，并切换 bootstrap 内部导入；保留根导出。
 3. 将 Chat 打开意图与命令队列迁移到轻量 controller，再条件挂载完整 Drawer。
-4. 将 AI 输入拆成等尺寸轻壳和首次交互加载的完整实现，不移动生成/任务数据所有权。
+4. 将 AI 输入拆成等尺寸轻壳和完整实现；首次交互立即加载，未交互时在 `isStartupOperable` 后的浏览器 idle 阶段自动升级，不移动生成/任务数据所有权。
 5. 统一 Vite/idle manifest/validator 的禁止组和 2,000,000B 总 raw budget；动态画布切换到专用 app 子入口，并按依赖层拆分不可避免的 vendor。
 6. 由窄到宽验证并重跑四组各 5 次基线；失败时按上述文件边界整体回滚，不执行数据清理或迁移。
 7. 验证 CDN 单飞/有界 fallback 与 SW 精确分组策略；release full-prewarm 继续覆盖全部非空分组。
@@ -162,7 +162,7 @@
 
 - 当前同机冷 origin、SW 关、1280×720、无 throttle、5 次口径下：可操作中位数不得高于 1174ms，范围上界不得高于 1276ms；入口前服务器正文不高于 2,000,000B，请求数不高于 30。
 - 热、SW 关同口径 5 次可操作中位数不高于 515ms（当前 468ms + 10% 容差）。
-- `ai-chat-*`、`diagram-engines-*`、`tool-windows-*`、`external-skills-*` JS 在未交互冷启动 5/5 样本中均不得由入口静态图请求；AI 轻壳自身 chunk 可存在，但不能静态依赖这些组。
+- `ai-chat-*`、`diagram-engines-*`、`tool-windows-*`、`external-skills-*` JS 在 `isStartupOperable` 成立前不得被请求，且始终不得进入入口静态依赖图；AI 轻壳自身 chunk 可存在。门槛成立后的 AI idle 自动升级属于受控动态加载，不得反向扩大入口静态图。
 - 首次 Chat/AI 激活 100ms 内出现可访问 loading/pressed 状态；本地热缓存下 5 次完成挂载的中位数不高于 1000ms。该指标必须新增修复前/后原始值。
 - warm SW 源站离线仍能进入可操作画布；初始化失败仍显示错误、日志、安全模式和调试入口。
 - 同视口/同主题前后截图中，未交互首屏 AI 输入容器位置和尺寸不变；浏览器报告 CLS 不高于 0.1，移动/平板无新溢出。
@@ -196,6 +196,7 @@
 - 最终非付费浏览器 smoke 已确认 AI 输入草稿、Chat、App Menu、MoreTools、Minimap 均可操作，模型/付费请求计数为 0；从 App Menu 打开的手册显式 URL、marker、版本、sidebar/main、无 `#root` 和 `advanced-settings.html` 导航均正确。Chat 完整运行时加载时外部 `https://foropencode.com/api/history/aggregated` 返回一次 HTTP 404，但没有页面异常且不影响本地功能，本 change 不把该外部状态接口响应隐写为通过。
 - warm SW 在源站离线时由 `http://127.0.0.1:7210/sw.js` 持续控制，83ms 重新进入可操作画布，页面错误、request failure 和 HTTP failure 均为 0。
 - 仓库 Playwright 要求的 Chromium 1200 已安装到隔离可写缓存；使用 `web:preview` 在独立端口服务刚构建的 `dist/apps/web` 后，3 个 smoke 全部通过。首次真实执行揭示旧测试会在延迟 AI 输入轻壳上过早测量高度；修正后先触发轻壳、验证草稿回放到完整 `AIInputBar`，再保持原 2px 阈值验证 4/6 行高度。feature/visual/responsive 全矩阵仍未因此被误标为完成。
+- 最新 AI 轻壳回归使用同一 production preview 证明无需交互即可升级：组件合同 9/9，smoke 3/3；独立 Chromium 探针未发送鼠标或键盘事件，观测到 `shellSeen=true`、`runtimeSeen=true`、342ms 自动挂载、残留轻壳 0、active test id 为 null、空草稿、应用 request/page failure 为 0。实际 `localhost:7200` 同口径为 831ms、残留轻壳 0、应用 failure 0；额外 fetch/xhr 审计的供应商提交请求为 0，仅观测到既有 performance history GET。外部 `cdn.jsdelivr.net/.../cdn-config.js` 因 CSP 失败被单独记录，既有有界本地 fallback 后页面和完整输入栏仍成功挂载，不把该外部失败隐写为通过。
 - `openspec validate refactor-startup-shell-loading --strict` 仍因 `openspec: command not found` 以 exit 127 结束；strict validation 明确未完成。仓库 Playwright 全矩阵以及任务/工作流真实恢复、升级、多标签页浏览器路径仍由 `tasks.md` 的未勾选项跟踪，不由构建、合同测试或已完成的浏览器 smoke 替代。
 
 ## Rollback
