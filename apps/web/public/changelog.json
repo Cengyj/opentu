@@ -1,6 +1,19 @@
 {
   "versions": [
     {
+      "version": "1.0.4",
+      "date": "2026-08-03",
+      "changes": {
+        "features": [],
+        "fixes": [],
+        "improvements": [
+          "remove tracked temporary source copy (c272fbf)"
+        ]
+      },
+      "type": "patch",
+      "highlights": "构建修复与稳定性改进"
+    },
+    {
       "version": "1.0.3",
       "date": "2026-08-03",
       "changes": {
@@ -806,21 +819,6 @@
       },
       "type": "patch",
       "highlights": "老用户沿用旧版壳并修正图层锁定失效路径 (2aed8ef9)"
-    },
-    {
-      "version": "0.6.56",
-      "date": "2026-04-23",
-      "changes": {
-        "features": [],
-        "fixes": [
-          "将 SW 升级切换改为整包 ready 后再接管 (6c482936)"
-        ],
-        "improvements": [
-          "更新版本号至0.6.55并刷新构建时间 (7610ed5e)"
-        ]
-      },
-      "type": "patch",
-      "highlights": "将 SW 升级切换改为整包 ready 后再接管 (6c482936)"
     }
   ]
 }

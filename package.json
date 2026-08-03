@@ -1,6 +1,6 @@
 {
   "name": "@aitu/source",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "license": "MIT",
   "packageManager": "pnpm@10.21.0",
   "engines": {

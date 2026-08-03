@@ -1,3 +1,13 @@
+## 1.0.4 (2026-08-03)
+
+### 🔧 Chores
+
+- remove tracked temporary source copy (c272fbf)
+
+### ❤️  Thank You
+
+- Codex <codex@openai.com>
+
 ## 1.0.3 (2026-08-03)
 
 ### 🚀 Features

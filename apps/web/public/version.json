@@ -1,9 +1,7 @@
 {
-  "version": "1.0.3",
-  "releaseId": "1.0.3-cb60a0facb2b-2026-08-03T09-56-29.277Z",
-  "buildTime": "2026-08-03T09:56:29.277Z",
-  "gitCommit": "cb60a0facb2b7b2b24275c1f5610f329bc8bb1d3",
-  "changelog": [
-    "perf: harden startup loading and dependency security"
-  ]
+  "version": "1.0.4",
+  "releaseId": "1.0.4-c272fbf606d9-2026-08-03T10-18-52.814Z",
+  "buildTime": "2026-08-03T10:18:52.814Z",
+  "gitCommit": "c272fbf606d9e9c8484779d142a35fcb97a4acf8",
+  "changelog": []
 }
