@@ -39,15 +39,18 @@ test.describe('AI 生成功能手册', () => {
       }),
     });
 
-    // 步骤 0: 展示 AI 输入框（带标注）
+    // 步骤 0: 首次点击输入框，加载完整 AI 控件（带标注）
     const textarea = page.locator('[data-testid="ai-input-textarea"]');
-    const modelSelector = page
-      .getByTestId('ai-input-bar')
+    await expect(textarea).toBeVisible();
+    await textarea.click();
+
+    const aiInputBar = page.getByTestId('ai-input-bar');
+    await expect(aiInputBar).toBeVisible();
+    const modelSelector = aiInputBar
       .getByTestId('model-selector')
       .first()
       .locator('button[aria-haspopup="listbox"]');
 
-    await expect(textarea).toBeVisible();
     await expect(modelSelector).toBeVisible();
     
     const annotations0: Annotation[] = [];
@@ -124,9 +127,10 @@ test.describe('AI 生成功能手册', () => {
       description: JSON.stringify({
         category: 'ai-generation',
         title: '使用灵感创意板',
-        description: '当画布为空时，灵感创意板会显示推荐的创作模板',
+        description: '画布为空时，点击 AI 输入框可显示推荐的创作模板',
         steps: [
-          '在空画布上，灵感创意板自动显示',
+          '在空画布上点击底部 AI 输入框',
+          '等待灵感创意板显示',
           '浏览不同的创意模板',
           '点击感兴趣的模板',
           '模板的提示词会自动填充到输入框',
@@ -134,8 +138,11 @@ test.describe('AI 生成功能手册', () => {
       }),
     });
 
-    // 等待灵感板显示
-    await page.waitForTimeout(1000);
+    // 首次真实交互会加载完整 AI 运行时和灵感板。
+    const textarea = page.locator('[data-testid="ai-input-textarea"]');
+    await expect(textarea).toBeVisible();
+    await textarea.click();
+    await expect(page.getByTestId('ai-input-bar')).toBeVisible();
     
     // 灵感创意板标题（必须通过）
     const inspirationTitle = page.getByRole('heading', { name: '灵感创意', level: 3 });
@@ -163,7 +170,6 @@ test.describe('AI 生成功能手册', () => {
     await page.waitForTimeout(500);
     
     // 点击后显示提示词已填充
-    const textarea = page.locator('[data-testid="ai-input-textarea"]');
     const annotations2: Annotation[] = [];
     const textareaHighlight = await highlightElement(textarea, '提示词已填充');
     if (textareaHighlight) annotations2.push(textareaHighlight);
