@@ -44,7 +44,6 @@ import {
   DrawnixBoard,
   DrawnixContext,
   DrawnixState,
-  DialogType,
   useDrawnix,
 } from './hooks/use-drawnix';
 import { ClosePencilToolbar } from './components/toolbar/pencil-mode-toolbar';

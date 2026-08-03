@@ -13,7 +13,7 @@ const sourceRoots = sourceRootPaths.map((relativePath) =>
 );
 
 const allowedNativeTitleFiles = new Set([
-  path.join('src', 'components', 'MarkdownReadonly', 'index.tsx'),
+  'src/components/MarkdownReadonly/index.tsx',
 ]);
 
 function collectFiles(dir, files = []) {

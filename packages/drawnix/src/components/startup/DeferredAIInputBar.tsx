@@ -9,6 +9,53 @@ import {
 import type { AIInputBarRuntimeProps } from './AIInputBarRuntime';
 import './deferred-ai-input-bar.scss';
 
+const AI_INPUT_COLLAPSED_ROWS = 1;
+const AI_INPUT_EXPANDED_ROWS = 4;
+const AI_INPUT_MAX_ROWS = 6;
+
+function getTextareaHeightForRows(
+  textarea: HTMLTextAreaElement,
+  rows: number
+) {
+  const styles = window.getComputedStyle(textarea);
+  const fontSize = Number.parseFloat(styles.fontSize) || 15;
+  const lineHeight = Number.parseFloat(styles.lineHeight) || fontSize * 1.5;
+  const verticalSpacing =
+    Number.parseFloat(styles.paddingTop) +
+    Number.parseFloat(styles.paddingBottom) +
+    Number.parseFloat(styles.borderTopWidth) +
+    Number.parseFloat(styles.borderBottomWidth);
+
+  return Math.ceil(lineHeight * rows + verticalSpacing);
+}
+
+function resizeShellTextarea(
+  textarea: HTMLTextAreaElement | null,
+  expanded: boolean
+) {
+  if (!textarea) return;
+
+  if (!expanded) {
+    textarea.style.height = '';
+    textarea.style.overflowY = '';
+    return;
+  }
+
+  textarea.style.height = 'auto';
+  const contentHeight = textarea.scrollHeight;
+  const minHeight = getTextareaHeightForRows(
+    textarea,
+    AI_INPUT_EXPANDED_ROWS
+  );
+  const maxHeight = getTextareaHeightForRows(textarea, AI_INPUT_MAX_ROWS);
+
+  textarea.style.height = `${Math.min(
+    Math.max(contentHeight, minHeight),
+    maxHeight
+  )}px`;
+  textarea.style.overflowY = contentHeight > maxHeight ? 'auto' : 'hidden';
+}
+
 interface DeferredAIInputBarProps {
   isDataReady: boolean;
   isStartupOperable: boolean;
@@ -32,6 +79,7 @@ export function DeferredAIInputBar({
   onShellMounted,
 }: DeferredAIInputBarProps) {
   const [draft, setDraft] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
   const [loadStatus, setLoadStatus] = useState<
     'idle' | 'loading' | 'ready' | 'error'
   >('idle');
@@ -67,6 +115,12 @@ export function DeferredAIInputBar({
   useEffect(() => {
     onShellMounted?.();
   }, [onShellMounted]);
+
+  const shouldKeepExpanded = isFocused || draft.length > 0;
+
+  useEffect(() => {
+    resizeShellTextarea(shellInputRef.current, shouldKeepExpanded);
+  }, [draft, shouldKeepExpanded]);
 
   const activate = useCallback(() => {
     if (runtimeRef.current || loadingRef.current) {
@@ -306,7 +360,11 @@ export function DeferredAIInputBar({
           className="ai-input-bar__input deferred-ai-input-bar__input"
           value={draft}
           onFocus={() => {
+            setIsFocused(true);
             shouldFocusRef.current = true;
+          }}
+          onBlur={() => {
+            setIsFocused(false);
           }}
           onChange={(event) => {
             setDraft(event.target.value);
@@ -328,7 +386,11 @@ export function DeferredAIInputBar({
             }
           }}
           placeholder="描述你想要创建的内容"
-          rows={1}
+          rows={
+            shouldKeepExpanded
+              ? AI_INPUT_EXPANDED_ROWS
+              : AI_INPUT_COLLAPSED_ROWS
+          }
           data-testid="ai-input-textarea"
           aria-label="AI 输入"
           aria-busy={loadStatus === 'loading' || undefined}

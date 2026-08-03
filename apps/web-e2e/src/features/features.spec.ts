@@ -22,9 +22,23 @@ test.describe('@feature 功能测试', () => {
     await aiInput.fill('生成一张美丽的风景图片');
     await expect(aiInput).toHaveValue('生成一张美丽的风景图片');
 
+    // 轻壳保留首屏输入能力；高级控件首次使用时才加载完整运行时。
+    const deferredAIInputBar = page.getByTestId('deferred-ai-input-bar');
+    await expect(deferredAIInputBar).toBeVisible();
+    await deferredAIInputBar
+      .getByRole('button', { name: '自动模型', exact: true })
+      .click();
+
+    const runtimeAIInputBar = page.getByTestId('ai-input-bar');
+    await expect(runtimeAIInputBar).toBeVisible();
+    await expect(runtimeAIInputBar.getByTestId('ai-input-textarea')).toHaveValue(
+      '生成一张美丽的风景图片'
+    );
+
     // 模型选择器（必须通过）
     const modelSelector = page
-      .locator('[data-testid="model-selector"]')
+      .getByTestId('ai-input-bar')
+      .getByTestId('model-selector')
       .first();
     await expect(modelSelector).toBeVisible();
     await modelSelector.click();

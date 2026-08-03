@@ -495,8 +495,13 @@ async function lintScope(scope) {
 
 export function runCommand(command, args, { cwd = WORKSPACE_ROOT } = {}) {
   return new Promise((resolve, reject) => {
+    const requiresWindowsCommandShell =
+      process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(command);
     const child = spawn(command, args, {
       cwd,
+      // pnpm exposes Nx as a .cmd shim on Windows. Node cannot execute that
+      // shim directly, while Unix launchers remain normal executables.
+      shell: requiresWindowsCommandShell,
       env: {
         ...process.env,
         FORCE_COLOR: '0',
@@ -571,30 +576,31 @@ async function listNxLintProjects() {
 }
 
 async function loadNxLintTargets(projects) {
-  const entries = await Promise.all(
-    projects.map(async (project) => {
-      const result = await runCommand(
-        nxExecutablePath(),
-        ['show', 'project', project, '--json'],
-        { cwd: WORKSPACE_ROOT }
+  const entries = [];
+  // Nx's Windows command shim can race while several project-graph readers
+  // initialize at once. Six sequential reads are still cheap and deterministic.
+  for (const project of projects) {
+    const result = await runCommand(
+      nxExecutablePath(),
+      ['show', 'project', project, '--json'],
+      { cwd: WORKSPACE_ROOT }
+    );
+    if (result.code !== 0 || result.signal) {
+      throw new Error(
+        `Cannot inspect Nx lint target for ${project}: ${normalizeInlineText(
+          result.stderr || result.stdout || result.signal
+        )}`
       );
-      if (result.code !== 0 || result.signal) {
-        throw new Error(
-          `Cannot inspect Nx lint target for ${project}: ${normalizeInlineText(
-            result.stderr || result.stdout || result.signal
-          )}`
-        );
-      }
-      const configuration = parseStrictJsonOutput(
-        result.stdout,
-        `Nx project ${project}`
-      );
-      if (!configuration?.targets?.lint) {
-        throw new Error(`Nx project ${project} has no lint target`);
-      }
-      return [project, configuration.targets.lint];
-    })
-  );
+    }
+    const configuration = parseStrictJsonOutput(
+      result.stdout,
+      `Nx project ${project}`
+    );
+    if (!configuration?.targets?.lint) {
+      throw new Error(`Nx project ${project} has no lint target`);
+    }
+    entries.push([project, configuration.targets.lint]);
+  }
   return Object.fromEntries(entries);
 }
 
