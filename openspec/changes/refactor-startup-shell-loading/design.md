@@ -69,6 +69,7 @@
   - Alternatives considered: 移除 AssetProvider，或让每个消费者自行加载/初始化存储。
   - Why not chosen: 移除 provider 会改变现有消费者合同；分散初始化会产生重复读取、重复订阅和竞态。轻壳保留唯一状态所有权，运行时只承载延后实现。
   - Declaration boundary: 延迟缓存 runtime 只导出显式、稳定的 `UnifiedCacheService` 公共接口，不通过 `typeof import` 推导带 private IndexedDB 状态的实现 singleton 类型；该接口只约束声明边界，不创建第二个缓存服务。
+  - Declaration failure boundary: `useDialog`、`useDialogContext`、`usePopover` 和 `usePopoverContext` 必须以直接依赖 `@floating-ui/react` 的公开类型显式描述返回合同。`vite-plugin-dts` 的 diagnostics 不再只打印后继续成功，生成后也拒绝 pnpm 物理路径和未声明的 `@floating-ui/react-dom` 类型引用；CI 另以临时目录 declaration-only 编译确认关键入口和组件声明真实存在，避免被省略文件造成的假阳性扫描。
 - Decision: `precise-erase` 只在已完成的有效多点擦除手势中动态加载；Freehand 整体删除保持同步执行，精细擦除使用本笔路径、设置和支持元素快照。模块加载单飞但每笔手势独立执行，加载失败允许下一笔重试。
   - Alternatives considered: 启动时静态加载布尔运算，或合并并发手势为一次执行。
   - Why not chosen: 静态加载为所有用户支付精细擦除成本；合并手势会改变编辑语义。unsupported 元素仍按原有 precise execute 后的 live board 规则处理。
@@ -177,7 +178,7 @@
 - CacheQuota 启动门槛合同为 3 files / 14 tests，目标 ESLint 0 errors，`drawnix:typecheck` exit 0；`isStartupOperable` 成立前零 idle 调度、零缓存 runtime 加载。
 - 最终全量 `pnpm test` 为 292 files / 2,218 tests（2,217 passed、1 skipped、0 failed），exit 0；`drawnix:typecheck`、`web:typecheck` 均 exit 0，`check:cycles` 为 0 cycles，`git diff --check` exit 0。
 - 最终 `NX_DAEMON=false pnpm exec nx build web` exit 0；`drawnix-app` 为 481,924B，入口静态图为 1,941,175B，所有单文件均不超过 512,000B。startup analyzer 9/9、release static 44/44、manual contract 14/14 均通过。
-- 最终 `NX_DAEMON=false pnpm exec nx build drawnix` exit 0；`vite-plugin-dts` 在 20.710s 完成声明生成，`unified-cache-runtime.d.ts` 只暴露显式缓存合同，`task-queue/index.d.ts` 以 `typeof _service` 引用现有 singleton，构建输出无 `TS4094` 或其他 TypeScript error。对应边界回归 5 files / 16 tests、目标 ESLint 与 `drawnix:typecheck` 均 exit 0。
+- 最终 `NX_DAEMON=false pnpm exec nx build drawnix --skip-nx-cache` exit 0；发布收尾的未过滤构建曾揭示插件会打印 4 个 `TS2742` 后仍返回 0，并省略 `dialog.d.ts`、`popover.d.ts`。四个导出 Hook 改用 `@floating-ui/react` 的公开返回类型后，Vite 声明输出包含两个文件且无 diagnostics 或物理依赖路径；`pnpm run verify:drawnix-declarations` 另以 TypeScript declaration-only 编译扫描 1,071 个文件，合同测试 3/3、真实编译均 exit 0。`unified-cache-runtime.d.ts` 继续只暴露显式缓存合同，`task-queue/index.d.ts` 继续引用现有 singleton，不改变运行时实现。
 - 用户手册 21 个生成页面完整性与版本合同已通过；实际静态首页为 18,467B，包含 `opentu-document=user-manual` 与 `opentu-manual-version=1.0.2`。最终菜单浏览器验收也已完成：显式 URL、marker/version、sidebar/main、无 `#root` 与 `advanced-settings.html` 导航均正确。
 - SheetJS `0.20.3` 官方 tarball 的 SHA-512 integrity 已按锁文件值验证；生产审计覆盖 464 dependencies、0 vulnerabilities，exit 0。完整工具链审计覆盖 1,592 dependencies，剩余 3 moderate（2 个 `@swc/cli → downloader → file-type`、1 个 Nx 19 `nx graph` CORS），0 high/critical，exit 1。
 - Node 官方计划证据为 v20 end `2026-04-30`、v22 end `2027-04-30`；本机 Node `22.22.2` 已通过上述完整测试/类型/构建。Node `22.23.2-bookworm-slim` 候选经 registry manifest 与本机 inspect 确认为 linux/amd64、79,895,607B、88 个 Debian 包、Corepack `0.34.6`，对比现有 Node `20.20.2` 完整 builder 的 398,366,825B、413 个包，分别减少 79.9% 与 78.7%；该收益属于构建拉取/缓存/攻击面，不冒充浏览器启动或最终 Nginx 镜像体积收益。

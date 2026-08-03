@@ -10,6 +10,8 @@ import {
   FloatingFocusManager,
   FloatingOverlay,
   useId,
+  type UseFloatingReturn,
+  type UseInteractionsReturn,
 } from '@floating-ui/react';
 import './dialog.scss';
 
@@ -19,11 +21,21 @@ interface DialogOptions {
   onOpenChange?: (open: boolean) => void;
 }
 
+export type DialogReturn = UseFloatingReturn &
+  UseInteractionsReturn & {
+    open: boolean;
+    setOpen: (open: boolean) => void;
+    labelId: string | undefined;
+    descriptionId: string | undefined;
+    setLabelId: React.Dispatch<React.SetStateAction<string | undefined>>;
+    setDescriptionId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  };
+
 export function useDialog({
   initialOpen = false,
   open: controlledOpen,
   onOpenChange: setControlledOpen,
-}: DialogOptions = {}) {
+}: DialogOptions = {}): DialogReturn {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(initialOpen);
   const [labelId, setLabelId] = React.useState<string | undefined>();
   const [descriptionId, setDescriptionId] = React.useState<
@@ -63,18 +75,11 @@ export function useDialog({
   );
 }
 
-type ContextType =
-  | (ReturnType<typeof useDialog> & {
-      setLabelId: React.Dispatch<React.SetStateAction<string | undefined>>;
-      setDescriptionId: React.Dispatch<
-        React.SetStateAction<string | undefined>
-      >;
-    })
-  | null;
+type ContextType = DialogReturn | null;
 
 const DialogContext = React.createContext<ContextType>(null);
 
-export const useDialogContext = () => {
+export const useDialogContext = (): DialogReturn => {
   const context = React.useContext(DialogContext);
 
   if (context == null) {

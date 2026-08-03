@@ -71,6 +71,7 @@
     "npm:publish:skip-build": "node scripts/publish-npm.js --skip-build",
     "check:cycles": "node scripts/check-cycles.js",
     "check:cycles:types": "node scripts/check-cycles.js --include-types",
+    "verify:drawnix-declarations": "vitest run scripts/verify-drawnix-declarations.spec.mjs --no-file-parallelism --maxWorkers=1 && node scripts/verify-drawnix-declarations.mjs",
     "startup:contract:test": "vitest run scripts/startup-bundle-analyzer.spec.mjs --no-file-parallelism --maxWorkers=1",
     "verify:startup": "node scripts/validate-startup-bundle.js",
     "release:static:test": "vitest run scripts/release-static-contract.spec.mjs --no-file-parallelism --maxWorkers=1",

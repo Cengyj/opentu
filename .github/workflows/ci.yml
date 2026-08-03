@@ -45,6 +45,8 @@ jobs:
         run: pnpm run manual:test
       - name: Test release static contract
         run: pnpm run release:static:test
+      - name: Verify portable Drawnix declarations
+        run: pnpm run verify:drawnix-declarations
       - run: npx nx affected -t lint --exclude=drawnix --verbose
       - name: Build web production artifact
         id: build-web

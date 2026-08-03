@@ -40,6 +40,35 @@ export default defineConfig({
     dts({
       entryRoot: 'src',
       tsconfigPath: path.join(__dirname, 'tsconfig.lib.json'),
+      afterDiagnostic(diagnostics) {
+        if (diagnostics.length > 0) {
+          const diagnosticCodes = [
+            ...new Set(diagnostics.map(({ code }) => code)),
+          ].join(', ');
+          throw new Error(
+            `[drawnix:dts] Declaration generation reported TypeScript diagnostics: ${diagnosticCodes}`
+          );
+        }
+      },
+      afterBuild(emittedFiles) {
+        const nonPortableDeclarations = [...emittedFiles.entries()]
+          .filter(
+            ([filePath, content]) =>
+              filePath.endsWith('.d.ts') &&
+              (content.includes('node_modules/.pnpm') ||
+                content.includes('.pnpm/') ||
+                content.includes('@floating-ui/react-dom'))
+          )
+          .map(([filePath]) => path.relative(__dirname, filePath));
+
+        if (nonPortableDeclarations.length > 0) {
+          throw new Error(
+            `[drawnix:dts] Non-portable declaration references: ${nonPortableDeclarations.join(
+              ', '
+            )}`
+          );
+        }
+      },
     }),
   ],
 

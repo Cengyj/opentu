@@ -37,6 +37,7 @@
 - 将 Excel 依赖升级到 SheetJS 官方 `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`，以批量模板中文字段和模型基准多工作表往返合同保护现有业务格式
 - 将 Nx 19 / `@swc-node/register` 工具链使用的 `@swc-node/core` 精确锁定为与当前 SWC 依赖图兼容的 `1.13.3`，不在启动优化中进行 Nx、Vite 或 React 大版本迁移
 - 将项目 Node engines 收敛到受支持的 22.x，并将 CI 和 Docker builder 从已经结束维护的 Node 20 升级到精确的 Node `22.23.2`；Docker builder 固定到 linux/amd64 `bookworm-slim` manifest digest，保持 glibc 构建兼容并减少浮动镜像与无关构建包暴露面；依赖清单/frozen install 与源码/release identity 分层，避免普通源码提交重复下载依赖
+- 修复 Floating UI 对话框和浮层 Hook 的声明推断泄漏，以 `@floating-ui/react` 公开类型定义可移植返回合同；声明生成遇到 TypeScript diagnostics、缺失关键公开声明、pnpm 物理路径、绝对工作区路径或未声明的传递类型依赖时必须失败，并由独立 CI declaration-only 合同守护
 
 ## Impact
 

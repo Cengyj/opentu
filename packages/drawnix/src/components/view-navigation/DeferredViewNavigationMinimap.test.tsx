@@ -135,9 +135,10 @@ describe('DeferredViewNavigationMinimap', () => {
       />
     );
 
-    await waitFor(() => expect(runtimeMocks.load).toHaveBeenCalledTimes(1));
+    const minimap = await screen.findByTestId('loaded-minimap');
+    expect(runtimeMocks.load).toHaveBeenCalledTimes(1);
     expect(idle.requestIdleCallback).not.toHaveBeenCalled();
-    expect(screen.getByTestId('loaded-minimap')).toBeTruthy();
+    expect(minimap).toBeTruthy();
   });
 
   it('allows a failed chunk load to be retried', async () => {

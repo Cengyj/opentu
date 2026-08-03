@@ -10,9 +10,11 @@ import {
   useRole,
   useInteractions,
   useMergeRefs,
-  Placement,
   FloatingPortal,
   FloatingFocusManager,
+  type Placement,
+  type UseFloatingReturn,
+  type UseInteractionsReturn,
 } from '@floating-ui/react';
 
 interface PopoverOptions {
@@ -25,6 +27,17 @@ interface PopoverOptions {
   onOpenChange?: (open: boolean) => void;
 }
 
+export type PopoverReturn = UseFloatingReturn &
+  UseInteractionsReturn & {
+    open: boolean;
+    setOpen: (open: boolean) => void;
+    modal: boolean | undefined;
+    labelId: string | undefined;
+    descriptionId: string | undefined;
+    setLabelId: React.Dispatch<React.SetStateAction<string | undefined>>;
+    setDescriptionId: React.Dispatch<React.SetStateAction<string | undefined>>;
+  };
+
 export function usePopover({
   initialOpen = false,
   placement = 'bottom',
@@ -33,7 +46,7 @@ export function usePopover({
   crossAxisOffset,
   open: controlledOpen,
   onOpenChange: setControlledOpen,
-}: PopoverOptions = {}) {
+}: PopoverOptions = {}): PopoverReturn {
   const [uncontrolledOpen, setUncontrolledOpen] = React.useState(initialOpen);
   const [labelId, setLabelId] = React.useState<string | undefined>();
   const [descriptionId, setDescriptionId] = React.useState<
@@ -117,18 +130,11 @@ export function usePopover({
   );
 }
 
-type ContextType =
-  | (ReturnType<typeof usePopover> & {
-      setLabelId: React.Dispatch<React.SetStateAction<string | undefined>>;
-      setDescriptionId: React.Dispatch<
-        React.SetStateAction<string | undefined>
-      >;
-    })
-  | null;
+type ContextType = PopoverReturn | null;
 
 const PopoverContext = React.createContext<ContextType>(null);
 
-export const usePopoverContext = () => {
+export const usePopoverContext = (): PopoverReturn => {
   const context = React.useContext(PopoverContext);
 
   if (context == null) {
