@@ -41,6 +41,8 @@ export interface ToolboxDrawerProps {
   isOpen: boolean;
   /** 抽屉打开状态变化回调 */
   onOpenChange: (open: boolean) => void;
+  /** Enables the WinBox manager only for an actual window-open action. */
+  onEnableToolWindows?: () => void;
 }
 
 // Storage key for drawer width
@@ -52,6 +54,7 @@ export const TOOLBOX_DRAWER_WIDTH_KEY = 'toolbox-drawer-width';
 export const ToolboxDrawer: React.FC<ToolboxDrawerProps> = ({
   isOpen,
   onOpenChange,
+  onEnableToolWindows,
 }) => {
   const { board, appState, setAppState } = useDrawnix();
   const [searchQuery, setSearchQuery] = useState('');
@@ -225,6 +228,7 @@ export const ToolboxDrawer: React.FC<ToolboxDrawerProps> = ({
   const executeToolOpenWindow = useCallback(
     (tool: ToolDefinition) => {
       const isCustomTool = !toolRegistry.isBuiltInTool(tool.id);
+      onEnableToolWindows?.();
       // 存储原始模板 URL，在渲染时由 ToolWinBoxManager 替换
       toolWindowService.openTool(tool);
 
@@ -260,7 +264,7 @@ export const ToolboxDrawer: React.FC<ToolboxDrawerProps> = ({
       // 在窗口打开后，可以选择关闭抽屉，也可以保持打开
       handleClose();
     },
-    [handleClose]
+    [handleClose, onEnableToolWindows]
   );
 
   /**

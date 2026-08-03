@@ -8,6 +8,7 @@ import {
   updateViewportOffset,
   type Viewport,
   type PlaitBoard,
+  type PlaitBoardOptions,
 } from '@plait/core';
 import React from 'react';
 import {
@@ -73,9 +74,10 @@ const mockedGetElementRef = vi.mocked(PlaitElement.getElementRef);
 const renderBoard = (
   value: PlaitElement[],
   viewport?: Viewport,
-  afterInit?: (board: PlaitBoard) => void
+  afterInit?: (board: PlaitBoard) => void,
+  options: PlaitBoardOptions = {}
 ) => (
-  <Wrapper value={value} viewport={viewport} options={{}} plugins={[]}>
+  <Wrapper value={value} viewport={viewport} options={options} plugins={[]}>
     <Board afterInit={afterInit} />
   </Wrapper>
 );
@@ -129,6 +131,28 @@ describe('ReactBoard', () => {
     expect(mockedInitializeViewBox.mock.invocationCallOrder[0]).toBeLessThan(
       mockedUpdateViewportOffset.mock.invocationCallOrder[0]
     );
+  });
+
+  it('keeps the board readonly until the live options contract enables editing', async () => {
+    const value: PlaitElement[] = [];
+    let board: PlaitBoard | null = null;
+    const afterInit = (initializedBoard: PlaitBoard) => {
+      board = initializedBoard;
+    };
+
+    const { rerender } = render(
+      renderBoard(value, undefined, afterInit, { readonly: true })
+    );
+
+    await waitFor(() => {
+      expect(board?.options?.readonly).toBe(true);
+    });
+
+    rerender(renderBoard(value, undefined, afterInit, { readonly: false }));
+
+    await waitFor(() => {
+      expect(board?.options?.readonly).toBe(false);
+    });
   });
 
   it('clears stale history after replacing value props', async () => {

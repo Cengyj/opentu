@@ -44,6 +44,33 @@ function runWhenIdle(callback: () => void, timeout: number): () => void {
   return () => window.clearTimeout(timer);
 }
 
+function createCancellableDelay(delayMs: number): {
+  promise: Promise<void>;
+  cancel: () => void;
+} {
+  let timeoutId: number | undefined;
+  let resolveDelay: (() => void) | undefined;
+  let settled = false;
+
+  const finish = () => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
+    resolveDelay?.();
+  };
+
+  const promise = new Promise<void>((resolve) => {
+    resolveDelay = resolve;
+    timeoutId = window.setTimeout(finish, delayMs);
+  });
+
+  return { promise, cancel: finish };
+}
+
 export function DrawnixDeferredRuntime({
   board,
   value,
@@ -90,9 +117,14 @@ export function DrawnixDeferredRuntime({
       return;
     }
 
-    return runWhenIdle(() => {
+    let active = true;
+    const cancelIdle = runWhenIdle(() => {
       import('../../services/video-recovery-service')
         .then((videoRecoveryService) => {
+          if (!active) {
+            return;
+          }
+
           const initVideoRecoveryService =
             videoRecoveryService?.initVideoRecoveryService;
 
@@ -106,12 +138,19 @@ export function DrawnixDeferredRuntime({
           initVideoRecoveryService(board);
         })
         .catch((error) => {
-          console.warn(
-            '[DrawnixDeferredRuntime] Failed to load video recovery service:',
-            error
-          );
+          if (active) {
+            console.warn(
+              '[DrawnixDeferredRuntime] Failed to load video recovery service:',
+              error
+            );
+          }
         });
     }, 3000);
+
+    return () => {
+      active = false;
+      cancelIdle();
+    };
   }, [board]);
 
   useEffect(() => {
@@ -119,18 +158,34 @@ export function DrawnixDeferredRuntime({
       return;
     }
 
-    return runWhenIdle(() => {
+    let active = true;
+    let cancelRecoveryWait: (() => void) | null = null;
+    const cancelIdle = runWhenIdle(() => {
       const resumeTasks = async () => {
         try {
           const { workflowRecoveryPromise } = await import(
             '../../hooks/useWorkflowSubmission'
           );
-          await Promise.race([
-            workflowRecoveryPromise,
-            new Promise<void>((resolve) => window.setTimeout(resolve, 5000)),
-          ]);
+          if (!active) {
+            return;
+          }
+
+          const recoveryWait = createCancellableDelay(5000);
+          cancelRecoveryWait = recoveryWait.cancel;
+          try {
+            await Promise.race([workflowRecoveryPromise, recoveryWait.promise]);
+          } finally {
+            recoveryWait.cancel();
+            if (cancelRecoveryWait === recoveryWait.cancel) {
+              cancelRecoveryWait = null;
+            }
+          }
         } catch {
           // Ignore and continue.
+        }
+
+        if (!active) {
+          return;
         }
 
         const [{ fallbackMediaExecutor }, { taskQueueService }] =
@@ -138,6 +193,10 @@ export function DrawnixDeferredRuntime({
             import('../../services/media-executor/fallback-executor'),
             import('../../services/task-queue'),
           ]);
+        if (!active) {
+          return;
+        }
+
         const allTasks = taskQueueService.getAllTasks();
         fallbackMediaExecutor.resumePendingTasks((taskId, status, updates) => {
           taskQueueService.updateTaskStatus(taskId, status, updates);
@@ -145,12 +204,21 @@ export function DrawnixDeferredRuntime({
       };
 
       resumeTasks().catch((error) => {
-        console.error(
-          '[DrawnixDeferredRuntime] Failed to resume tasks:',
-          error
-        );
+        if (active) {
+          console.error(
+            '[DrawnixDeferredRuntime] Failed to resume tasks:',
+            error
+          );
+        }
       });
     }, 5000);
+
+    return () => {
+      active = false;
+      cancelIdle();
+      cancelRecoveryWait?.();
+      cancelRecoveryWait = null;
+    };
   }, [isTaskStorageReady]);
 
   useEffect(() => {
@@ -158,7 +226,8 @@ export function DrawnixDeferredRuntime({
       return;
     }
 
-    return runWhenIdle(() => {
+    let active = true;
+    const cancelIdle = runWhenIdle(() => {
       const restoreWorkZones = async () => {
         const [{ WorkZoneTransforms }, { TaskStatus }, { taskQueueService }] =
           await Promise.all([
@@ -166,6 +235,10 @@ export function DrawnixDeferredRuntime({
             import('../../types/task.types'),
             import('../../services/task-queue'),
           ]);
+
+        if (!active) {
+          return;
+        }
 
         const workzones = WorkZoneTransforms.getAllWorkZones(board);
 
@@ -275,12 +348,19 @@ export function DrawnixDeferredRuntime({
       };
 
       restoreWorkZones().catch((error) => {
-        console.error(
-          '[DrawnixDeferredRuntime] Failed to restore WorkZones:',
-          error
-        );
+        if (active) {
+          console.error(
+            '[DrawnixDeferredRuntime] Failed to restore WorkZones:',
+            error
+          );
+        }
       });
     }, 2000);
+
+    return () => {
+      active = false;
+      cancelIdle();
+    };
   }, [board, isTaskStorageReady, value]);
 
   useEffect(() => {
@@ -288,15 +368,24 @@ export function DrawnixDeferredRuntime({
       return;
     }
 
+    let active = true;
     let subscription: { unsubscribe: () => void } | null = null;
 
     const setupWorkflowSync = async () => {
       const workflowModule = await import(
         '../../services/workflow-submission-service'
       );
+      if (!active) {
+        return;
+      }
+
       const { WorkZoneTransforms } = await import(
         '../../plugins/with-workzone'
       );
+      if (!active) {
+        return;
+      }
+
       const { workflowSubmissionService } = workflowModule;
 
       subscription = workflowSubmissionService.subscribeToAllEvents((event) => {
@@ -415,13 +504,16 @@ export function DrawnixDeferredRuntime({
     };
 
     setupWorkflowSync().catch((error) => {
-      console.error(
-        '[DrawnixDeferredRuntime] Failed to setup workflow sync:',
-        error
-      );
+      if (active) {
+        console.error(
+          '[DrawnixDeferredRuntime] Failed to setup workflow sync:',
+          error
+        );
+      }
     });
 
     return () => {
+      active = false;
       subscription?.unsubscribe();
     };
   }, [board]);
@@ -431,14 +523,26 @@ export function DrawnixDeferredRuntime({
       return;
     }
 
+    let active = true;
     let subscription: { unsubscribe: () => void } | null = null;
 
     const setupTaskQueueSync = async () => {
       const { taskQueueService } = await import('../../services/task-queue');
+      if (!active) {
+        return;
+      }
+
       const { WorkZoneTransforms } = await import(
         '../../plugins/with-workzone'
       );
+      if (!active) {
+        return;
+      }
+
       const { TaskStatus } = await import('../../types/task.types');
+      if (!active) {
+        return;
+      }
 
       subscription = taskQueueService
         .observeTaskUpdates()
@@ -519,13 +623,16 @@ export function DrawnixDeferredRuntime({
     };
 
     setupTaskQueueSync().catch((error) => {
-      console.error(
-        '[DrawnixDeferredRuntime] Failed to sync task queue:',
-        error
-      );
+      if (active) {
+        console.error(
+          '[DrawnixDeferredRuntime] Failed to sync task queue:',
+          error
+        );
+      }
     });
 
     return () => {
+      active = false;
       subscription?.unsubscribe();
     };
   }, [board, isTaskStorageReady]);

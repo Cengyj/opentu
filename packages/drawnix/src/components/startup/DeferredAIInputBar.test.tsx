@@ -15,30 +15,6 @@ import { DeferredAIInputBar } from './DeferredAIInputBar';
 
 const runtimeEvents: string[] = [];
 
-interface IdleHarness {
-  callbacks: Map<number, () => void>;
-  requestIdleCallback: ReturnType<typeof vi.fn>;
-  cancelIdleCallback: ReturnType<typeof vi.fn>;
-}
-
-function installIdleHarness(): IdleHarness {
-  const callbacks = new Map<number, () => void>();
-  let nextId = 1;
-  const requestIdleCallback = vi.fn((callback: () => void) => {
-    const id = nextId++;
-    callbacks.set(id, callback);
-    return id;
-  });
-  const cancelIdleCallback = vi.fn((id: number) => {
-    callbacks.delete(id);
-  });
-
-  vi.stubGlobal('requestIdleCallback', requestIdleCallback);
-  vi.stubGlobal('cancelIdleCallback', cancelIdleCallback);
-
-  return { callbacks, requestIdleCallback, cancelIdleCallback };
-}
-
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -107,8 +83,7 @@ describe('DeferredAIInputBar', () => {
     expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
   });
 
-  it('does not schedule or mount the full runtime before startup is operable', () => {
-    const idle = installIdleHarness();
+  it('does not mount the full runtime before startup is operable', () => {
     render(
       <DeferredAIInputBar
         isDataReady={true}
@@ -123,20 +98,13 @@ describe('DeferredAIInputBar', () => {
         .getByTestId('deferred-ai-input-bar')
         .getAttribute('data-load-status')
     ).toBe('idle');
-    expect(idle.requestIdleCallback).not.toHaveBeenCalled();
   });
 
-  it('automatically mounts the full runtime when the painted shell becomes idle', async () => {
-    const idle = installIdleHarness();
-    const view = render(
-      <DeferredAIInputBar
-        isDataReady={true}
-        isStartupOperable={false}
-        activationKey={0}
-      />
-    );
+  it('keeps the real composer core mounted without scheduling the full runtime while idle', () => {
+    const requestIdleCallback = vi.fn();
+    vi.stubGlobal('requestIdleCallback', requestIdleCallback);
 
-    view.rerender(
+    render(
       <DeferredAIInputBar
         isDataReady={true}
         isStartupOperable
@@ -144,29 +112,33 @@ describe('DeferredAIInputBar', () => {
       />
     );
 
-    expect(idle.requestIdleCallback).toHaveBeenCalledTimes(1);
-    expect(idle.requestIdleCallback).toHaveBeenCalledWith(
-      expect.any(Function),
-      { timeout: 1500 }
-    );
     expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '加载附件工具' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '智能' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '自动模型' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '参数' })).toBeTruthy();
+    expect(requestIdleCallback).not.toHaveBeenCalled();
+  });
 
-    act(() => {
-      idle.callbacks.get(1)?.();
-    });
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('deferred-ai-input-bar')).toBeNull();
-    });
-    expect(screen.getByTestId('ai-input-textarea')).toBeTruthy();
-    expect(document.activeElement).not.toBe(
-      screen.getByTestId('ai-input-textarea')
+  it('keeps focus and typing in the composer core without loading the runtime', () => {
+    render(
+      <DeferredAIInputBar
+        isDataReady={true}
+        isStartupOperable
+        activationKey={0}
+      />
     );
+
+    const input = screen.getByTestId('ai-input-textarea');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: '首屏可编辑草稿' } });
+
+    expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
+    expect((input as HTMLTextAreaElement).value).toBe('首屏可编辑草稿');
     expect(runtimeEvents).toEqual([]);
   });
 
-  it('uses a bounded timer fallback when requestIdleCallback is unavailable', async () => {
-    vi.useFakeTimers();
+  it('loads the full runtime only after an explicit advanced-control action', async () => {
     render(
       <DeferredAIInputBar
         isDataReady={true}
@@ -174,55 +146,30 @@ describe('DeferredAIInputBar', () => {
         activationKey={0}
       />
     );
-
-    act(() => vi.advanceTimersByTime(399));
-    expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
-
-    await act(async () => {
-      vi.advanceTimersByTime(1);
-      await Promise.resolve();
-    });
-
-    expect(screen.queryByTestId('deferred-ai-input-bar')).toBeNull();
-    expect(screen.getByTestId('ai-input-textarea')).toBeTruthy();
-  });
-
-  it('cancels the idle activation and loads immediately on earlier interaction', async () => {
-    const idle = installIdleHarness();
-    render(
-      <DeferredAIInputBar
-        isDataReady={true}
-        isStartupOperable
-        activationKey={0}
-      />
-    );
-
-    expect(idle.requestIdleCallback).toHaveBeenCalledTimes(1);
-    fireEvent.focus(screen.getByTestId('ai-input-textarea'));
+    fireEvent.click(screen.getByRole('button', { name: '加载附件工具' }));
 
     await waitFor(() => {
       expect(screen.queryByTestId('deferred-ai-input-bar')).toBeNull();
     });
-    expect(idle.cancelIdleCallback).toHaveBeenCalledWith(1);
-    expect(idle.callbacks.has(1)).toBe(false);
+    expect(screen.getByTestId('ai-input-textarea')).toBeTruthy();
   });
 
-  it('cancels the pending idle activation when the shell unmounts', () => {
-    const idle = installIdleHarness();
-    const view = render(
+  it('blocks submission while the workspace is still restoring', () => {
+    render(
       <DeferredAIInputBar
-        isDataReady={true}
+        isDataReady={false}
         isStartupOperable
         activationKey={0}
       />
     );
-    const staleCallback = idle.callbacks.get(1);
 
-    view.unmount();
+    const input = screen.getByTestId('ai-input-textarea');
+    fireEvent.change(input, { target: { value: '不能在恢复时提交' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(idle.cancelIdleCallback).toHaveBeenCalledWith(1);
-    act(() => staleCallback?.());
-    expect(screen.queryByTestId('ai-input-textarea')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('正在恢复工作区');
+    expect(screen.getByTestId('deferred-ai-input-bar')).toBeTruthy();
+    expect(runtimeEvents).toEqual([]);
   });
 
   it('preserves a draft typed while the full runtime is loading', async () => {
@@ -237,6 +184,7 @@ describe('DeferredAIInputBar', () => {
     const shellInput = screen.getByTestId('ai-input-textarea');
     fireEvent.focus(shellInput);
     fireEvent.change(shellInput, { target: { value: '保留首个草稿' } });
+    fireEvent.click(screen.getByRole('button', { name: '加载附件工具' }));
 
     await waitFor(() => {
       expect(screen.queryByTestId('deferred-ai-input-bar')).toBeNull();

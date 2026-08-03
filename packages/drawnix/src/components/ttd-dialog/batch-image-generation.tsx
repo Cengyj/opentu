@@ -333,6 +333,7 @@ interface BatchImageGenerationProps {
   selectedModelRef?: ModelRef | null;
   onModelChange?: (value: string) => void;
   onModelRefChange?: (value: ModelRef | null) => void;
+  onEnableRuntime?: () => void;
 }
 
 const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
@@ -341,6 +342,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
   selectedModelRef: controlledSelectedModelRef,
   onModelChange,
   onModelRefChange,
+  onEnableRuntime,
 }) => {
   const { language } = useI18n();
   const { confirm, confirmDialog } = useConfirmDialog();
@@ -2183,6 +2185,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
           }
           // promptForApiKey 内部已经更新了 settings 并同步到 SW
         }
+        onEnableRuntime?.();
         const globalBatchTimestamp = Date.now();
         let subTaskCounter = 0;
         let submittedCount = 0;
@@ -2270,6 +2273,7 @@ const BatchImageGeneration: React.FC<BatchImageGenerationProps> = ({
       knowledgeContextRefs,
       language,
       normalizeRowParams,
+      onEnableRuntime,
       selectedModel,
       selectedModelRef,
       setTasks,

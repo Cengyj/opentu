@@ -108,6 +108,18 @@ interface CacheAssetLoadResult {
   metadataByNormalizedUrl: Map<string, CachedMedia>;
 }
 
+function getCachedMediaPathname(url: string): string {
+  if (url.startsWith('/')) {
+    return url;
+  }
+
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return url;
+  }
+}
+
 function isPlaybackCachePollution(
   item: Pick<CachedMedia, 'metadata'>,
   filename: string,
@@ -451,6 +463,64 @@ export function AssetProvider({
   const initializeRuntimePromiseRef =
     useRef<Promise<AssetContextRuntime> | null>(null);
   const assetOperationTailRef = useRef<Promise<void>>(Promise.resolve());
+  const assetProviderMountedRef = useRef(true);
+  const assetSizeIdleCallbackIdsRef = useRef<Set<number>>(new Set());
+  const assetSizeTimerIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(
+    new Set()
+  );
+
+  const scheduleAssetSizeWork = useCallback(
+    (
+      work: () => void | Promise<void>,
+      fallbackDelayMs: number,
+      idleTimeoutMs?: number
+    ) => {
+      if (!assetProviderMountedRef.current) {
+        return;
+      }
+
+      if (typeof window.requestIdleCallback === 'function') {
+        let callbackId = 0;
+        callbackId = window.requestIdleCallback(
+          () => {
+            assetSizeIdleCallbackIdsRef.current.delete(callbackId);
+            if (assetProviderMountedRef.current) {
+              void work();
+            }
+          },
+          idleTimeoutMs === undefined ? undefined : { timeout: idleTimeoutMs }
+        );
+        assetSizeIdleCallbackIdsRef.current.add(callbackId);
+        return;
+      }
+
+      const timerId = setTimeout(() => {
+        assetSizeTimerIdsRef.current.delete(timerId);
+        if (assetProviderMountedRef.current) {
+          void work();
+        }
+      }, fallbackDelayMs);
+      assetSizeTimerIdsRef.current.add(timerId);
+    },
+    []
+  );
+
+  useEffect(() => {
+    const idleCallbackIds = assetSizeIdleCallbackIdsRef.current;
+    const timerIds = assetSizeTimerIdsRef.current;
+    assetProviderMountedRef.current = true;
+    return () => {
+      assetProviderMountedRef.current = false;
+      for (const callbackId of idleCallbackIds) {
+        window.cancelIdleCallback?.(callbackId);
+      }
+      idleCallbackIds.clear();
+      for (const timerId of timerIds) {
+        clearTimeout(timerId);
+      }
+      timerIds.clear();
+    };
+  }, []);
 
   const runAssetOperation = useCallback(<T,>(operation: () => Promise<T>) => {
     const run = assetOperationTailRef.current
@@ -704,21 +774,16 @@ export function AssetProvider({
         // 直接从 IndexedDB 获取所有缓存媒体的元数据
         // 这比遍历 Cache Storage 快得多
         const cachedMediaList = await unifiedCacheService.getAllCachedMedia();
+        const cachedMediaPathnames = new Set(
+          cachedMediaList.map((item) => getCachedMediaPathname(item.url))
+        );
 
         const assets: Asset[] = [];
         const metadataByNormalizedUrl = new Map<string, CachedMedia>();
 
         for (const item of cachedMediaList) {
           // 统一使用 pathname
-          const pathname = item.url.startsWith('/')
-            ? item.url
-            : (() => {
-                try {
-                  return new URL(item.url).pathname;
-                } catch {
-                  return item.url;
-                }
-              })();
+          const pathname = getCachedMediaPathname(item.url);
 
           const isAituCache = isLegacyCacheUrl(pathname);
           const isAssetLibrary = isAssetLibraryUrl(pathname);
@@ -773,19 +838,7 @@ export function AssetProvider({
           let thumbnail: string | undefined;
           if (isAudio && item.metadata?.taskId) {
             const coverUrl = `/__aitu_cache__/image/${item.metadata.taskId}-cover.png`;
-            const hasCover = cachedMediaList.some((m) => {
-              const mPath = m.url.startsWith('/')
-                ? m.url
-                : (() => {
-                    try {
-                      return new URL(m.url).pathname;
-                    } catch {
-                      return m.url;
-                    }
-                  })();
-              return mPath === coverUrl;
-            });
-            if (hasCover) thumbnail = coverUrl;
+            if (cachedMediaPathnames.has(coverUrl)) thumbnail = coverUrl;
           }
 
           assets.push({
@@ -848,6 +901,10 @@ export function AssetProvider({
    * 合并本地上传的素材、任务队列中已完成的 AI 生成任务、以及 Cache Storage 中的媒体
    */
   const loadAssets = useCallback(async () => {
+    if (!assetProviderMountedRef.current) {
+      return;
+    }
+
     const now = Date.now();
     const lastSuccessfulLoad = lastSuccessfulLoadRef.current;
     const cachedAgeMs = lastSuccessfulLoad
@@ -863,21 +920,27 @@ export function AssetProvider({
     }
 
     const run = runAssetOperation(async () => {
+      if (!assetProviderMountedRef.current) {
+        return;
+      }
       setGlobalAssetMapStatus('loading');
       setLoading(true);
       setError(null);
 
       try {
         const runtime = await getInitializedRuntime();
-        // 1. 加载本地上传的素材（只包含 LOCAL 来源）
-        const localAssets = await runtime.assetStorageService.getAllAssets();
-
-        // 2. 从任务队列获取已完成的 AI 生成任务
-        // 统一从 IndexedDB 直接读取，SW 模式和降级模式使用同一个数据库
-        // includeArchived: 归档任务的媒体仍在 Cache Storage 中，需要读取元数据
-        const completedTasks = await runtime.taskStorageReader.getAssetTasks({
-          includeArchived: true,
-        });
+        // 本地素材和任务位于独立读取边界，且都不依赖对方；同时启动可避免
+        // 首次打开素材库时串行等待两次 IndexedDB 扫描。
+        const [localAssets, completedTasks] = await Promise.all([
+          runtime.assetStorageService.getAllAssets(),
+          runtime.taskStorageReader.getAssetTasks({
+            // 归档任务的媒体仍在 Cache Storage 中，需要读取元数据
+            includeArchived: true,
+          }),
+        ]);
+        if (!assetProviderMountedRef.current) {
+          return;
+        }
         const preliminaryAiAssets = completedTasks.flatMap(taskToAssets);
         const completedTaskIds = new Set(completedTasks.map((task) => task.id));
         const aiAssetUrls = new Set(
@@ -890,6 +953,9 @@ export function AssetProvider({
             completedTaskIds,
             completedTaskUrls: aiAssetUrls,
           });
+        if (!assetProviderMountedRef.current) {
+          return;
+        }
         const aiAssets = preliminaryAiAssets.map((asset) => {
           const cachedMetadata = metadataByNormalizedUrl.get(
             normalizeAssetUrl(asset.url)
@@ -983,73 +1049,68 @@ export function AssetProvider({
 
         // 7. 延迟异步填充缺失的文件大小（不阻塞加载）
         // 使用 requestIdleCallback 在浏览器空闲时执行
-        const fillMissingSizes = () => {
-          const assetsNeedingSize = allAssets.filter(
-            (a) => !a.size || a.size === 0
-          );
-          if (assetsNeedingSize.length === 0) return;
+        const assetsNeedingSize = allAssets.filter(
+          (asset) => !asset.size || asset.size === 0
+        );
+        if (assetsNeedingSize.length > 0) {
+          const fillMissingSizes = () => {
+            if (!assetProviderMountedRef.current) {
+              return;
+            }
+            // 分批获取，每批最多 10 个，避免一次性发起太多请求
+            const batchSize = 10;
+            let currentIndex = 0;
 
-          // 分批获取，每批最多 10 个，避免一次性发起太多请求
-          const batchSize = 10;
-          let currentIndex = 0;
-
-          const processBatch = async () => {
-            const batch = assetsNeedingSize.slice(
-              currentIndex,
-              currentIndex + batchSize
-            );
-            if (batch.length === 0) return;
-
-            const sizePromises = batch.map(async (asset) => {
-              const size = await runtime.getAssetSizeFromCache(asset.url);
-              return { id: asset.id, size };
-            });
-
-            const sizeResults = await Promise.all(sizePromises);
-            const sizeMap = new Map(
-              sizeResults
-                .filter((r) => r.size !== null && r.size > 0)
-                .map((r) => [r.id, r.size as number])
-            );
-
-            if (sizeMap.size > 0) {
-              setAssets((prev) =>
-                prev.map((asset) =>
-                  sizeMap.has(asset.id)
-                    ? { ...asset, size: sizeMap.get(asset.id) }
-                    : asset
-                )
+            const processBatch = async () => {
+              const batch = assetsNeedingSize.slice(
+                currentIndex,
+                currentIndex + batchSize
               );
-            }
+              if (batch.length === 0) return;
 
-            currentIndex += batchSize;
-            if (currentIndex < assetsNeedingSize.length) {
-              // 继续处理下一批
-              if ('requestIdleCallback' in window) {
-                (window as Window).requestIdleCallback(processBatch);
-              } else {
-                setTimeout(processBatch, 50);
+              const sizePromises = batch.map(async (asset) => {
+                const size = await runtime.getAssetSizeFromCache(asset.url);
+                return { id: asset.id, size };
+              });
+
+              const sizeResults = await Promise.all(sizePromises);
+              if (!assetProviderMountedRef.current) {
+                return;
               }
-            }
+              const sizeMap = new Map(
+                sizeResults
+                  .filter((r) => r.size !== null && r.size > 0)
+                  .map((r) => [r.id, r.size as number])
+              );
+
+              if (sizeMap.size > 0) {
+                setAssets((prev) =>
+                  prev.map((asset) =>
+                    sizeMap.has(asset.id)
+                      ? { ...asset, size: sizeMap.get(asset.id) }
+                      : asset
+                  )
+                );
+              }
+
+              currentIndex += batchSize;
+              if (currentIndex < assetsNeedingSize.length) {
+                // 继续处理下一批
+                scheduleAssetSizeWork(processBatch, 50);
+              }
+            };
+
+            // 启动第一批
+            scheduleAssetSizeWork(processBatch, 100);
           };
 
-          // 启动第一批
-          if ('requestIdleCallback' in window) {
-            (window as Window).requestIdleCallback(processBatch);
-          } else {
-            setTimeout(processBatch, 100);
-          }
-        };
-
-        // 使用 requestIdleCallback 延迟执行，不阻塞加载
-        if ('requestIdleCallback' in window) {
-          (window as Window).requestIdleCallback(fillMissingSizes, {
-            timeout: 3000,
-          });
-        } else {
-          setTimeout(fillMissingSizes, 200);
+          // 使用 requestIdleCallback 延迟执行，不阻塞加载
+          scheduleAssetSizeWork(fillMissingSizes, 200, 3000);
         }
       } catch (err: unknown) {
+        if (!assetProviderMountedRef.current) {
+          return;
+        }
         console.error('Failed to load assets:', err);
         setError(err instanceof Error ? err.message : String(err));
         setGlobalAssetMapStatus('error');
@@ -1059,7 +1120,9 @@ export function AssetProvider({
         });
       } finally {
         loadAssetsPromiseRef.current = null;
-        setLoading(false);
+        if (assetProviderMountedRef.current) {
+          setLoading(false);
+        }
       }
     });
 
@@ -1070,6 +1133,7 @@ export function AssetProvider({
     getAssetsFromCacheStorage,
     getInitializedRuntime,
     runAssetOperation,
+    scheduleAssetSizeWork,
   ]);
 
   // 供初始化 effect 延迟调用

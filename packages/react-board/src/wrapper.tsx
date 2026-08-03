@@ -201,6 +201,23 @@ export const Wrapper: React.FC<WrapperProps> = ({
   const isFirstRender = useRef(true);
   const prevViewportRef = useRef<Viewport | undefined>(viewport);
 
+  // `options` is a live contract. In particular, startup mounts a readonly
+  // shell and enables editing only after the persisted workspace is restored.
+  useEffect(() => {
+    if (board.options?.readonly === options.readonly) {
+      return;
+    }
+
+    board.options = {
+      ...board.options,
+      readonly: options.readonly,
+    };
+    setContext((prevContext) => ({
+      ...prevContext,
+      v: prevContext.v + 1,
+    }));
+  }, [board, options.readonly]);
+
   // 处理 viewport prop 变化（用于恢复保存的视图状态）
   useEffect(() => {
     const prevViewport = prevViewportRef.current;

@@ -56,8 +56,10 @@ import {
   type ContextMenuEntry,
 } from '../shared';
 import { ConfirmDialog } from '../dialog/ConfirmDialog';
-import { FramePanel } from './FramePanel';
-import { LayerPanel } from './LayerPanel';
+import {
+  DeferredFramePanel,
+  DeferredLayerPanel,
+} from './DeferredProjectDrawerPanels';
 import { DRAWER_PIN_KEYS } from '../../utils/drawer-pin';
 import type { MediaLibraryConfig } from '../../types/asset.types';
 import {
@@ -83,6 +85,8 @@ export interface ProjectDrawerProps {
       batchSelectButtonText?: string;
     }
   ) => void;
+  /** Enables the task/canvas integration runtime only when the PPT panel loads. */
+  onEnableGenerationRuntime?: () => void;
 }
 
 // Storage key for drawer width
@@ -1034,6 +1038,7 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
   onBeforeSwitch,
   onBoardSwitch,
   onOpenMediaLibrary,
+  onEnableGenerationRuntime,
 }) => {
   const {
     isLoading,
@@ -1781,11 +1786,12 @@ export const ProjectDrawer: React.FC<ProjectDrawerProps> = ({
         data-testid="project-drawer"
       >
         {activeTab === 'layers' ? (
-          <LayerPanel />
+          <DeferredLayerPanel />
         ) : activeTab === 'frames' ? (
-          <FramePanel
+          <DeferredFramePanel
             currentBoardName={currentBoard?.name}
             onOpenMediaLibrary={onOpenMediaLibrary}
+            onRuntimeRequired={onEnableGenerationRuntime}
           />
         ) : isLoading ? (
           <div className="project-drawer__loading">加载中...</div>

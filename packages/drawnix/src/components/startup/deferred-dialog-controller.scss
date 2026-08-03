@@ -1,0 +1,86 @@
+.deferred-dialog-controller {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(15 23 42 / 22%);
+  backdrop-filter: blur(2px);
+}
+
+.deferred-dialog-controller__card {
+  display: flex;
+  width: min(360px, 100%);
+  min-height: 180px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  color: var(--color-text-primary, #1f2937);
+  background: var(--color-bg, #fff);
+  border: 1px solid rgb(148 163 184 / 30%);
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgb(15 23 42 / 20%);
+}
+
+.deferred-dialog-controller__spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid rgb(148 163 184 / 35%);
+  border-top-color: var(--color-primary, #2563eb);
+  border-radius: 50%;
+  animation: deferred-dialog-controller-spin 800ms linear infinite;
+}
+
+.deferred-dialog-controller[data-load-status='failed']
+  .deferred-dialog-controller__spinner {
+  display: none;
+}
+
+.deferred-dialog-controller__title,
+.deferred-dialog-controller__status {
+  margin: 0;
+  text-align: center;
+}
+
+.deferred-dialog-controller__title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.deferred-dialog-controller__status {
+  max-width: 100%;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.deferred-dialog-controller__actions {
+  display: flex;
+  gap: 10px;
+}
+
+.deferred-dialog-controller__actions button {
+  min-width: 72px;
+  padding: 7px 14px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid rgb(148 163 184 / 55%);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+@keyframes deferred-dialog-controller-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deferred-dialog-controller__spinner {
+    animation: none;
+  }
+}

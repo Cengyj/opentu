@@ -105,7 +105,14 @@ export class CardGenerator {
     }
 
     this.reactRoot.render(
-      React.createElement(CardElement, { element })
+      React.createElement(CardElement, {
+        element,
+        onContentReady: () => {
+          if (this.htmlContainer && this.onHeightMeasured) {
+            this.onHeightMeasured(this.htmlContainer.offsetHeight);
+          }
+        },
+      })
     );
 
     // 兜底：foreignObject 内 ResizeObserver 可能不触发

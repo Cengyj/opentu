@@ -1,11 +1,4 @@
-import React, {
-  Suspense,
-  lazy,
-  useState,
-  useCallback,
-  useEffect,
-  useRef,
-} from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import classNames from 'classnames';
 import { ATTACHED_ELEMENT_CLASS_NAME } from '@plait/core';
 import { AppToolbar } from './app-toolbar/app-toolbar';
@@ -23,12 +16,7 @@ import {
 } from '../icons/startup-icons';
 import { DialogType, useDrawnix } from '../../hooks/use-drawnix';
 import { HoverTip } from '../shared/hover';
-
-const TaskQueuePanel = lazy(() =>
-  import('../task-queue/TaskQueuePanel').then((module) => ({
-    default: module.TaskQueuePanel,
-  }))
-);
+import { DeferredTaskQueuePanel } from './DeferredTaskQueuePanel';
 
 // 工具栏高度阈值: 当容器高度小于此值时切换到图标模式
 // 基于四个分区的最小高度 + 分割线 + padding 计算得出
@@ -166,6 +154,7 @@ export const UnifiedToolbar: React.FC<UnifiedToolbarProps> = React.memo(
     deferredFeaturesEnabled = false,
     minimizedToolsBarEnabled = false,
     onEnableToolWindows,
+    onEnableTaskRuntime,
   }) => {
     const [isIconMode, setIsIconMode] = useState(false);
     const [isMobileCollapsed, setIsMobileCollapsed] = useState(true); // 移动端默认收起
@@ -454,12 +443,11 @@ export const UnifiedToolbar: React.FC<UnifiedToolbarProps> = React.memo(
       <>
         {/* 任务队列面板 - 只在首次展开后才渲染 */}
         {hasEverExpanded.current && (
-          <Suspense fallback={null}>
-            <TaskQueuePanel
-              expanded={taskPanelExpanded && isTaskPanelAnimationReady}
-              onClose={handleTaskPanelClose}
-            />
-          </Suspense>
+          <DeferredTaskQueuePanel
+            expanded={taskPanelExpanded && isTaskPanelAnimationReady}
+            onClose={handleTaskPanelClose}
+            onRuntimeRequired={onEnableTaskRuntime}
+          />
         )}
 
         <Island

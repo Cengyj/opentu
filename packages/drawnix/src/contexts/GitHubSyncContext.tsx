@@ -234,6 +234,8 @@ export function GitHubSyncProvider({ children }: GitHubSyncProviderProps) {
       return;
     }
     initializedRef.current = true;
+    let disposed = false;
+    let cancelScheduledAutoSync: (() => void) | null = null;
     logDebug('GitHubSyncProvider initializing');
 
     const initialize = async () => {
@@ -244,6 +246,9 @@ export function GitHubSyncProvider({ children }: GitHubSyncProviderProps) {
       if (hasToken) {
         // 验证 Token 并获取用户信息（一次请求完成）
         const { isValid, userInfo: info } = await tokenService.validateAndGetUserInfo();
+        if (disposed) {
+          return;
+        }
         setIsConnected(isValid);
 
         if (isValid) {
@@ -251,6 +256,9 @@ export function GitHubSyncProvider({ children }: GitHubSyncProviderProps) {
 
           // 获取配置
           const syncConfig = await syncEngine.getConfig();
+          if (disposed) {
+            return;
+          }
           setConfig(syncConfig);
           setLastSyncTime(syncConfig.lastSyncTime);
 
@@ -260,18 +268,35 @@ export function GitHubSyncProvider({ children }: GitHubSyncProviderProps) {
             // 使用 requestIdleCallback 在浏览器空闲时执行
             const scheduleSync = () => {
               if ('requestIdleCallback' in window) {
-                (window as Window).requestIdleCallback(async () => {
+                const callbackId = (window as Window).requestIdleCallback(async () => {
+                  cancelScheduledAutoSync = null;
+                  if (disposed) {
+                    return;
+                  }
                   await performAutoSync();
                 }, { timeout: 3000 }); // 最多延迟 3 秒
+                cancelScheduledAutoSync = () => {
+                  (window as Window).cancelIdleCallback?.(callbackId);
+                };
               } else {
                 // Safari 不支持 requestIdleCallback，使用 setTimeout 兜底
-                setTimeout(async () => {
+                const timerId = setTimeout(async () => {
+                  cancelScheduledAutoSync = null;
+                  if (disposed) {
+                    return;
+                  }
                   await performAutoSync();
                 }, 1000);
+                cancelScheduledAutoSync = () => {
+                  clearTimeout(timerId);
+                };
               }
             };
 
             const performAutoSync = async () => {
+              if (disposed) {
+                return;
+              }
               try {
                 // 刷新媒体同步状态
                 mediaSyncService.refreshSyncStatus().catch(() => {});
@@ -280,6 +305,9 @@ export function GitHubSyncProvider({ children }: GitHubSyncProviderProps) {
                 // 使用 pullFromRemote 而不是双向 sync，以确保获取远程最新数据
                 logInfo('Auto-syncing from remote on page load (deferred)');
                 const result = await syncEngine.pullFromRemote();
+                if (disposed) {
+                  return;
+                }
                 if (result.success) {
                   logSuccess('Auto-sync from remote successful', result.downloaded);
                   // 更新最后同步时间
@@ -306,7 +334,7 @@ export function GitHubSyncProvider({ children }: GitHubSyncProviderProps) {
       setSyncStatus(syncEngine.getSyncStatus());
     };
 
-    initialize();
+    void initialize();
 
     // 监听同步状态变化
     const handleStatusChange = (status: SyncStatus, message?: string) => {
@@ -411,6 +439,9 @@ export function GitHubSyncProvider({ children }: GitHubSyncProviderProps) {
     logDebug('Workspace event subscription established');
 
     return () => {
+      disposed = true;
+      cancelScheduledAutoSync?.();
+      cancelScheduledAutoSync = null;
       syncEngine.removeStatusListener(handleStatusChange);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('beforeunload', handleBeforeUnload);

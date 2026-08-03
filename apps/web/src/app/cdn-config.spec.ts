@@ -8,50 +8,52 @@ const source = readFileSync(
   'utf8'
 );
 
-function createCDNWindow(status: number) {
+interface CDNApi {
+  selectBestCDN: () => Promise<{ cdn: string }>;
+  reselectCDN: () => Promise<{ cdn: string }>;
+  sources: Array<{ name: string }>;
+}
+
+function createCDNWindow(
+  setup?: (window: Window & typeof globalThis) => void
+) {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
     url: 'https://example.test/',
     runScripts: 'outside-only',
   });
   let sendCount = 0;
 
-  class FakeXMLHttpRequest {
-    timeout = 0;
-    status = status;
-    onload: (() => void) | null = null;
-    onerror: (() => void) | null = null;
-    ontimeout: (() => void) | null = null;
-
+  class UnexpectedXMLHttpRequest {
     open() {
       return undefined;
     }
 
     send() {
       sendCount += 1;
-      queueMicrotask(() => this.onload?.());
+      throw new Error('origin-only release must not probe a remote CDN');
     }
   }
 
   Object.defineProperty(dom.window, 'XMLHttpRequest', {
     configurable: true,
-    value: FakeXMLHttpRequest,
+    value: UnexpectedXMLHttpRequest,
   });
+  setup?.(dom.window);
   dom.window.eval(source);
 
   return {
     window: dom.window as unknown as Window & {
-      __OPENTU_CDN_API__: {
-        selectBestCDN: () => Promise<{ cdn: string }>;
-      };
+      __OPENTU_CDN_API__: CDNApi;
+      __OPENTU_CDN__: { cdn: string };
     },
     getSendCount: () => sendCount,
     close: () => dom.window.close(),
   };
 }
 
-describe('cdn-config startup selection', () => {
-  it('shares one in-flight probe across bootstrap callers', async () => {
-    const fixture = createCDNWindow(200);
+describe('cdn-config origin-only selection', () => {
+  it('publishes zero remote candidates and resolves local without probing', async () => {
+    const fixture = createCDNWindow();
 
     const results = await Promise.all([
       fixture.window.__OPENTU_CDN_API__.selectBestCDN(),
@@ -59,24 +61,34 @@ describe('cdn-config startup selection', () => {
       fixture.window.__OPENTU_CDN_API__.selectBestCDN(),
     ]);
 
-    expect(fixture.getSendCount()).toBe(1);
+    expect(fixture.window.__OPENTU_CDN_API__.sources).toEqual([]);
     expect(results.map((result) => result.cdn)).toEqual([
-      'jsdelivr',
-      'jsdelivr',
-      'jsdelivr',
+      'local',
+      'local',
+      'local',
     ]);
+    expect(fixture.getSendCount()).toBe(0);
     fixture.close();
   });
 
-  it('persists a bounded local fallback instead of probing again', async () => {
-    const fixture = createCDNWindow(503);
+  it('discards a historical jsdelivr preference without probing it', async () => {
+    const fixture = createCDNWindow((window) => {
+      window.localStorage.setItem(
+        'opentu-cdn-preference',
+        JSON.stringify({
+          cdn: 'jsdelivr',
+          latency: 20,
+          timestamp: Date.now(),
+        })
+      );
+    });
 
-    const first = await fixture.window.__OPENTU_CDN_API__.selectBestCDN();
-    const second = await fixture.window.__OPENTU_CDN_API__.selectBestCDN();
+    const preference =
+      await fixture.window.__OPENTU_CDN_API__.selectBestCDN();
 
-    expect(first.cdn).toBe('local');
-    expect(second.cdn).toBe('local');
-    expect(fixture.getSendCount()).toBe(1);
+    expect(preference.cdn).toBe('local');
+    expect(fixture.window.__OPENTU_CDN__.cdn).toBe('local');
+    expect(fixture.getSendCount()).toBe(0);
     expect(
       JSON.parse(
         fixture.window.localStorage.getItem('opentu-cdn-preference') || '{}'
@@ -85,24 +97,14 @@ describe('cdn-config startup selection', () => {
     fixture.close();
   });
 
-  it('starts a new single-flight probe after the persisted result expires', async () => {
-    const fixture = createCDNWindow(200);
+  it('keeps explicit reselection origin-only until a release injects candidates', async () => {
+    const fixture = createCDNWindow();
 
-    await fixture.window.__OPENTU_CDN_API__.selectBestCDN();
-    const stored = JSON.parse(
-      fixture.window.localStorage.getItem('opentu-cdn-preference') || '{}'
-    );
-    fixture.window.localStorage.setItem(
-      'opentu-cdn-preference',
-      JSON.stringify({ ...stored, timestamp: 0 })
-    );
+    const preference = await fixture.window.__OPENTU_CDN_API__.reselectCDN();
 
-    await Promise.all([
-      fixture.window.__OPENTU_CDN_API__.selectBestCDN(),
-      fixture.window.__OPENTU_CDN_API__.selectBestCDN(),
-    ]);
-
-    expect(fixture.getSendCount()).toBe(2);
+    expect(preference.cdn).toBe('local');
+    expect(fixture.window.__OPENTU_CDN_API__.sources).toHaveLength(0);
+    expect(fixture.getSendCount()).toBe(0);
     fixture.close();
   });
 });

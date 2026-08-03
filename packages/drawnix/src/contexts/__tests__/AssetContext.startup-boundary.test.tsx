@@ -71,9 +71,9 @@ vi.mock('../../utils/message-plugin', () => ({
 
 type IdleCallback = (deadline: IdleDeadline) => void;
 
-function createDeferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((resolvePromise) => {
+function createDeferred<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
     resolve = resolvePromise;
   });
   return { promise, resolve };
@@ -232,6 +232,46 @@ describe('AssetContext lazy storage runtime', () => {
     expect(runtime.taskStorageReader.getAssetTasks).not.toHaveBeenCalled();
   });
 
+  it('stops an explicit asset load after the provider unmounts', async () => {
+    const deferredAssets = createDeferred<Asset[]>();
+    runtime.assetStorageService.getAllAssets.mockReturnValueOnce(
+      deferredAssets.promise
+    );
+    const provider = renderHarness(false);
+
+    const loadPromise = provider.getValue().loadAssets();
+    await waitFor(() =>
+      expect(runtime.assetStorageService.getAllAssets).toHaveBeenCalledTimes(1)
+    );
+
+    provider.unmount();
+    await act(async () => {
+      deferredAssets.resolve([]);
+      await loadPromise;
+    });
+
+    expect(runtime.unifiedCacheService.getAllCachedMedia).not.toHaveBeenCalled();
+    expect(runtime.getAssetSizeFromCache).not.toHaveBeenCalled();
+  });
+
+  it('cancels deferred size work and ignores a late idle callback after unmount', async () => {
+    runtime.assetStorageService.getAllAssets.mockResolvedValueOnce([
+      { ...createLocalAsset('missing-size'), size: 0 },
+    ]);
+    const provider = renderHarness(false);
+
+    await act(async () => provider.getValue().loadAssets());
+
+    expect(idleCallbacks).toHaveLength(1);
+    provider.unmount();
+    expect(cancelledIdleIds).toEqual([1]);
+
+    await act(async () => idleCallbacks[0]({} as IdleDeadline));
+
+    expect(runtime.getAssetSizeFromCache).not.toHaveBeenCalled();
+    expect(idleCallbacks).toHaveLength(1);
+  });
+
   it('loads once on the first explicit request and preserves local/task projections', async () => {
     const localAsset = createLocalAsset();
     runtime.assetStorageService.getAllAssets.mockResolvedValue([localAsset]);
@@ -265,11 +305,85 @@ describe('AssetContext lazy storage runtime', () => {
       'image-task',
       'local-asset',
     ]);
+    expect(idleCallbacks).toHaveLength(1);
 
     await act(async () => idleCallbacks[0]({} as IdleDeadline));
 
     expect(runtime.assetStorageService.initialize).toHaveBeenCalledTimes(1);
     expect(runtime.assetStorageService.getAllAssets).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts independent local and task scans together before reading cache metadata', async () => {
+    const localAssets = createDeferred<Asset[]>();
+    const taskAssets = createDeferred<[]>();
+    runtime.assetStorageService.getAllAssets.mockReturnValueOnce(
+      localAssets.promise
+    );
+    runtime.taskStorageReader.getAssetTasks.mockReturnValueOnce(
+      taskAssets.promise
+    );
+    const provider = renderHarness(false);
+
+    let loadPromise!: Promise<void>;
+    act(() => {
+      loadPromise = provider.getValue().loadAssets();
+    });
+
+    await waitFor(() => {
+      expect(runtime.assetStorageService.getAllAssets).toHaveBeenCalledTimes(1);
+      expect(runtime.taskStorageReader.getAssetTasks).toHaveBeenCalledTimes(1);
+    });
+    expect(runtime.unifiedCacheService.getAllCachedMedia).not.toHaveBeenCalled();
+
+    await act(async () => {
+      localAssets.resolve([]);
+      await Promise.resolve();
+    });
+    expect(runtime.unifiedCacheService.getAllCachedMedia).not.toHaveBeenCalled();
+
+    await act(async () => {
+      taskAssets.resolve([]);
+      await loadPromise;
+    });
+    expect(runtime.unifiedCacheService.getAllCachedMedia).toHaveBeenCalledTimes(
+      1
+    );
+  });
+
+  it('resolves audio covers from one prebuilt cache pathname index', async () => {
+    runtime.unifiedCacheService.getAllCachedMedia.mockResolvedValue([
+      {
+        url: '/__aitu_cache__/audio/audio-task.mp3',
+        type: 'audio',
+        mimeType: 'audio/mpeg',
+        size: 2048,
+        cachedAt: 200,
+        lastUsed: 200,
+        metadata: {
+          taskId: 'audio-task',
+          name: 'audio-task.mp3',
+          prompt: 'audio prompt',
+        },
+      },
+      {
+        url: 'https://assets.example/__aitu_cache__/image/audio-task-cover.png',
+        type: 'image',
+        mimeType: 'image/png',
+        size: 1024,
+        cachedAt: 200,
+        lastUsed: 200,
+        metadata: {},
+      },
+    ]);
+    const provider = renderHarness();
+
+    await act(async () => provider.getValue().loadAssets());
+
+    expect(provider.getValue().assets).toHaveLength(1);
+    expect(provider.getValue().assets[0]).toMatchObject({
+      url: '/__aitu_cache__/audio/audio-task.mp3',
+      thumbnail: '/__aitu_cache__/image/audio-task-cover.png',
+    });
   });
 
   it('cleans the initialized storage service exactly once on unmount', async () => {
@@ -403,17 +517,17 @@ describe('AssetContext startup dependency contract', () => {
     expect(contextSource).toContain("import('./asset-context-runtime')");
     expect(contextSource).toContain('createRetriableModuleLoader');
     expect(contextSource).toContain('requestIdleCallback');
+    expect(contextSource).toContain('cachedMediaPathnames.has(coverUrl)');
+    expect(contextSource).not.toContain('cachedMediaList.some');
     expect(drawnixSource).toMatch(
       /usePostPaintOperability\(\s*board !== null && isAIInputShellMounted\s*\)/
     );
+    expect(drawnixSource).toContain('onShellMounted={onAIInputShellMounted}');
     expect(drawnixSource).toContain(
-      'onShellMounted={onAIInputShellMounted}'
-    );
-    expect(drawnixSource).toContain(
-      '<AssetProvider isStartupOperable={isStartupOperable}>'
+      '<AssetProvider isStartupOperable={isBackgroundOperable}>'
     );
     expect(drawnixSource).toMatch(
-      /<CacheQuotaProvider[\s\S]*?isStartupOperable=\{isStartupOperable\}/
+      /<CacheQuotaProvider[\s\S]*?isStartupOperable=\{isBackgroundOperable\}/
     );
     expect(contextSource).not.toContain("from '../services/task-queue'");
     for (const implementation of heavyImplementations) {

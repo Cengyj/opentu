@@ -8,6 +8,11 @@ import path from 'path';
 import crypto from 'crypto';
 import { createRequire } from 'module';
 import { visualizer } from 'rollup-plugin-visualizer';
+import {
+  IDLE_PREFETCH_DEFAULTS,
+  IDLE_PREFETCH_GROUPS,
+  type IdlePrefetchGroup,
+} from './src/startup-prefetch-config';
 
 const require = createRequire(import.meta.url);
 const workspaceRoot = path.resolve(__dirname, '../..');
@@ -103,28 +108,11 @@ export function compactProductionIndexHtml(html: string): string {
   return compacted + stripLineIndentation(html.slice(cursor));
 }
 
-const IDLE_PREFETCH_GROUPS = [
-  'ai-chat',
-  'tool-windows',
-  'diagram-engines',
-  'office-data',
-  'editor-engines',
-  'media-viewer',
-  'external-skills',
-  'runtime-static-assets',
-  'offline-static-assets',
-] as const;
-
-// 普通页面启动不主动下载任何延后分组。高频分组由真实交互显式请求，
-// release 升级仍通过 full-prewarm 路径覆盖全部静态资源。
-const IDLE_PREFETCH_DEFAULTS = [] as const;
-
 // Rollup 4 otherwise folds the dependency closure of a named manual chunk into
 // that chunk. Deferred feature groups must own only modules explicitly assigned
 // by resolveManualChunk so shared runtime modules remain independently loadable.
 export const ONLY_EXPLICIT_MANUAL_CHUNKS = true;
-
-type IdlePrefetchGroup = (typeof IDLE_PREFETCH_GROUPS)[number];
+export const STARTUP_MODULE_PRELOAD_ENABLED = true;
 
 type ManifestEntry = { url: string; revision: string };
 type ViteOutputChunk = OutputChunk & {
@@ -150,7 +138,14 @@ const STATIC_SCAN_EXCLUDED_PATTERNS = [
   /version\.json$/,
 ];
 
-const PRECACHE_EXTENSIONS = new Set(['.js', '.css', '.json', '.svg', '.ico']);
+const PRECACHE_EXTENSIONS = new Set([
+  '.js',
+  '.css',
+  '.json',
+  '.svg',
+  '.png',
+  '.ico',
+]);
 const POST_BOOT_PREFETCH_EXTENSIONS = new Set([
   '.png',
   '.jpg',
@@ -166,11 +161,7 @@ const POST_BOOT_PREFETCH_EXTENSIONS = new Set([
   '.txt',
   '.md',
 ]);
-const PRECACHE_ALWAYS_INCLUDE = new Set([
-  '/index.html',
-  '/manifest.json',
-  '/favicon.ico',
-]);
+const PRECACHE_ALWAYS_INCLUDE = new Set(['/index.html', '/manifest.json']);
 
 function isFileDescriptorLimitError(error: unknown): boolean {
   return (
@@ -384,7 +375,7 @@ async function collectSelectedEntries(
   return manifest;
 }
 
-async function collectHtmlShellPrecacheUrls(
+export async function collectHtmlShellPrecacheUrls(
   indexHtmlPath: string
 ): Promise<Set<string>> {
   const urls = new Set<string>(PRECACHE_ALWAYS_INCLUDE);
@@ -404,6 +395,16 @@ async function collectHtmlShellPrecacheUrls(
   }
 
   return urls;
+}
+
+export function shouldIncludeHtmlShellPrecacheUrl(
+  url: string,
+  ext = path.extname(url).toLowerCase()
+): boolean {
+  return (
+    PRECACHE_ALWAYS_INCLUDE.has(url) ||
+    (ext !== '.html' && PRECACHE_EXTENSIONS.has(ext))
+  );
 }
 
 function normalizePathForChunking(id: string): string {
@@ -706,7 +707,7 @@ function chunkBelongsToIdlePrefetchGroup(
   );
 }
 
-function collectIdlePrefetchGroupEntriesFromBundle(
+export function collectIdlePrefetchGroupEntriesFromBundle(
   bundle: OutputBundle,
   group: IdlePrefetchGroup
 ): ManifestEntry[] {
@@ -779,10 +780,11 @@ function collectIdlePrefetchGroupEntriesFromBundle(
       }
     });
 
-    for (const importedFileName of [
-      ...chunk.imports,
-      ...chunk.dynamicImports,
-    ]) {
+    // A group prefetch prepares the code needed to evaluate its explicit
+    // entry chunks. Nested dynamic imports represent later user actions and
+    // must remain demand-driven; traversing them here made every broad group
+    // absorb hundreds of unrelated optional chunks.
+    for (const importedFileName of chunk.imports) {
       const normalizedImportedFileName =
         normalizeBundleFileName(importedFileName);
       const importedGroup = getNamedIdlePrefetchGroupForFile(
@@ -820,18 +822,53 @@ function collectIdlePrefetchGroupEntriesFromBundle(
   );
 }
 
+export function resolveDeferredProjectDrawerPanelChunk(
+  id: string
+): 'project-frame-panel' | 'project-layer-panel' | undefined {
+  const normalizedId = normalizePathForChunking(id);
+
+  if (
+    normalizedId.endsWith(
+      '/packages/drawnix/src/components/project-drawer/FramePanel.tsx'
+    ) ||
+    normalizedId.endsWith(
+      '/packages/drawnix/src/components/project-drawer/AddFrameDialog.tsx'
+    ) ||
+    normalizedId.endsWith(
+      '/packages/drawnix/src/components/project-drawer/FrameSlideshow.tsx'
+    )
+  ) {
+    return 'project-frame-panel';
+  }
+
+  if (
+    normalizedId.endsWith(
+      '/packages/drawnix/src/components/project-drawer/LayerPanel.tsx'
+    )
+  ) {
+    return 'project-layer-panel';
+  }
+
+  return undefined;
+}
+
 export function resolveIdlePrefetchGroup(
   id: string
 ): IdlePrefetchGroup | undefined {
   const normalizedId = normalizePathForChunking(id);
 
+  // Frame and layer panels have independent dynamic entry points. Keep them
+  // out of the broad tool-windows prefetch group so opening the default boards
+  // tab cannot eagerly download either panel.
+  if (resolveDeferredProjectDrawerPanelChunk(normalizedId)) {
+    return undefined;
+  }
+
   if (
     normalizedId.includes('/packages/drawnix/src/components/chat-drawer/') ||
     normalizedId.includes('/packages/drawnix/src/hooks/useChatHandler') ||
     normalizedId.includes('/packages/drawnix/src/services/chat-service') ||
-    normalizedId.includes(
-      '/packages/drawnix/src/services/chat-storage-service'
-    )
+    normalizedId.includes('/packages/drawnix/src/services/chat-storage-service')
   ) {
     return 'ai-chat';
   }
@@ -881,12 +918,8 @@ export function resolveIdlePrefetchGroup(
     normalizedId.includes('/node_modules/prosemirror-') ||
     normalizedId.includes('/node_modules/.pnpm/katex@') ||
     normalizedId.includes('/node_modules/katex/') ||
-    normalizedId.includes(
-      '/packages/drawnix/src/components/MarkdownEditor/'
-    ) ||
-    normalizedId.includes(
-      '/packages/drawnix/src/components/knowledge-base/'
-    ) ||
+    normalizedId.includes('/packages/drawnix/src/components/MarkdownEditor/') ||
+    normalizedId.includes('/packages/drawnix/src/components/knowledge-base/') ||
     normalizedId.includes(
       '/packages/drawnix/src/services/kb-knowledge-extraction/'
     )
@@ -1065,6 +1098,12 @@ function resolveManualChunk(
     return startupSourceChunk;
   }
 
+  const deferredProjectDrawerPanelChunk =
+    resolveDeferredProjectDrawerPanelChunk(id);
+  if (deferredProjectDrawerPanelChunk) {
+    return deferredProjectDrawerPanelChunk;
+  }
+
   const group = resolveIdlePrefetchGroup(id);
   if (
     (group === undefined || group === 'tool-windows') &&
@@ -1115,9 +1154,7 @@ function precacheManifestPlugin(): Plugin {
         const manifest = await collectSelectedEntries(
           outDir,
           precacheUrls,
-          (url, ext) =>
-            PRECACHE_ALWAYS_INCLUDE.has(url) ||
-            (ext !== '.html' && PRECACHE_EXTENSIONS.has(ext))
+          shouldIncludeHtmlShellPrecacheUrl
         );
 
         // 写入 manifest 文件
@@ -1242,17 +1279,13 @@ function idlePrefetchManifestPlugin(): Plugin {
         const manifestPath = path.join(outDir, 'idle-prefetch-manifest.json');
         fs.writeFileSync(
           manifestPath,
-          JSON.stringify(
-            {
-              version: appVersion,
-              releaseId: appReleaseId,
-              timestamp: new Date().toISOString(),
-              defaults: [...IDLE_PREFETCH_DEFAULTS],
-              groups,
-            },
-            null,
-            2
-          )
+          JSON.stringify({
+            version: appVersion,
+            releaseId: appReleaseId,
+            timestamp: new Date().toISOString(),
+            defaults: [...IDLE_PREFETCH_DEFAULTS],
+            groups,
+          })
         );
         console.log('[IdlePrefetch] Generated idle-prefetch-manifest.json');
       },
@@ -1331,7 +1364,9 @@ function compactProductionIndexHtmlPlugin(): Plugin {
 
         await writeFileWithFdRetry(indexHtmlPath, compactedHtml);
         console.log(
-          `[IndexHtml] Removed ${Buffer.byteLength(html) - Buffer.byteLength(compactedHtml)} bytes of production indentation`
+          `[IndexHtml] Removed ${
+            Buffer.byteLength(html) - Buffer.byteLength(compactedHtml)
+          } bytes of production indentation`
         );
       },
     },
@@ -1593,8 +1628,9 @@ export default defineConfig({
     // watch 模式下不清空输出目录，避免 index.html 丢失导致 serve 失败
     emptyOutDir: !isWatchMode,
     reportCompressedSize: true,
-    // 首屏只注入壳层资源，懒加载分组改由运行时按需拉取/空闲预取。
-    modulePreload: false,
+    // 只对真实进入当前 import 图的依赖生成 modulepreload。它不会拉取尚未
+    // 激活的动态功能组，但能消除高 RTT 网络下逐层发现首屏静态依赖的瀑布。
+    modulePreload: STARTUP_MODULE_PRELOAD_ENABLED ? { polyfill: false } : false,
     commonjsOptions: {
       transformMixedEsModules: true,
     },

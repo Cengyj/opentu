@@ -1,13 +1,8 @@
-import React, {
-  Suspense,
-  lazy,
-  useEffect,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { PlaitElement } from '@plait/core';
 import { memoryMonitorService } from '../../services/memory-monitor-service';
+import { createRetriableModuleLoader } from '../../utils/retriable-module-loader';
+import { RetriableDeferredFeature } from './RetriableDeferredFeature';
 import {
   PERFORMANCE_PANEL_CHECK_INTERVAL_MS,
   getNoVersionUpgradeRuntimeSnapshot,
@@ -18,27 +13,44 @@ import {
   subscribeToNoVersionUpgradeRuntime,
 } from './operational-monitor-policy';
 
-const VersionUpdatePrompt = lazy(() =>
-  import('../version-update/version-update-prompt').then((module) => ({
-    default: module.VersionUpdatePrompt,
-  }))
-);
-const PerformancePanel = lazy(() =>
-  import('../performance-panel/PerformancePanel').then((module) => ({
-    default: module.PerformancePanel,
-  }))
-);
+export type VersionUpdatePromptLoader = () => Promise<{
+  default: (typeof import('../version-update/version-update-prompt'))['VersionUpdatePrompt'];
+}>;
+export type PerformancePanelLoader = () => Promise<{
+  default: (typeof import('../performance-panel/PerformancePanel'))['PerformancePanel'];
+}>;
 
-interface DrawnixOperationalMonitorsProps {
+export interface OperationalMonitorLoaders {
+  versionUpdatePrompt: VersionUpdatePromptLoader;
+  performancePanel: PerformancePanelLoader;
+}
+
+export const defaultOperationalMonitorLoaders: OperationalMonitorLoaders = {
+  versionUpdatePrompt: createRetriableModuleLoader(() =>
+    import('../version-update/version-update-prompt').then((module) => ({
+      default: module.VersionUpdatePrompt,
+    }))
+  ),
+  performancePanel: createRetriableModuleLoader(() =>
+    import('../performance-panel/PerformancePanel').then((module) => ({
+      default: module.PerformancePanel,
+    }))
+  ),
+};
+
+export interface DrawnixOperationalMonitorsProps {
   container: HTMLElement | null;
   elements: PlaitElement[];
   onCreateProject: () => Promise<void>;
+  /** Test seam for the two independently retryable monitor chunks. */
+  loaders?: OperationalMonitorLoaders;
 }
 
 export function DrawnixOperationalMonitors({
   container,
   elements,
   onCreateProject,
+  loaders = defaultOperationalMonitorLoaders,
 }: DrawnixOperationalMonitorsProps) {
   const versionRuntime = getVersionUpgradeRuntime();
   const versionSnapshot = useSyncExternalStore(
@@ -82,18 +94,28 @@ export function DrawnixOperationalMonitors({
   return (
     <>
       {hasPendingVersionUpgrade(versionSnapshot) && (
-        <Suspense fallback={null}>
-          <VersionUpdatePrompt />
-        </Suspense>
+        <RetriableDeferredFeature
+          loader={loaders.versionUpdatePrompt}
+          label="版本更新提示"
+          variant="passive"
+          renderFeature={({ default: VersionUpdatePrompt }) => (
+            <VersionUpdatePrompt />
+          )}
+        />
       )}
       {performancePanelActivated && (
-        <Suspense fallback={null}>
-          <PerformancePanel
-            container={container}
-            onCreateProject={onCreateProject}
-            elements={elements}
-          />
-        </Suspense>
+        <RetriableDeferredFeature
+          loader={loaders.performancePanel}
+          label="内存监控面板"
+          variant="passive"
+          renderFeature={({ default: PerformancePanel }) => (
+            <PerformancePanel
+              container={container}
+              onCreateProject={onCreateProject}
+              elements={elements}
+            />
+          )}
+        />
       )}
     </>
   );

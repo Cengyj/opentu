@@ -4,16 +4,21 @@
  * 使用轻量 MarkdownReadonly 进行 Markdown 内容展示（只读模式）
  * Card 在画布上仅作只读展示，编辑通过知识库进行
  */
-import React, { useCallback } from 'react';
+import React, { lazy, Suspense, useCallback } from 'react';
 import { BookOpenIcon } from '../icons/startup-icons';
 import { HoverTip } from '../shared/hover';
-import MarkdownReadonly from '../MarkdownReadonly';
 import {
   getTitleColor,
   getBodyColor,
   getCardDisplayTitle,
 } from '../../constants/card-colors';
 import type { PlaitCard } from '../../types/card.types';
+
+const DeferredCardMarkdown = lazy(() =>
+  import('./DeferredCardMarkdown').then((module) => ({
+    default: module.DeferredCardMarkdown,
+  }))
+);
 
 const cardBodyElements = new Map<string, HTMLElement>();
 
@@ -40,12 +45,16 @@ export function measureCardBodyContentHeight(cardId: string): number | null {
 
 interface CardElementProps {
   element: PlaitCard;
+  onContentReady?: () => void;
 }
 
 /**
  * Card 内容组件 - 渲染标题 + MarkdownReadonly 正文（只读）
  */
-export const CardElement: React.FC<CardElementProps> = ({ element }) => {
+export const CardElement: React.FC<CardElementProps> = ({
+  element,
+  onContentReady,
+}) => {
   const displayTitle = getCardDisplayTitle(element.title);
   const titleColor = getTitleColor(element.fillColor);
   const bodyColor = getBodyColor(element.fillColor);
@@ -171,10 +180,18 @@ export const CardElement: React.FC<CardElementProps> = ({ element }) => {
         onPointerDown={(e) => e.stopPropagation()}
         onWheel={handleWheel}
       >
-        <MarkdownReadonly
-          markdown={element.body}
-          className="card-markdown-viewer"
-        />
+        <Suspense
+          fallback={
+            <div className="card-markdown-viewer" aria-busy="true">
+              正在加载卡片内容…
+            </div>
+          }
+        >
+          <DeferredCardMarkdown
+            markdown={element.body}
+            onReady={onContentReady}
+          />
+        </Suspense>
       </div>
     </div>
   );

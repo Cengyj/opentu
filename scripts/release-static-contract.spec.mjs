@@ -589,6 +589,29 @@ describe('container Nginx release policy', () => {
     expect(nginxConfig).toContain('font/otf otf;');
     expect(nginxConfig).toContain('font/ttf ttf;');
   });
+
+  it('serves the portable release text formats with gzip without changing cache locations', async () => {
+    const nginxConfig = await readFile('docker/nginx.conf', 'utf8');
+
+    expect(nginxConfig).toContain('gzip on;');
+    expect(nginxConfig).toContain('gzip_vary on;');
+    expect(nginxConfig).toContain('gzip_min_length 1024;');
+    expect(nginxConfig).toContain('gzip_comp_level 6;');
+    expect(nginxConfig).toContain('gzip_proxied any;');
+    expect(nginxConfig).toMatch(
+      /gzip_types[\s\S]*text\/css[\s\S]*application\/javascript[\s\S]*application\/json[\s\S]*application\/manifest\+json[\s\S]*image\/svg\+xml;/
+    );
+
+    expect(nginxConfig).toContain(
+      'add_header Cache-Control "public, max-age=31536000, immutable";'
+    );
+    expect(nginxConfig).toContain(
+      'add_header Cache-Control "no-cache, max-age=0, must-revalidate" always;'
+    );
+    expect(nginxConfig).toContain(
+      'add_header Cache-Control "no-store" always;'
+    );
+  });
 });
 
 describe('release display-version preflight', () => {

@@ -153,6 +153,28 @@ async function createBootRecoveryHarness(
 }
 
 describe('boot release recovery contract', () => {
+  it('does not fetch the deferred manifest on activation when defaults are empty', async () => {
+    const serviceWorkerSource = await readServiceWorkerSource();
+    const activationStart = serviceWorkerSource.indexOf(
+      "sw.addEventListener('activate'"
+    );
+    const activationEnd = serviceWorkerSource.indexOf(
+      "sw.addEventListener('message'",
+      activationStart
+    );
+    const activationHandler = serviceWorkerSource.slice(
+      activationStart,
+      activationEnd
+    );
+
+    expect(activationStart).toBeGreaterThan(0);
+    expect(activationEnd).toBeGreaterThan(activationStart);
+    expect(activationHandler).toContain(
+      'if (IDLE_PREFETCH_DEFAULTS.length > 0)'
+    );
+    expect(activationHandler).toContain('prefetchDefaultIdleGroups()');
+  });
+
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -168,6 +190,89 @@ describe('boot release recovery contract', () => {
     expect(iconLinks).toHaveLength(1);
     expect(iconLinks[0]).toContain('favicon-32x32.png');
     expect(iconLinks[0]).not.toContain('favicon.ico');
+  });
+
+  it('starts Service Worker installation only after the operable shell schedules post-boot idle work', async () => {
+    vi.useFakeTimers();
+    const html = await readBootHtml();
+    const setupStart = html.indexOf(
+      'function shouldEnableEarlyServiceWorkerBootstrap'
+    );
+    const setupEnd = html.indexOf('\n        renderProgress();', setupStart);
+    const markReadyStart = html.indexOf('function markReady()');
+    const markReadyEnd = html.indexOf('function markError(', markReadyStart);
+    const register = vi.fn(async () => ({
+      active: null,
+      installing: null,
+      waiting: null,
+    }));
+    const requestIdleCallback = vi.fn((callback: () => void) => {
+      callback();
+      return 1;
+    });
+    const syncEarlyCDNPreference = vi.fn();
+    const context: Record<string, unknown> = {
+      window: {
+        location: { search: '' },
+        setTimeout,
+        requestIdleCallback,
+      },
+      navigator: {
+        serviceWorker: {
+          register,
+          getRegistration: vi.fn(async () => null),
+        },
+      },
+      URLSearchParams,
+      Promise,
+      console,
+      setProgress: vi.fn(),
+      syncEarlyCDNPreference,
+      registrationHarness: null,
+    };
+
+    expect(setupStart).toBeGreaterThan(0);
+    expect(setupEnd).toBeGreaterThan(setupStart);
+    expect(markReadyEnd).toBeGreaterThan(markReadyStart);
+    expect(html.slice(markReadyStart, markReadyEnd)).toContain(
+      'schedulePostBootServiceWorkerRegistration();'
+    );
+
+    runInNewContext(
+      `${html.slice(setupStart, setupEnd)}
+setupEarlyServiceWorkerBootstrap();
+registrationHarness = {
+  schedule: schedulePostBootServiceWorkerRegistration,
+  start: function () {
+    return window.__OPENTU_START_POST_BOOT_SERVICE_WORKER__();
+  }
+};`,
+      context
+    );
+
+    const harness = context.registrationHarness as {
+      schedule: () => void;
+      start: () => Promise<ServiceWorkerRegistration | null>;
+    };
+    const registrationPromise = (
+      context.window as {
+        __OPENTU_SW_REGISTRATION_PROMISE__: Promise<ServiceWorkerRegistration | null>;
+      }
+    ).__OPENTU_SW_REGISTRATION_PROMISE__;
+
+    expect(register).not.toHaveBeenCalled();
+    harness.schedule();
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(register).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await registrationPromise;
+    expect(requestIdleCallback).toHaveBeenCalledTimes(1);
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(syncEarlyCDNPreference).toHaveBeenCalledTimes(1);
+
+    harness.schedule();
+    await harness.start();
+    expect(register).toHaveBeenCalledTimes(1);
   });
 
   it('uses a correlated release-scoped SW request and never deletes release caches directly', async () => {
@@ -425,7 +530,10 @@ describe('boot release recovery contract', () => {
   it('uses an explicit build marker instead of inferring development from localhost', async () => {
     const html = await readBootHtml();
     const modeStart = html.indexOf('function isBootLocalDevelopment');
-    const modeEnd = html.indexOf('function toPreferredBootAssetUrl', modeStart);
+    const modeEnd = html.indexOf(
+      'function isManagedBootFallbackTarget',
+      modeStart
+    );
     const modeResolver = html.slice(modeStart, modeEnd);
 
     expect(modeStart).toBeGreaterThan(0);
@@ -433,7 +541,7 @@ describe('boot release recovery contract', () => {
     expect(modeResolver).not.toContain('location.hostname');
   });
 
-  it('keeps production CDN and origin fallback active on localhost deployments', async () => {
+  it('keeps origin recovery active without manufacturing CDN candidates from localhost', async () => {
     const [serviceWorkerSource, cdnFallbackSource] = await Promise.all([
       readServiceWorkerSource(),
       readCDNFallbackSource(),
@@ -444,6 +552,7 @@ describe('boot release recovery contract', () => {
     );
     expect(cdnFallbackSource).not.toContain('location.hostname');
     expect(cdnFallbackSource).not.toContain('if (isDevelopment)');
+    expect(cdnFallbackSource).toContain('const CDN_SOURCES: CDNSource[] = []');
   });
 
   it('never resolves a committed cache miss from another release namespace', async () => {
@@ -501,9 +610,7 @@ describe('boot release recovery contract', () => {
     expect(versionStateStart).toBeGreaterThan(recoveryEnd);
     expect(versionStateEnd).toBeGreaterThan(versionStateStart);
     expect(serviceWorkerSource).not.toContain('SW_IDLE_PREFETCH_STATUS');
-    expect(serviceWorkerSource).not.toContain(
-      'broadcastIdlePrefetchStatus'
-    );
+    expect(serviceWorkerSource).not.toContain('broadcastIdlePrefetchStatus');
     expect(rememberOwnership).toContain(
       'resolveOrEstablishSWClientReleaseOwnership'
     );

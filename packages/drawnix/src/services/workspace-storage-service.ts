@@ -112,6 +112,58 @@ const WORKSPACE_DB_CONFIG = {
   },
 } as const;
 
+/**
+ * Disposable projection of Board metadata used by workspace startup.
+ *
+ * Keep this in a separate database so adding or rebuilding the projection
+ * never upgrades the authoritative workspace database. `boards` remains the
+ * only source of truth and this database may be cleared and rebuilt at any
+ * time.
+ */
+const WORKSPACE_METADATA_INDEX_CONFIG = {
+  DATABASE_NAME: 'aitu-workspace-index',
+  VERSION: 1,
+  STORE_NAME: 'board_metadata',
+  SCHEMA_VERSION: 1,
+} as const;
+
+const BOARD_METADATA_MANIFEST_KEY = '__board_metadata_manifest__';
+const BOARD_METADATA_PENDING_KEY = '__board_metadata_pending__';
+const BOARD_METADATA_INVALIDATION_KEY = '__board_metadata_invalidated__';
+const BOARD_METADATA_ENTRY_PREFIX = 'board:';
+const BOARD_METADATA_INDEX_LOCK = 'aitu-workspace:board-metadata-index';
+const BOARD_METADATA_REBUILD_BATCH_SIZE = 50;
+
+interface BoardMetadataIndexManifest {
+  kind: 'manifest';
+  schemaVersion: typeof WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION;
+  sourceRecordCount: number;
+  indexedBoardCount: number;
+  completedAt: number;
+}
+
+interface BoardMetadataIndexEntry {
+  kind: 'board';
+  schemaVersion: typeof WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION;
+  metadata: BoardMetadata;
+}
+
+interface BoardMetadataIndexPendingMutation {
+  kind: 'pending';
+  schemaVersion: typeof WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION;
+  operationId: string;
+  operation: 'save' | 'metadata' | 'delete' | 'rebuild';
+  boardId?: string;
+  startedAt: number;
+}
+
+type BoardMetadataIndexRecord =
+  | BoardMetadataIndexManifest
+  | BoardMetadataIndexEntry
+  | BoardMetadataIndexPendingMutation;
+
+let metadataIndexOperationQueue: Promise<void> = Promise.resolve();
+
 const STATE_KEY = 'workspace_state';
 
 export type BoardMetadataUpdate = Partial<
@@ -171,10 +223,12 @@ async function detectDatabaseVersion(dbName: string): Promise<number> {
 /**
  * Workspace storage service for managing data persistence
  */
-class WorkspaceStorageService {
+export class WorkspaceStorageService {
   private foldersStore: LocalForage | null = null;
   private boardsStore: LocalForage | null = null;
   private stateStore: LocalForage | null = null;
+  private boardMetadataStore: LocalForage | null = null;
+  private metadataIndexAvailable = false;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
   private boardWriteQueues = new Map<string, Promise<void>>();
@@ -212,6 +266,14 @@ class WorkspaceStorageService {
       storeName: WORKSPACE_DB_CONFIG.STORES.STATE,
       description: 'Workspace state storage',
     });
+
+    this.boardMetadataStore = localforage.createInstance({
+      driver: localforage.INDEXEDDB,
+      name: WORKSPACE_METADATA_INDEX_CONFIG.DATABASE_NAME,
+      version: WORKSPACE_METADATA_INDEX_CONFIG.VERSION,
+      storeName: WORKSPACE_METADATA_INDEX_CONFIG.STORE_NAME,
+      description: 'Disposable workspace board metadata index',
+    });
   }
 
   /**
@@ -236,10 +298,11 @@ class WorkspaceStorageService {
       await this.createStores();
       
       await Promise.all([
-        this.foldersStore!.ready(),
-        this.boardsStore!.ready(),
-        this.stateStore!.ready(),
+        this.getFoldersStore().ready(),
+        this.getBoardsStore().ready(),
+        this.getStateStore().ready(),
       ]);
+      await this.initializeBoardMetadataIndex();
       this.initialized = true;
     } catch (error) {
       console.error('[WorkspaceStorage] Failed to initialize:', error);
@@ -254,10 +317,11 @@ class WorkspaceStorageService {
           await this.deleteDatabase();
           await this.createStores();
           await Promise.all([
-            this.foldersStore!.ready(),
-            this.boardsStore!.ready(),
-            this.stateStore!.ready(),
+            this.getFoldersStore().ready(),
+            this.getBoardsStore().ready(),
+            this.getStateStore().ready(),
           ]);
+          await this.initializeBoardMetadataIndex();
           this.initialized = true;
           return;
         } catch (recoveryError) {
@@ -318,6 +382,289 @@ class WorkspaceStorageService {
     return this.stateStore;
   }
 
+  private getBoardMetadataStore(): LocalForage {
+    if (!this.boardMetadataStore) {
+      throw new Error('WorkspaceStorage not initialized');
+    }
+    return this.boardMetadataStore;
+  }
+
+  /**
+   * The metadata index is disposable. Its failure must never enter the legacy
+   * authoritative-database recovery branch; startup can safely scan Boards
+   * until a later page load recreates the index.
+   */
+  private async initializeBoardMetadataIndex(): Promise<void> {
+    try {
+      await this.getBoardMetadataStore().ready();
+      this.metadataIndexAvailable = true;
+    } catch (error) {
+      this.metadataIndexAvailable = false;
+      try {
+        await this.invalidateBoardMetadataIndex();
+      } catch (invalidationError) {
+        console.warn(
+          '[WorkspaceStorage] Failed to persist metadata index invalidation',
+          invalidationError
+        );
+      }
+      console.warn(
+        '[WorkspaceStorage] Board metadata index unavailable; using Board scan',
+        error
+      );
+    }
+  }
+
+  private async invalidateBoardMetadataIndex(): Promise<void> {
+    await this.getStateStore().setItem(BOARD_METADATA_INVALIDATION_KEY, {
+      schemaVersion: WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION,
+      invalidatedAt: Date.now(),
+    });
+  }
+
+  /**
+   * Serialize index rebuilds and board mutations across tabs. The in-process
+   * queue is the fallback for runtimes without the Web Locks API.
+   */
+  private async withMetadataIndexLock<T>(operation: () => Promise<T>): Promise<T> {
+    if (typeof navigator !== 'undefined' && navigator.locks) {
+      return navigator.locks.request(
+        BOARD_METADATA_INDEX_LOCK,
+        { mode: 'exclusive' },
+        operation
+      );
+    }
+
+    const queued = metadataIndexOperationQueue
+      .catch(() => undefined)
+      .then(operation);
+    const completion = queued.then(
+      () => undefined,
+      () => undefined
+    );
+    metadataIndexOperationQueue = completion;
+    return queued;
+  }
+
+  private createMetadataMutation(
+    operation: BoardMetadataIndexPendingMutation['operation'],
+    boardId?: string
+  ): BoardMetadataIndexPendingMutation {
+    const randomPart =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return {
+      kind: 'pending',
+      schemaVersion: WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION,
+      operationId: randomPart,
+      operation,
+      boardId,
+      startedAt: Date.now(),
+    };
+  }
+
+  private extractBoardMetadata(board: Board): BoardMetadata {
+    return {
+      id: board.id,
+      name: board.name,
+      folderId: board.folderId,
+      order: board.order,
+      viewport: board.viewport,
+      theme: board.theme,
+      createdAt: board.createdAt,
+      updatedAt: board.updatedAt,
+    };
+  }
+
+  private boardMetadataEntryKey(boardId: string): string {
+    return `${BOARD_METADATA_ENTRY_PREFIX}${boardId}`;
+  }
+
+  private createBoardMetadataEntry(board: Board): BoardMetadataIndexEntry {
+    return {
+      kind: 'board',
+      schemaVersion: WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION,
+      metadata: this.extractBoardMetadata(board),
+    };
+  }
+
+  private isValidBoardMetadata(value: unknown): value is BoardMetadata {
+    if (!value || typeof value !== 'object') return false;
+    const metadata = value as Partial<BoardMetadata>;
+    return (
+      typeof metadata.id === 'string' &&
+      metadata.id.length > 0 &&
+      typeof metadata.name === 'string' &&
+      (metadata.folderId === null || typeof metadata.folderId === 'string') &&
+      typeof metadata.order === 'number' &&
+      Number.isFinite(metadata.order) &&
+      typeof metadata.createdAt === 'number' &&
+      Number.isFinite(metadata.createdAt) &&
+      typeof metadata.updatedAt === 'number' &&
+      Number.isFinite(metadata.updatedAt)
+    );
+  }
+
+  private isValidManifest(value: unknown): value is BoardMetadataIndexManifest {
+    if (!value || typeof value !== 'object') return false;
+    const manifest = value as Partial<BoardMetadataIndexManifest>;
+    return (
+      manifest.kind === 'manifest' &&
+      manifest.schemaVersion === WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION &&
+      typeof manifest.sourceRecordCount === 'number' &&
+      Number.isInteger(manifest.sourceRecordCount) &&
+      manifest.sourceRecordCount >= 0 &&
+      typeof manifest.indexedBoardCount === 'number' &&
+      Number.isInteger(manifest.indexedBoardCount) &&
+      manifest.indexedBoardCount >= 0
+    );
+  }
+
+  private async readMetadataIndexHeader(
+    sourceRecordCount: number
+  ): Promise<BoardMetadataIndexManifest | null> {
+    const store = this.getBoardMetadataStore();
+    const [manifest, pending, invalidation] = await Promise.all([
+      store.getItem<BoardMetadataIndexManifest>(BOARD_METADATA_MANIFEST_KEY),
+      store.getItem<BoardMetadataIndexPendingMutation>(BOARD_METADATA_PENDING_KEY),
+      this.getStateStore().getItem(BOARD_METADATA_INVALIDATION_KEY),
+    ]);
+    if (pending || invalidation || !this.isValidManifest(manifest)) return null;
+    return manifest.sourceRecordCount === sourceRecordCount ? manifest : null;
+  }
+
+  private async readValidBoardMetadataIndex(
+    sourceRecordCount: number
+  ): Promise<{
+    manifest: BoardMetadataIndexManifest;
+    metadata: BoardMetadata[];
+  } | null> {
+    const manifest = await this.readMetadataIndexHeader(sourceRecordCount);
+    if (!manifest) return null;
+
+    const metadata: BoardMetadata[] = [];
+    const ids = new Set<string>();
+    let invalid = false;
+    await this.getBoardMetadataStore().iterate<BoardMetadataIndexRecord, void>(
+      (record, key) => {
+        if (
+          key === BOARD_METADATA_MANIFEST_KEY ||
+          key === BOARD_METADATA_PENDING_KEY
+        ) {
+          return;
+        }
+        if (
+          !key.startsWith(BOARD_METADATA_ENTRY_PREFIX) ||
+          !record ||
+          record.kind !== 'board' ||
+          record.schemaVersion !== WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION ||
+          !this.isValidBoardMetadata(record.metadata) ||
+          key !== this.boardMetadataEntryKey(record.metadata.id) ||
+          ids.has(record.metadata.id)
+        ) {
+          invalid = true;
+          return;
+        }
+        ids.add(record.metadata.id);
+        metadata.push(record.metadata);
+      }
+    );
+
+    if (invalid || metadata.length !== manifest.indexedBoardCount) {
+      return null;
+    }
+    return { manifest, metadata };
+  }
+
+  private async writeMetadataIndexManifest(
+    sourceRecordCount: number,
+    indexedBoardCount: number
+  ): Promise<BoardMetadataIndexManifest> {
+    const manifest: BoardMetadataIndexManifest = {
+      kind: 'manifest',
+      schemaVersion: WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION,
+      sourceRecordCount,
+      indexedBoardCount,
+      completedAt: Date.now(),
+    };
+    await this.getBoardMetadataStore().setItem(
+      BOARD_METADATA_MANIFEST_KEY,
+      manifest
+    );
+    return manifest;
+  }
+
+  /**
+   * Rebuild the disposable projection from authoritative Board records. A
+   * persisted pending marker makes an interrupted rebuild invalid on the next
+   * startup instead of exposing a partial sidebar.
+   */
+  private async rebuildBoardMetadataIndexLocked(): Promise<{
+    manifest: BoardMetadataIndexManifest;
+    metadata: BoardMetadata[];
+  }> {
+    const indexStore = this.getBoardMetadataStore();
+    await indexStore.clear();
+    await indexStore.setItem(
+      BOARD_METADATA_PENDING_KEY,
+      this.createMetadataMutation('rebuild')
+    );
+
+    const metadata: BoardMetadata[] = [];
+    await this.getBoardsStore().iterate<Board, void>((board) => {
+      if (board && typeof board.id === 'string' && board.id.length > 0) {
+        metadata.push(this.extractBoardMetadata(board));
+      }
+    });
+
+    for (
+      let offset = 0;
+      offset < metadata.length;
+      offset += BOARD_METADATA_REBUILD_BATCH_SIZE
+    ) {
+      const batch = metadata.slice(
+        offset,
+        offset + BOARD_METADATA_REBUILD_BATCH_SIZE
+      );
+      await Promise.all(
+        batch.map((boardMetadata) =>
+          indexStore.setItem(this.boardMetadataEntryKey(boardMetadata.id), {
+            kind: 'board',
+            schemaVersion: WORKSPACE_METADATA_INDEX_CONFIG.SCHEMA_VERSION,
+            metadata: boardMetadata,
+          } satisfies BoardMetadataIndexEntry)
+        )
+      );
+    }
+
+    const sourceRecordCount = await this.getBoardsStore().length();
+    const manifest = await this.writeMetadataIndexManifest(
+      sourceRecordCount,
+      metadata.length
+    );
+    await indexStore.removeItem(BOARD_METADATA_PENDING_KEY);
+    await this.getStateStore().removeItem(BOARD_METADATA_INVALIDATION_KEY);
+    return { manifest, metadata };
+  }
+
+  private async ensureMetadataIndexForMutationLocked(): Promise<BoardMetadataIndexManifest> {
+    const sourceRecordCount = await this.getBoardsStore().length();
+    const manifest = await this.readMetadataIndexHeader(sourceRecordCount);
+    if (manifest) return manifest;
+    return (await this.rebuildBoardMetadataIndexLocked()).manifest;
+  }
+
+  private async loadBoardMetadataFromAuthority(): Promise<BoardMetadata[]> {
+    const metadata: BoardMetadata[] = [];
+    await this.getBoardsStore().iterate<Board, void>((board) => {
+      if (board && typeof board.id === 'string' && board.id.length > 0) {
+        metadata.push(this.extractBoardMetadata(board));
+      }
+    });
+    return metadata.sort((a, b) => a.order - b.order);
+  }
+
   /**
    * Serialize writes for one board so a metadata read-modify-write cannot
    * overwrite a canvas save that started immediately before it.
@@ -376,7 +723,33 @@ class WorkspaceStorageService {
   async saveBoard(board: Board): Promise<void> {
     await this.ensureInitialized();
     await this.enqueueBoardWrite(board.id, async () => {
-      await this.getBoardsStore().setItem(board.id, board);
+      if (!this.metadataIndexAvailable) {
+        await this.invalidateBoardMetadataIndex();
+        await this.getBoardsStore().setItem(board.id, board);
+        return;
+      }
+      await this.withMetadataIndexLock(async () => {
+        const manifest = await this.ensureMetadataIndexForMutationLocked();
+        const indexStore = this.getBoardMetadataStore();
+        const entryKey = this.boardMetadataEntryKey(board.id);
+        const previousEntry = await indexStore.getItem<BoardMetadataIndexEntry>(
+          entryKey
+        );
+        await indexStore.setItem(
+          BOARD_METADATA_PENDING_KEY,
+          this.createMetadataMutation('save', board.id)
+        );
+
+        await this.getBoardsStore().setItem(board.id, board);
+        await indexStore.setItem(entryKey, this.createBoardMetadataEntry(board));
+        if (!previousEntry) {
+          await this.writeMetadataIndexManifest(
+            await this.getBoardsStore().length(),
+            manifest.indexedBoardCount + 1
+          );
+        }
+        await indexStore.removeItem(BOARD_METADATA_PENDING_KEY);
+      });
     });
   }
 
@@ -391,20 +764,49 @@ class WorkspaceStorageService {
   ): Promise<Board> {
     await this.ensureInitialized();
     return this.enqueueBoardWrite(id, async () => {
-      const store = this.getBoardsStore();
-      const current = await store.getItem<Board>(id);
-      if (!current) {
-        throw new Error(`Board ${id} not found in storage`);
+      if (!this.metadataIndexAvailable) {
+        await this.invalidateBoardMetadataIndex();
+        const store = this.getBoardsStore();
+        const current = await store.getItem<Board>(id);
+        if (!current) {
+          throw new Error(`Board ${id} not found in storage`);
+        }
+        const updated: Board = {
+          ...current,
+          ...updates,
+          id: current.id,
+          elements: current.elements,
+        };
+        await store.setItem(id, updated);
+        return updated;
       }
+      return this.withMetadataIndexLock(async () => {
+        await this.ensureMetadataIndexForMutationLocked();
+        const store = this.getBoardsStore();
+        const current = await store.getItem<Board>(id);
+        if (!current) {
+          throw new Error(`Board ${id} not found in storage`);
+        }
 
-      const updated: Board = {
-        ...current,
-        ...updates,
-        id: current.id,
-        elements: current.elements,
-      };
-      await store.setItem(id, updated);
-      return updated;
+        const updated: Board = {
+          ...current,
+          ...updates,
+          id: current.id,
+          elements: current.elements,
+        };
+        const indexStore = this.getBoardMetadataStore();
+        await indexStore.setItem(
+          BOARD_METADATA_PENDING_KEY,
+          this.createMetadataMutation('metadata', id)
+        );
+        await store.setItem(id, updated);
+        await indexStore.setItem(
+          this.boardMetadataEntryKey(id),
+          this.createBoardMetadataEntry(updated)
+        );
+        await indexStore.removeItem(BOARD_METADATA_PENDING_KEY);
+        return updated;
+      });
     });
   }
 
@@ -475,26 +877,43 @@ class WorkspaceStorageService {
    */
   async loadAllBoardMetadata(): Promise<BoardMetadata[]> {
     await this.ensureInitialized();
-    const boards: BoardMetadata[] = [];
-    await this.getBoardsStore().iterate<Board, void>((value) => {
-      if (value && value.id) {
-        // 只提取元数据，不包含 elements
-        boards.push({
-          id: value.id,
-          name: value.name,
-          folderId: value.folderId,
-          order: value.order,
-          viewport: value.viewport,
-          theme: value.theme,
-          createdAt: value.createdAt,
-          updatedAt: value.updatedAt,
-        });
+    if (!this.metadataIndexAvailable) {
+      return this.loadBoardMetadataFromAuthority();
+    }
+
+    try {
+      const sourceRecordCount = await this.getBoardsStore().length();
+      const indexed = await this.readValidBoardMetadataIndex(sourceRecordCount);
+      if (indexed) {
+        return indexed.metadata.sort((a, b) => a.order - b.order);
       }
-    });
-    // Wait for browser idle time after IndexedDB operation
-    await waitForIdle();
-    
-    return boards.sort((a, b) => a.order - b.order);
+
+      return await this.withMetadataIndexLock(async () => {
+        // Another tab may have completed the rebuild while this tab waited.
+        const currentSourceRecordCount = await this.getBoardsStore().length();
+        const current = await this.readValidBoardMetadataIndex(
+          currentSourceRecordCount
+        );
+        const rebuilt =
+          current ?? (await this.rebuildBoardMetadataIndexLocked());
+        return rebuilt.metadata.sort((a, b) => a.order - b.order);
+      });
+    } catch (error) {
+      this.metadataIndexAvailable = false;
+      try {
+        await this.invalidateBoardMetadataIndex();
+      } catch (invalidationError) {
+        console.warn(
+          '[WorkspaceStorage] Failed to persist metadata index invalidation',
+          invalidationError
+        );
+      }
+      console.warn(
+        '[WorkspaceStorage] Board metadata index read failed; using Board scan',
+        error
+      );
+      return this.loadBoardMetadataFromAuthority();
+    }
   }
 
   async loadFolderBoards(folderId: string | null): Promise<Board[]> {
@@ -516,7 +935,34 @@ class WorkspaceStorageService {
 
   async deleteBoard(id: string): Promise<void> {
     await this.ensureInitialized();
-    await this.getBoardsStore().removeItem(id);
+    await this.enqueueBoardWrite(id, async () => {
+      if (!this.metadataIndexAvailable) {
+        await this.invalidateBoardMetadataIndex();
+        await this.getBoardsStore().removeItem(id);
+        return;
+      }
+      await this.withMetadataIndexLock(async () => {
+        const manifest = await this.ensureMetadataIndexForMutationLocked();
+        const indexStore = this.getBoardMetadataStore();
+        const entryKey = this.boardMetadataEntryKey(id);
+        const previousEntry = await indexStore.getItem<BoardMetadataIndexEntry>(
+          entryKey
+        );
+        await indexStore.setItem(
+          BOARD_METADATA_PENDING_KEY,
+          this.createMetadataMutation('delete', id)
+        );
+        await this.getBoardsStore().removeItem(id);
+        await indexStore.removeItem(entryKey);
+        if (previousEntry) {
+          await this.writeMetadataIndexManifest(
+            await this.getBoardsStore().length(),
+            Math.max(0, manifest.indexedBoardCount - 1)
+          );
+        }
+        await indexStore.removeItem(BOARD_METADATA_PENDING_KEY);
+      });
+    });
   }
 
   async deleteFolderBoards(folderId: string): Promise<void> {
@@ -554,11 +1000,24 @@ class WorkspaceStorageService {
 
   async clearAll(): Promise<void> {
     await this.ensureInitialized();
-    await Promise.all([
-      this.getFoldersStore().clear(),
-      this.getBoardsStore().clear(),
-      this.getStateStore().clear(),
-    ]);
+    if (!this.metadataIndexAvailable) {
+      await Promise.all([
+        this.getFoldersStore().clear(),
+        this.getBoardsStore().clear(),
+        this.getStateStore().clear(),
+      ]);
+      await this.invalidateBoardMetadataIndex();
+      return;
+    }
+    await this.withMetadataIndexLock(async () => {
+      await Promise.all([
+        this.getFoldersStore().clear(),
+        this.getBoardsStore().clear(),
+        this.getStateStore().clear(),
+      ]);
+      await this.getBoardMetadataStore().clear();
+      await this.writeMetadataIndexManifest(0, 0);
+    });
   }
 
   private async ensureInitialized(): Promise<void> {

@@ -70,6 +70,11 @@ export interface UnifiedToolbarProps {
    * 确保工具窗口运行时已启用
    */
   onEnableToolWindows?: () => void;
+
+  /**
+   * 任务面板完成可见提交后启用恢复与画布集成运行时
+   */
+  onEnableTaskRuntime?: () => void;
 }
 
 /**

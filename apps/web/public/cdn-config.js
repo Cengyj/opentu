@@ -72,14 +72,11 @@
     cacheExpiry: 3600000, // 缓存过期时间（1小时）
   };
 
-  // 运行时 CDN 候选：主 CDN 优先，备用 CDN 兜底
-  var CDN_SOURCES = [
-    {
-      name: 'jsdelivr',
-      baseUrl: 'https://cdn.jsdelivr.net/npm/' + CONFIG.packageName,
-      testPath: '/version.json',
-    },
-  ];
+  // Release-authorized remote candidates are injected only after the exact
+  // release tree passes hash/CORS/MIME/byte-identity verification. The current
+  // container-only release has no authorized remote tree, so this list is
+  // deliberately empty and startup performs no remote probe.
+  var CDN_SOURCES = [];
 
   /**
    * 测试单个 CDN 的响应时间

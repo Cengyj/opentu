@@ -13,13 +13,56 @@
 - 生产审计最终结果为 464 个 production dependencies、0 vulnerabilities，exit 0。包含开发工具链的完整审计覆盖 1,592 个 dependencies，仍因 3 个 moderate vulnerabilities 以 exit 1 结束：2 个来自 `@swc/cli → downloader → file-type`，1 个来自 Nx 19 `nx graph` CORS；没有 high 或 critical。本 change 不以缺少兼容矩阵的 Nx/SWC 大版本升级掩盖该剩余开发工具链风险。
 - Node 官方发布计划确认 Node 20 已于 2026-04-30 结束维护，而 Node 22 维护至 2027-04-30；修改前 CI 与 Docker builder 仍使用 Node 20。本机 Node `22.22.2` 已完成本 change 的 2,218 个测试、类型检查与生产构建，Vite `6.4.3` 和 Vitest `3.2.7` 的 engines 明确包含 `>=22.0.0`。修改前 Node 20 完整 builder 基础镜像为 398,366,825B/413 个 Debian 包；候选 Node `22.23.2-bookworm-slim` linux/amd64 manifest 为 `sha256:0f65470961851f2354dc8e560853e2f428ea928436135fc7e35780ab100c7e00`，镜像为 79,895,607B/88 个 Debian 包并包含 Corepack `0.34.6`。
 
+### 2026-08-03 production regression evidence
+
+本节记录对已部署 release 的新事实，并覆盖后续实现对旧 localhost 静态预算的解释；旧证据仍保留作为历史对照，但不能再单独证明生产体验合格。
+
+- Production identity：`https://img.foropencode.com/` 返回 `app-version=1.0.4` 与 `app-release-id=7e6617f04c83c9653a196be2bde785e551b763cd`，与当前 HEAD/tag 一致。
+- Cold/SW-off：shell 约 5.48 秒、canvas 约 6.19 秒、完整 AI 输入约 6.85 秒；166 个资源，142 JS / 21 CSS，约 1.65MB encoded / 4.44MB decoded。
+- Slow 4G fixture（1.6Mbps、150ms RTT、CPU×4）：完整 AI 输入约 13.11 秒。Constrained fixture（400kbps、300ms RTT、CPU×4）：shell 约 20.46 秒、完整 AI 输入约 36.76 秒。
+- 首次素材库与 AI 图片生成在 SW 已控制页面时仍分别约 1.92 秒、1.86 秒才可见，并分别新增约 66、73 个页面资源。`fallback={null}` 使等待阶段没有用户反馈。
+- 生产 manifest 中 `ai-chat=305`、`tool-windows=323`、`editor-engines=304`；`tool-windows + runtime-static-assets` union 为 382 项且与 `ai-chat` 重叠约 300 项。当前本地同结构 `tool-windows` 为 7,061,305B raw，三大分组并不是少量高价值资源。
+- `aitu-app@1.0.4` 未发布到 jsDelivr；`cdn-config.js`、`version.json` 和抽查的启动/功能 chunk 均返回 404。入口先等待最多 1200ms，Service Worker 的 local preference 又没有移除远程候选，缓存 miss 可继续承担错误 CDN 成本。
+- 容器内 Nginx 未启用 gzip/Brotli；当前约 1.94MB raw 启动图可压到约 0.57MB gzip。公网 OpenResty 已为 HTML/多数 JS 补 gzip，但 104,034B idle manifest 仍 identity/no-store；镜像在不同反向代理下表现不一致。
+- `AssetContext` 的刷新首次加载顺序为本地素材 → 已完成/归档任务 → 全部统一缓存元数据 → 合并/去重/排序 → idle 补 size。8 秒 TTL 只存在于当前 JS realm；浏览器刷新必然重建内存索引。
+
+当前实际启动和首次工具链为：
+
+```text
+index.html
+  → optional CDN config (currently invalid jsDelivr candidate)
+  → main → bootstrap → App → Drawnix/Board
+  → DeferredAIInputBar shell
+  → board && shell global gate
+  → idle import AIInputBarRuntime
+  → WorkflowProvider + ModelHealthProvider + 5,000+ line AIInputBar graph
+  → module-top MCP/long-video/external-skill initialization
+
+first media-library click
+  → request tool-windows + runtime-static-assets
+  → mount DrawnixDeferredRuntime + DrawnixDeferredFeatures
+  → import MediaLibraryModal
+  → initialize Asset runtime
+  → scan local assets + tasks + unified cache
+
+first image-generation click
+  → request the same broad groups
+  → mount shared TTDDialog
+  → statically import both image and video generation roots
+  → render image dialog
+```
+
+因此瓶颈不是“浏览器没有缓存”，而是冷版本仍需发现/传输过多模块、刷新仍需重新求值和重建内存索引、首次交互同时启动无关后台闭包，以及不可用 CDN 的确定性失败。后续设计必须在 cold cache 下成立，warm cache 只作为额外收益。
+
 ## Goals / Non-Goals
 
 - Goals:
   - 让用户尽快进入可操作画布
-  - 非核心能力改为未触发不挂载，并在 idle 或首次使用时加载
+  - 首屏直接提供真实可聚焦、可编辑、可保留草稿的轻量 Composer，而不是等待完整 AI 业务图替换占位壳
+  - 非核心能力按独立 feature core/extended runtime 激活，用户交互始终高于后台预取
   - 保留当前 SW 的 precache 机制，并新增一层空闲预取
-  - 让源码挂载边界、package 运行时导出、Vite 分组、idle manifest 与产物校验使用同一组资源边界
+  - 让源码挂载边界、package 运行时导出、Vite feature entry、idle manifest 与产物校验使用同一组资源边界和压缩字节预算
+  - 让容器直连、公网反代、cold/warm/upgrade 和首次/重复功能打开都拥有可复现的性能合同
   - 保持当前画布、任务、工作流、缓存、升级和崩溃恢复语义
   - 保证用户手册菜单和静态发布路径始终返回独立手册文档，而不是 SPA 应用壳
 - Non-Goals:
@@ -27,7 +70,11 @@
   - 不新增用户可配置的性能开关
   - 不将用户媒体或任务结果纳入 idle 预取
   - 不改变任务执行线程、模型路由、存储 schema 或迁移版本
-  - 不借本 change 重构 Chat/AI 业务逻辑或新增产品能力
+  - 不改变 AI generation type、selector/selectionKey、模型路由、Prompt、价格、TaskQueue 或供应商请求语义；仅迁移加载边界和状态所有权
+  - 不以 preload/prefetch 整个应用、合并成巨型 chunk、提高预算或依赖第二次刷新代替模块边界修复
+  - 不迁移 SW task/chat data plane 到 `postmessage-duplex`，也不建立第二套 release/CDN/prefetch 控制协议；`refactor-sw-duplex-comm` 独立拥有其数据面迁移
+  - 不改变全局队列/任务生命周期，不删除 IndexedDB/Cache API 数据；素材索引只是可丢弃派生投影
+  - 不把外部供应商生成耗时计入或冒充本地启动优化收益
   - 不为用户手册目录 URL 引入新的路由系统，也不改变手册内容结构
 
 ## Decisions
@@ -41,18 +88,20 @@
 - Decision: Web 的动态画布只从 `@drawnix/drawnix/app` 加载 `Drawnix`，根 barrel 继续作为兼容 API；首屏不可避免的 React、Plait、Slate 与 TDesign 依赖按依赖层拆成稳定 vendor chunk。
   - Alternatives considered: 继续动态导入根 barrel，或只把超大入口改名成多个无依赖边界的块。
   - Why not chosen: 根 barrel 不是精确的运行时边界；任意按体积改名既不能阻止额外导出回流，也容易形成 chunk 循环。共享的 RxJS、TSLib 等低层依赖必须独立于 Plait 层，避免 bootstrap 通过共享依赖反向加载画布引擎。
-- Decision: 通过 `manualChunks + idle-prefetch-manifest` 管理高频延后模块。
-  - Alternatives considered: 只依赖 Rollup 默认拆包
-  - Why not chosen: 无法稳定产出可校验、可预取的 chunk 分组。
+- Decision: 以明确的 feature entry 管理 `manualChunks + idle-prefetch-manifest`，manifest 记录每个 `*-core`/`*-extended` entry 的真实传递闭包、唯一资源和压缩字节；不再把任何命中 `tool-windows`/`ai-chat` 文件名的完整动态闭包视为一个可交互分组。
+  - Alternatives considered: 继续按源码目录命名 chunk 并遍历其全部 imports/dynamicImports，或只依赖 Rollup 默认拆包。
+  - Why not chosen: 当前产物已经证明目录命名组会扩张到 300+ 资源且跨组高度重叠；默认拆包又不能形成稳定可校验的功能 entry。feature entry 必须与真实 import 边界和预算一一对应，共享 foundation 单独计量，不能靠改 chunk 名掩盖依赖。
 - Decision: 将 bootstrap 所需的 analytics release API 从现有轻量 `runtime` 子入口导出，bootstrap 不再静态引用根 barrel；根 barrel 导出继续保留兼容。
   - Alternatives considered: 只调整 manual chunk，把根 barrel 依赖强制塞入另一个名字。
   - Why not chosen: 改名不改变静态可达关系，也不能阻止 UI 图谱进入 bootstrap。
 - Decision: Chat 使用轻量 context/controller 记录打开意图，只有首次打开或需要投递消息时才挂载完整 Drawer；挂载前的命令必须排队或由 state 驱动，不能静默丢失。
   - Alternatives considered: 保持 ChatDrawer 初始挂载，仅依赖浏览器缓存。
   - Why not chosen: 冷启动仍需下载、解析和执行完整 Chat 依赖，不符合未触发边界。
-- Decision: AI 输入在首屏保留等尺寸、可聚焦的轻壳以保持现有布局；完整 `WorkflowProvider`、`ModelHealthProvider`、模型目录与生成运行时在首次聚焦/输入/快捷键激活时立即加载，或在统一 `isStartupOperable` 门槛成立后的浏览器空闲回调自动挂载。显式交互会取消待执行 idle 回调并复用同一个单飞 loader；自动挂载不获取焦点、不提交请求。SW idle prefetch 仍只负责 warm cache，不能直接挂载 React 运行时或拥有业务副作用。
-  - Alternatives considered: 画布可操作后再插入完整 AIInputBar。
-  - Why not chosen: 会造成底部布局跳动并改变当前首屏视觉层级。
+- Decision: AI 输入首屏直接挂载真实可交互的 `ComposerCore`。Core 只拥有 Prompt/IME/草稿、基础 generation type、当前选择摘要、发送意图和稳定几何；model/parameter picker、attachment/library、history/optimizer、Agent/Workflow/MCP/external skills 和 generation submit 分别由动作级 runtime 承载。idle 只允许预取满足预算且无副作用的 core，不再自动求值或挂载完整 AI 业务运行时。
+  - Intent contract: focus、输入和 IME 不等待重运行时；需要重运行时的 click/Enter 进入一次 `preparing` 意图，loader 就绪后恰好继续一次。失败保留草稿和意图并提供显式重试，取消/卸载使迟到结果不能提交。
+  - Initialization boundary: `initializeMCP()`、`initializeLongVideoChainService()` 和 `externalSkillService.initialize()` 从 `AIInputBar` 模块顶层移出，由对应 Agent/长视频/Skill action runtime 的幂等显式入口拥有。
+  - Alternatives considered: 保留占位轻壳并在 idle 自动加载当前完整 AIInputBar，或把当前完整 AIInputBar 直接纳入首屏。
+  - Why not chosen: 前者已在生产造成 142 JS 的自动瀑布和“先残缺后完整”体验；后者把 Workflow、MCP、TaskQueue 和多媒体执行链重新放回首屏。真实 ComposerCore 同时消除布局替换和无关依赖。
 - Decision: 可选画布浮层采用“首次真实激活后挂载并保留实例”的边界；PopupToolbar、LinkPopup、Pencil/Pen/Eraser settings 与 CleanConfirm 未激活时不进入 React 渲染图，激活后保持既有关闭动画、焦点和组件状态。
   - Alternatives considered: 首屏挂载所有浮层但用 CSS 隐藏。
   - Why not chosen: CSS 隐藏仍会执行模块、hooks 与订阅，不能形成可验证的启动边界。
@@ -65,11 +114,19 @@
 - Decision: 应用工具栏首屏只保留菜单 trigger、Undo 和 Redo；完整菜单在首次真实打开时通过可重试单飞 loader 加载。MoreTools 同样只保留轻量 trigger，完整面板按首次打开加载。
   - Alternatives considered: 保持菜单/MoreTools 全量静态挂载，或在轻壳复制菜单动作。
   - Why not chosen: 前者继续带入导入、导出、设置、备份和工具运行时；后者会产生第二套动作语义。动态运行时继续复用原菜单顺序、popover container/z-index 和 Backup/Cloud 回调。
-- Decision: AssetContext 保持同步 context/API 外壳，IndexedDB/同步/缓存运行时只在统一 `isStartupOperable` 门槛成立后的浏览器空闲回调（500ms fallback）或更早的第一次显式存储访问时加载，两条路径共享同一个初始化 Promise；CacheQuota 监听在门槛成立前不注册 idle 调度也不加载缓存 runtime。RetryImage、统一缓存和画布音频缓存使用同一类可重试动态边界。Minimap 在空闲或用户展开时加载，而不是阻塞首屏。
+- Decision: AssetContext 保持同步 context/API 外壳和唯一初始化 Promise，但不再依赖全局 `isStartupOperable` 才能推进。它先读取版本化、可丢弃的轻量 `AssetProjectionIndex` 供素材库立即显示，再在 `boardInteractive` 后的后台预算或首次显式素材动作中对账本地素材、任务和统一缓存。CacheQuota、RetryImage、音频缓存和 Minimap 各消费其真实前置里程碑，不能因 AI Composer 状态被串行阻塞。
   - Alternatives considered: 移除 AssetProvider，或让每个消费者自行加载/初始化存储。
   - Why not chosen: 移除 provider 会改变现有消费者合同；分散初始化会产生重复读取、重复订阅和竞态。轻壳保留唯一状态所有权，运行时只承载延后实现。
+  - Projection boundary: 索引只保存素材卡片所需的轻量派生元数据、schema version、生成时间和源 revision；本地素材库、任务库与 Cache API 仍是唯一权威。索引损坏、版本不匹配或写入失败时可删除并重建，不删除任何用户媒体，也不让旧字段进入正常业务链。
+  - Refresh boundary: 先返回最近索引，再分批对账；本地素材读取与任务读取可安全并行，统一缓存补充在任务身份可用后执行。大集合合并/size 补齐不得阻塞窗口壳或首屏。
   - Declaration boundary: 延迟缓存 runtime 只导出显式、稳定的 `UnifiedCacheService` 公共接口，不通过 `typeof import` 推导带 private IndexedDB 状态的实现 singleton 类型；该接口只约束声明边界，不创建第二个缓存服务。
   - Declaration failure boundary: `useDialog`、`useDialogContext`、`usePopover` 和 `usePopoverContext` 必须以直接依赖 `@floating-ui/react` 的公开类型显式描述返回合同。`vite-plugin-dts` 的 diagnostics 不再只打印后继续成功，生成后也拒绝 pnpm 物理路径和未声明的 `@floating-ui/react-dom` 类型引用；CI 另以临时目录 declaration-only 编译确认关键入口和组件声明真实存在，避免被省略文件造成的假阳性扫描。
+- Decision: 工作区 Board 元数据建立在独立 IndexedDB `aitu-workspace-index/board_metadata` 中的可丢弃投影；现有 `aitu-workspace/boards` 仍是唯一权威且不升级 schema。manifest 记录投影 schema、权威记录数和索引记录数，entry 只包含侧栏需要的 `BoardMetadata`，不得包含 elements 或媒体字节。
+  - Consistency boundary: `saveBoard`、`updateBoardMetadata`、`deleteBoard` 与 `clearAll` 继续是唯一写入口；每次操作先写带唯一 operationId 的 pending journal，再写权威 Board 和投影，最后清除 journal。跨标签页使用命名 exclusive Web Lock，无 Web Locks 时使用进程内串行队列。
+  - Recovery boundary: 缺失、损坏、计数不符、pending journal 或显式 invalidation 都使投影无效，并在锁内从 `boards` 幂等重建。派生库不可用时只降级扫描权威 Board，绝不进入主数据库版本恢复或删除路径。
+  - Migration boundary: 旧用户首次运行新版本必须扫描一次完整 Board 来建立可信投影；后续刷新不得再次遍历完整 Board。投影不进入备份、导入或云同步格式，因此没有用户数据迁移和双写权威。
+- Decision: Card 的只读 Markdown renderer 从 Drawnix 首屏静态图移入 Card 实际渲染触发的动态边界。该边界在存在 Card 时自动开始，不依赖点击；加载完成通过原 `CardGenerator` 回调重新测量内容高度，ResizeObserver 继续处理后续尺寸变化。
+  - Why: 生产 stats 将 `MarkdownReadonly` 的 24,948 rendered bytes 定位为 `drawnix-app` 超预算的可延后来源；拆分后主块减少 11,243B，并保留卡片内容、选择、滚动和自动高度语义。
 - Decision: CI 将测试/声明/lint 质量合同、production build/release identity/startup 静态合同和 production artifact 浏览器 smoke 拆成 `quality`、`main`、`smoke` 三个职责独立的 job；`quality` 与 `main` 无依赖并行执行，`smoke` 只依赖并下载 `main` 的精确 `dist/apps/web` artifact。production artifact 以 workflow `run_id` 形成同一 run 内的稳定名称，完整重跑时由 `main` 覆盖，仅重跑失败的 `smoke` 时仍能读取此前成功产物。Playwright 安装、smoke 或 visual 失败不能再让编译显示为 skipped，也不能把开发服务器结果冒充生产产物结果；artifact smoke 禁用 Nx result cache，确保真实启动 preview 并执行浏览器断言。
   - Lint migration boundary: 当前六个 Nx lint 项目的既有诊断与 Drawnix Hover findings 记录为 schema-versioned baseline。fingerprint 包含项目、workspace-relative 文件、severity、稳定 rule/message identity 和精确诊断节点，不包含易漂移的绝对路径、行号或参数化全局消息；使用 multiset count 防止同一诊断重复扩散。baseline 同时锁定 Nx lint target、有效 ESLint/Nx 配置、实际工具版本和已扫描文件，scope/config 漂移、仍存在却退出扫描的文件、fatal parser error、baseline 损坏及 Hover 检查器异常一律 fail closed。Hover 检查器以完整 versioned JSON 区分 findings 与内部崩溃。
   - Baseline ownership: 普通 verify 全程只读；新增 fingerprint 或数量增加立即失败，历史 fingerprint 减少也失败并要求显式运行单调 ratchet。ratchet 仅在 scope contract 不变、零 additions 且每个 count 只减不增时原子收紧 baseline，不由 CI 自动执行；contract migration 的 snapshot 只向 stdout 输出候选 JSON。任何 baseline 变化都必须作为代码 diff 审查。该边界不降低 ESLint severity、不排除 Web/Drawnix、不把完整 lint 降级成 changed-files lint。既有债务清零后删除 baseline 数据并恢复零诊断合同，不保留双 lint 权威。
@@ -82,9 +139,10 @@
 - Decision: 用户手册菜单始终打开 `./user-manual/index.html`；Service Worker 将显式 `.html` 识别为独立静态文档并拒绝把应用壳缓存响应当作手册，release static contract 校验文档标记、版本和字节身份。
   - Alternatives considered: 继续打开 `/user-manual/` 并依赖各部署平台的目录索引/重写。
   - Why not chosen: 本机真实响应已经证明该目录 URL 会落入 SPA fallback，而显式文件 URL 可稳定返回手册；依赖平台重写无法形成一致的静态发布合同。
-- Decision: 在 validator 中维护唯一的禁止启动组清单，并新增入口静态依赖图总 raw budget。首轮预算为 2,000,000B，且任何 `ai-chat-`、`diagram-engines-`、`tool-windows-`、`external-skills-` JS 都不得进入入口静态图。
-  - Alternatives considered: 只补 `ai-chat-` 前缀或继续使用单文件 500KiB。
-  - Why not chosen: 只能修复本次名字，仍会放行重命名或多个小 chunk 回流。
+- Decision: validator 同时校验入口、ComposerCore 和每个高频 feature core 的完整传递图，报告 raw/gzip 字节、JS/CSS/静态文件数、最长依赖发现深度和共享 foundation；禁止组清单只作为额外防线，不再是功能边界权威。
+  - Initial budgets: ComposerCore 增量不超过 12 个 JS、150KB gzip、依赖深度 4；素材库和图片生成各自 core 不超过 25 个 JS/CSS、300KB gzip、依赖深度 4；任一 ordinary/default idle union 不超过 30 个文件、500KB gzip。旧入口 raw 2,000,000B/单文件 512,000B 门禁继续保留但不能代替这些预算。
+  - Alternatives considered: 只补 chunk 前缀、继续只看单文件/入口 raw，或把小文件合成一个巨型 chunk。
+  - Why not chosen: 当前 305/323 项分组已经证明名称和单文件预算会放行重命名、多小块及动态闭包回流；合成巨型文件减少请求数却不减少传输、解析或求值成本。
 - Decision: Excel 继续使用 SheetJS API，但将版本来源固定为上游官方 `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`；升级必须通过批量生图中文字段和模型基准多工作表/结构化值往返合同。
   - Alternatives considered: 继续使用 npm registry 的 `xlsx@0.18.5`，或在没有真实格式矩阵时改用另一解析器。
   - Why not chosen: 前者保留生产审计风险，后者会无依据改变 Excel 兼容面和业务 API。
@@ -97,37 +155,78 @@
 - Decision: 项目 engines 限制为 Node 22.x，CI 与 Docker builder 使用精确 Node `22.23.2`；Dockerfile 使用 linux/amd64 `bookworm-slim` manifest digest，而不是浮动 major tag。依赖清单与 workspace manifests 先形成 frozen-install 层，源码和 release identity 只使后续生产构建层失效；最终静态站仍复制到既有、已锁定的 Nginx 运行时。
   - Alternatives considered: 继续使用浮动 `node:20`、升级到尚未完成项目兼容矩阵的 Node 24，或改用 Alpine/musl builder。
   - Why not chosen: Node 20 已 EOL；Node 24 与当前 Nx 19 没有本 change 的完整兼容证据；Alpine 会额外改变 libc。Node 22 已由当前完整工具链验证，bookworm-slim 保持 glibc 并将 builder 基础镜像字节减少约 79.9%、Debian 包数减少约 78.7%。
+- Decision: 用多个单调启动里程碑替代一个 `isStartupOperable` 总门槛。
+  - Milestones: `shellCommitted`、`boardInteractive`、`workspaceRestored`、`composerInteractive`、`assetIndexReady`、`taskRecoveryReady`、`generationRuntimeReady`。每个状态只能向前推进并带可观测时间戳；它们不是新的业务数据权威。
+  - Dependency examples: ComposerCore 只依赖自身 commit；Asset 后台对账依赖 board/shell 可交互而不依赖 Composer；安全任务恢复依赖 task storage readiness，不依赖任何可见 AI/工具 UI；生成 submit runtime 只在提交意图或已有活动任务恢复时加载。
+  - Scheduling boundary: 可见页面使用 RAF 后 task 确认 paint；RAF 被隐藏页节流时以 visibility-aware deadline 推进非视觉安全工作。隐藏页不会假报 first paint，但也不会无限阻塞任务恢复。
+  - Alternatives considered: 继续让 `board !== null && AI shell mounted` 控制 AI、Asset、Minimap、监控和恢复。
+  - Why not chosen: 生产调用链已证明无关功能被一个 UI 壳串行化；一个门槛无法表达安全恢复与前台交互的不同优先级。
+- Decision: 新增无业务依赖的 `StartupResourceScheduler` 作为动态资源调度边界，复用现有可重试单飞 loader，而不是创建第二套 feature 实现。
+  - Priorities: `critical`、`interaction`、`likely-next`、`background`。interaction 永远先启动；likely-next/background 受 visibility、`saveData`、effective network type、并发和压缩字节预算约束。
+  - Intent preload: `pointerenter`、`focusin`、`touchstart` 可启动对应无副作用 feature core；click 立即提交 open state/可见 shell并复用同一个 Promise。预热不得挂载组件、初始化 MCP/TaskQueue、写设置或发送供应商请求。
+  - Cancellation: 尚未启动的后台工作可取消；已开始的 native dynamic import 不能伪装成可取消，但其结果可被缓存且卸载后不得提交 UI/业务副作用。Service Worker 后台队列在前台 client fetch/输入发生时于资源边界暂停。
+  - Lifetime: 每个 loader 成功后页内复用，失败清除 in-flight 以允许显式重试；timer、listener 和 subscription 在完成/取消/卸载后释放。
+- Decision: 高频工具拥有独立 shell/core/extended 边界，禁止从入口调用 `enableToolWindows(TOOL_WINDOW_GROUPS)` 或其他 catch-all 作为前置条件。
+  - Media library: `media-library-shell` 立即显示 WinBox/header/filter skeleton；`media-library-core` 负责 grid 与轻量索引；preview/editor/upload/archive 等进入 extended runtime。
+  - Image generation: `image-generation-shell` 立即显示窗口和 Prompt 状态；`image-generation-core` 只包含图片表单/模型摘要/参数加载状态。图片与视频不再由共享 `TTDDialog` 静态互相导入，batch、reference editor 和 generation executor 按 tab/action/submit 加载。
+  - Deferred runtime: 当前 `DrawnixDeferredRuntime` 中 task recovery、workflow sync、font/video recovery、auto insertion 与 provider pricing 按真实前置条件拆成独立 coordinator；只迁移加载所有权，不改变任务状态机、并发、attempt 或恢复语义。
+  - Feedback: 用户触发的 lazy boundary 在 100ms 内显示有可访问名称、`aria-busy`/status 的等几何 fallback；加载失败显示结构化阶段和重试。后台无 UI runtime 可以继续 render `null`，但不能吞掉影响用户动作的失败。
+- Decision: 静态 CDN 候选由发布事实而不是 display version 或运行时猜测决定。
+  - Current release mode: publish workflow 只发布 GHCR/DockerHub 容器，没有发布 `aitu-app` npm 包，因此默认 `origin` mode，远程候选集为空；HTML 主入口直接同源启动且不等待可选 `cdn-config.js`。
+  - Future CDN mode: 只有同一 releaseId 的静态树已发布，且 `version.json`、入口及抽查/清单中的关键 hash 经 CORS、MIME、字节身份验证后，构建/发布流程才可注入固定 CDN base。就绪失败必须阻止启用 CDN，而不是阻止 origin 容器发布或让客户端反复探测不存在的包。
+  - Service Worker: 明确 `local`/origin 偏好使 `getAvailableCDNs()` 返回空；已验证 CDN 才能参与版本化静态资源 fallback。同一个资源失败不会为每个 lazy chunk 重复支付完整超时。
+  - Control file: manifest defaults 为空且没有显式 group/full-prewarm 请求时，不获取 `idle-prefetch-manifest.json`。显式请求按 releaseId + group 单飞；upgrade full-prewarm 保持最低优先级、可暂停且不得与旧/新页面的 foreground fetch 竞争。
+- Decision: 最终镜像自身提供 gzip 基线，不依赖外部反向代理补救。
+  - Build/runtime: 对可压缩的 hashed JS/CSS 和大静态 JSON 生成可验证 `.gz`，Nginx 使用已确认可用的 `gzip_static`；HTML/控制 JSON 等非静态压缩文件使用有界动态 gzip fallback。基线类型包括 HTML、JavaScript、CSS、JSON/manifest 和 SVG，不强制重复压缩已经压缩的图片/字体。
+  - Contract: 容器直连和配置的公网 origin 在 `Accept-Encoding: gzip` 下，对大于 1KiB 的可压缩响应返回正确 `Content-Encoding` 与 `Vary`；解码字节必须等于 release contract，hashed immutable 与 HTML/control no-cache/no-store 语义保持不变。Brotli 仅在部署环境明确提供并验证时作为额外优化，不引入未锁定 Nginx 模块。
+- Decision: 用 Performance API 记录可复现阶段与调用计数，不记录业务内容。
+  - Startup marks: navigation、shell committed/painted、board committed/interactive、workspace restored、Composer requested/fetched/evaluated/committed/interactive。
+  - Feature marks: 每个 feature 的 intent、shell visible、requested/fetched/evaluated/committed/interactive、error/retry；Asset 另记录 snapshot read 与 reconcile，SW 记录 cache/CDN/origin source 和 foreground/background queue counts。
+  - Privacy: 只记录阶段、毫秒、资源/调用数量和压缩字节；不记录 Prompt、凭据、ModelRef、用户媒体 URL/字节、任务内容或完整错误响应。
+- Decision: 规范所有权保持单一。
+  - `startup-performance` 拥有用户感知阶段、feature 激活、调度和 cold/warm/upgrade SLO。
+  - `release-safe-static-loading` 拥有构建图、压缩、文件数和依赖深度预算。
+  - `smart-cdn-loading` 拥有 CDN 候选、origin fallback 和控制文件加载策略。
+  - `ai-input-generation` 拥有拆分后 generation type、selector、selectionKey、草稿、IME 和恰好一次提交语义。
+  - `harden-version-upgrade-convergence` 继续拥有 releaseId、A/B cache retention 和升级提交；本 change 只验证其性能交互，不建立第二套 cache authority。
+  - `refactor-sw-duplex-comm` 只拥有 task/chat data plane；它不得让 channel 建立成为 shell/Composer gate，也不得接管现有 release/CDN/prefetch control plane。
 
 ## Invariants
 
-- 首屏仍显示与当前同尺寸的 AI 输入区域、工具栏、画布和启动/错误反馈；不新增设置项。
-- 未打开 Chat/AI 时不创建其会话、模型健康、工作流提交或生成任务副作用。
-- 用户首次打开 Chat/AI 的命令不得丢失；加载中 100ms 内出现可访问状态，成功后继续原操作，失败时可重试。
+- 首屏仍显示同位置、同几何的 AI 输入区域、工具栏、画布和启动/错误反馈；输入区域必须是可聚焦、可编辑、可保留草稿与 IME 状态的真实 `ComposerCore`，不是等待整个 AI 运行时替换的占位壳。
+- 未触发对应动作时，ComposerCore 不初始化模型健康、Workflow、MCP、external skills、素材库或生成执行副作用；idle 不得自动挂载这些完整业务闭包。
+- 用户首次打开 Chat、素材库、图片生成或触发 Composer 扩展动作的命令不得丢失；加载中 100ms 内出现可访问状态，成功后恰好继续一次原操作，失败时保留意图并可重试。
 - 任务恢复、自动插入和 WorkZone/工作流同步仍在现有延后运行时执行；不得因 UI 拆分永久跳过。
 - 画板、任务、工作流、偏好、素材与 Cache API 的 key/schema/迁移保持不变。
 - SW 仍只预取版本化静态资源，不缓存用户媒体或任务结果；warm offline 行为不得回归。
 - 普通 SW idle run 只消费明确请求的非空分组；没有明确请求时只消费 manifest defaults。遍历全部分组只属于已就绪新 release 的显式 full-prewarm 阶段。
 - 当前 manifest defaults 为空：未发生真实交互的普通启动不下载延后分组；Chat/AI/工具入口按需请求，高版本 release 的 full-prewarm 仍负责升级离线完整性。
-- CDN 配置加载不得无限阻塞 main；同一页面内并发 CDN 选择必须共享一个探测 Promise，失败后的 local 结果也应缓存，避免重复 `version.json` 请求。
+- 当前容器发行的主入口必须直接同源启动，不请求或等待未发布的 CDN 配置；未来只有发布门禁已授权的同 release CDN 才可参与后续静态资源 fallback，且选择单飞、失效快速回源。
 - 公开根 barrel 继续兼容；只改变 bootstrap 的内部导入路径。
 - 未激活的可选浮层、ToolGenerator、工具图片执行、PPT 图片生成/覆盖和刷新任务检查不得进入首屏静态依赖图；首次真实操作必须继续调用原有业务实现，不能丢命令、重复提交或改变错误传播。
 - 未打开的应用菜单/MoreTools、未展开的 Minimap、未触发存储能力和未发生有效多点擦除时，对应重运行时不得静态进入首屏；失败重试、卸载防迟到和每次手势独立执行语义不得回归。
-- `isStartupOperable` 成立前 CacheQuota 不得安排 idle 回调或请求 Asset/统一缓存 runtime；门槛成立后的空闲加载与首次显式存储访问继续共享单一初始化所有权。
+- CacheQuota、Asset 对账、任务恢复与生成执行各自依赖明确的单调里程碑，不得重新受一个 `isStartupOperable` 或可见 AI 组件串行阻塞；空闲加载与首次显式访问仍共享单一初始化所有权。
+- 素材投影索引只是带 schema/revision 的可丢弃派生数据；本地素材、任务与 Cache API 继续是唯一权威，索引失效只能后台重建，不得删除用户数据或建立第二套写入语义。
+- 对每个 feature，意图预热、真实 click 和业务 submit 必须复用同一可重试单飞 loader；预热不得挂载 UI、发起生成、写设置或改变任务状态。
 - 用户手册入口必须指向显式 `user-manual/index.html`；显式手册 HTML 响应不能被 SPA shell、旧缓存或发布路径重写替代，手册版本必须与发布版本一致。
 - 依赖升级不改变 `.xlsx` 工作表名、中文列名、值类型、导入/导出 API，不改变 Mermaid-to-Drawnix 业务入口，也不修改持久化 schema；生产依赖树必须由锁文件唯一确定。
 
 ## Risks / Trade-offs
 
 - 非核心功能改为延后挂载后，首次点击聊天/工具/同步可能出现短暂局部 loading。
-  - Mitigation: 首屏可操作后使用空闲预取高频组，并在用户第一次触发前尽量提前 warmup。
+  - Mitigation: 同步提交有稳定几何和可访问状态的 feature shell；用 pointer/focus/touch 意图预热无副作用 core，前台 click 抢占所有 likely-next/background 预取。
 - 任务恢复、自动插入画布等副作用延后后，恢复状态展示会稍晚。
   - Mitigation: 统一放入 idle 启动器，确保不会阻塞进入画布，但尽早补齐状态。
 - 过度拆包可能带来过多小请求。
   - Mitigation: 使用稳定的手动 chunk 分组，限制为少量高价值分组。
 - Chat ref 当前在 Drawer 未挂载时为空，直接条件渲染会让 toolbar/消息命令静默失效。
   - Mitigation: 先把打开意图和待投递命令收敛到轻量 context/controller，并为首次打开、发送消息和 workflow 更新补测试。
-- AI 输入轻壳与完整组件切换可能丢失 focus、草稿或引发布局偏移。
-  - Mitigation: 轻壳持有草稿/focus 激活状态，完整组件复用同一容器尺寸；用 1280×720、平板和移动视口截图验证 CLS/布局连续性。
+- ComposerCore 与动作级扩展运行时之间的状态所有权分配错误，可能丢失 focus、草稿、IME 组合状态或重复提交。
+  - Mitigation: Core 唯一持有 Prompt/草稿/IME/发送意图；扩展运行时只消费不可变意图并以 intent id 恰好完成一次。覆盖加载失败、重试、卸载迟到和 IME Enter 合同。
+- 持久素材投影可能短暂显示旧快照。
+  - Mitigation: 快照携带 source revision 和生成时间，UI 明确进入后台对账阶段；每次素材/任务/缓存权威写入同步推进 revision，损坏或版本不匹配的快照只能丢弃后重建。
+- 动态 import 不能真正取消，前台抢占时已开始的背景传输可能仍占用带宽。
+  - Mitigation: scheduler 仅在资源边界开始工作，限制背景并发/压缩字节，前台意图后不再启动新背景工作；已完成模块可缓存但不提交迟到副作用。
 - 总预算可能因合法核心能力变化而失真。
   - Mitigation: 预算以实际入口图报告输出；任何调整必须带新测量和独立 OpenSpec 审批，不能只提高阈值。
 - Mermaid strict 模式可能改变带原始 HTML 的图表标签显示。
@@ -145,25 +244,26 @@
 
 ## Migration Plan
 
-1. 先增加产物级失败测试，证明当前 `ai-chat`/`tool-windows` 回流和总预算超限。
-2. 从 `runtime` 子入口导出 analytics release API，并切换 bootstrap 内部导入；保留根导出。
-3. 将 Chat 打开意图与命令队列迁移到轻量 controller，再条件挂载完整 Drawer。
-4. 将 AI 输入拆成等尺寸轻壳和完整实现；首次交互立即加载，未交互时在 `isStartupOperable` 后的浏览器 idle 阶段自动升级，不移动生成/任务数据所有权。
-5. 统一 Vite/idle manifest/validator 的禁止组和 2,000,000B 总 raw budget；动态画布切换到专用 app 子入口，并按依赖层拆分不可避免的 vendor。
-6. 由窄到宽验证并重跑四组各 5 次基线；失败时按上述文件边界整体回滚，不执行数据清理或迁移。
-7. 验证 CDN 单飞/有界 fallback 与 SW 精确分组策略；release full-prewarm 继续覆盖全部非空分组。
-8. 将 Popup/Link/画笔设置/清空确认、ToolGenerator/工具图片链、PPT 图片操作和刷新任务检查迁移到各自首次真实激活边界，并用静态依赖与行为合同证明没有复制业务执行器。
-9. 将 SheetJS 锁定到官方 `0.20.3` tarball；锁定 Mermaid `10.9.6`、uuid `14.0.1` 和 `@swc-node/core` `1.13.3`，运行 Excel 往返、聊天 strict、冻结锁、审计、类型检查和生产构建回归。
-10. 将完整应用菜单、MoreTools、Minimap、Asset/缓存运行时和精细擦除迁移到真实激活边界，保留原动作、状态所有权、错误和并发语义。
-11. 将用户手册菜单固定为显式 `./user-manual/index.html`，由手册完整性、SW 路由和 release static 合同验证 21 页文档不会被 SPA shell 替代。
-12. 将项目 engines、CI 与 Docker builder 同步到 Node 22；CI 使用精确 patch，Docker builder 固定 linux/amd64 bookworm-slim manifest，并将 frozen install 与源码/release identity 分层；通过最终 `pnpm install --frozen-lockfile && pnpm build` 和静态发布合同确认兼容。
+1. 保留已完成的 bootstrap/runtime 导出、Chat controller、可选画布运行时、用户手册、依赖安全与 CI 修正；先增加新的产物图和浏览器失败合同，固定生产 v1.0.4 的冷启动、慢网和首次工具数据。
+2. 引入不包含业务数据的单调启动里程碑和 `StartupResourceScheduler`，先迁移现有单飞 loader/预取调用，再删除素材库与图片生成入口对 `enableToolWindows(TOOL_WINDOW_GROUPS)` 的前置依赖。
+3. 将当前 AI 输入迁移为唯一真实 `ComposerCore`，再按 model/parameter、attachment/library、history/optimizer、Agent/Workflow/MCP/external skills 和 generation submit 切开动作运行时；删除 idle 自动挂载当前完整 `AIInputBar` 的路径和模块顶层初始化。
+4. 将素材库拆为 shell/core/extended，将 GitHub sync、preview/editor、audio player、ZIP/download 和 canvas insertion 下沉到真实动作边界；增加带 revision 的 `AssetProjectionIndex`，完成线性增量对账和损坏重建合同后，删除刷新首开时的全量 Cache.keys/多轮 O(n²) 投影路径。
+5. 将 TTD 共享根拆为图片与视频独立 shell/core；参考图素材库、batch/editor 和 generation execution 分别按按钮/tab/submit 加载。提交继续复用现有唯一生图路由和 TaskQueue，不创建第二套 planner/executor。
+6. 以明确 feature entry 重建 manifest 和产物校验，将当前 300+ 项宽分组退出 ordinary/default idle；完成原点发行默认零 CDN 候选、defaults 空时零 manifest 请求、容器 gzip 和公网响应合同。
+7. 按模块合同 → 定向行为 → 产物图 → 生产 artifact 浏览器 → 本机容器直连 → `https://img.foropencode.com/` 的顺序验证。每个阶段都记录 cold/warm SW、A→B 升级、慢网、资源/调用计数和回复不变量。
+8. 只有新方案通过全部门禁才发布；回滚以前一个 release 的整体静态树为单位，保留素材索引为可忽略派生数据。不删除 IndexedDB、Cache API、任务或用户偏好。
 
 ## Acceptance Thresholds
 
-- 当前同机冷 origin、SW 关、1280×720、无 throttle、5 次口径下：可操作中位数不得高于 1174ms，范围上界不得高于 1276ms；入口前服务器正文不高于 2,000,000B，请求数不高于 30。
-- 热、SW 关同口径 5 次可操作中位数不高于 515ms（当前 468ms + 10% 容差）。
-- `ai-chat-*`、`diagram-engines-*`、`tool-windows-*`、`external-skills-*` JS 在 `isStartupOperable` 成立前不得被请求，且始终不得进入入口静态依赖图；AI 轻壳自身 chunk 可存在。门槛成立后的 AI idle 自动升级属于受控动态加载，不得反向扩大入口静态图。
-- 首次 Chat/AI 激活 100ms 内出现可访问 loading/pressed 状态；本地热缓存下 5 次完成挂载的中位数不高于 1000ms。该指标必须新增修复前/后原始值。
+- 生产站冷缓存/SW 关闭的 20 次样本中，`shellCommitted`、`boardInteractive`、`composerInteractive` 必须分别记录，不得用一个总时间代替。在与 2026-08-03 基线同网络/设备口径下，三者 P75 分别不高于 2.5s/3.0s/3.5s，且不得高于当前 5.48s/6.19s/6.85s 基线。
+- Slow 4G（1.6Mbps、150ms RTT、4× CPU）下 `composerInteractive` P95 不高于 8s；400kbps、300ms RTT、4× CPU 下 P95 不高于 20s（当前约 36.76s）。这两项必须在 cold/SW-off 和 A→B 升级各验证一组，不以热缓存代替。
+- ComposerCore 的入口增量不超过 12 个 JavaScript、150KiB gzip、依赖深度 4；素材库和图片生成的各自 core 闭包不超过 25 个 JS/CSS、300KiB gzip、深度 4；ordinary/default idle union 不超过 30 个文件、500KiB gzip。共享 foundation 必须显式计入首个消费者，禁止通过改名、重复分组或巨型 chunk 规避。
+- 用户 intent 到素材库/图片生成/Chat 可见 shell 的 P75 不高于 100ms；正常公网上 shell 到 core interactive P75 不高于 750ms，Slow 4G P95 不高于 2.5s。首次与重复打开必须分别记录，重复打开 P75 不高于 150ms 且新增资源请求为 0。
+- 首次点素材库不得加载 TaskExecutor、generation runtime、ToolWinBoxManager 全量闭包、视频根或 GitHub/audio/editor/ZIP action chunk；首次点图片生成不得加载视频根、素材库 extended 或 generation executor（submit 之前）。两者首开新增请求各不超过 25。
+- 拥有同 revision 素材快照时，窗口首帧不执行全量 Cache.keys/任务全表扫描；背景 reconcile 不阻塞 shell/core，N 条投影合并为 O(n)，同 revision 不重复扫描。
+- 前台 intent 发生后不再启动新的 likely-next/background 工作；每个 feature loader 同时最多一个 in-flight import，失败可重试，完成/取消/卸载后没有残留 timer、listener 或 subscription。
+- 当前容器发行的公网候选数为 0，冷启动不请求 jsDelivr `aitu-app` 资源；manifest defaults 为空时不请求 `idle-prefetch-manifest.json`。本机容器直连和公网 origin 均必须以 gzip 服务大于 1KiB 的可压缩 HTML/JS/CSS/JSON/manifest/SVG，解码字节与 release contract 一致。
+- `ai-chat-*`、`diagram-engines-*`、`tool-windows-*`、`external-skills-*` 和完整 generation runtime 始终不得进入入口/ComposerCore 静态图；不得在 idle 无条件求值或挂载。
 - warm SW 源站离线仍能进入可操作画布；初始化失败仍显示错误、日志、安全模式和调试入口。
 - 同视口/同主题前后截图中，未交互首屏 AI 输入容器位置和尺寸不变；浏览器报告 CLS 不高于 0.1，移动/平板无新溢出。
 - 每个首屏 JS/CSS 资源的未压缩体积不高于 512,000B，入口静态图未压缩总量不高于 2,000,000B；不得通过提高预算完成验收。
@@ -197,7 +297,7 @@
 - warm SW 在源站离线时由 `http://127.0.0.1:7210/sw.js` 持续控制，83ms 重新进入可操作画布，页面错误、request failure 和 HTTP failure 均为 0。
 - 仓库 Playwright 要求的 Chromium 1200 已安装到隔离可写缓存；使用 `web:preview` 在独立端口服务刚构建的 `dist/apps/web` 后，3 个 smoke 全部通过。首次真实执行揭示旧测试会在延迟 AI 输入轻壳上过早测量高度；修正后先触发轻壳、验证草稿回放到完整 `AIInputBar`，再保持原 2px 阈值验证 4/6 行高度。feature/visual/responsive 全矩阵仍未因此被误标为完成。
 - 最新 AI 轻壳回归使用同一 production preview 证明无需交互即可升级：组件合同 9/9，smoke 3/3；独立 Chromium 探针未发送鼠标或键盘事件，观测到 `shellSeen=true`、`runtimeSeen=true`、342ms 自动挂载、残留轻壳 0、active test id 为 null、空草稿、应用 request/page failure 为 0。实际 `localhost:7200` 同口径为 831ms、残留轻壳 0、应用 failure 0；额外 fetch/xhr 审计的供应商提交请求为 0，仅观测到既有 performance history GET。外部 `cdn.jsdelivr.net/.../cdn-config.js` 因 CSP 失败被单独记录，既有有界本地 fallback 后页面和完整输入栏仍成功挂载，不把该外部失败隐写为通过。
-- `openspec validate refactor-startup-shell-loading --strict` 仍因 `openspec: command not found` 以 exit 127 结束；strict validation 明确未完成。仓库 Playwright 全矩阵以及任务/工作流真实恢复、升级、多标签页浏览器路径仍由 `tasks.md` 的未勾选项跟踪，不由构建、合同测试或已完成的浏览器 smoke 替代。
+- `openspec validate refactor-startup-shell-loading --strict` 因 `openspec: command not found` 以 exit 127 结束；`pnpm exec openspec validate refactor-startup-shell-loading --strict` 也因仓库未安装 CLI 以 exit 254 结束。strict validation 明确未完成。仓库 Playwright 全矩阵以及任务/工作流真实恢复、升级、多标签页浏览器路径仍由 `tasks.md` 的未勾选项跟踪，不由构建、合同测试或已完成的浏览器 smoke 替代。
 
 ## Rollback
 

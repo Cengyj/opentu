@@ -17,8 +17,30 @@ const PLAYLIST_ITEMS_STORE = 'audio_playlist_items';
 class AudioPlaylistService {
   private playlistStore: LocalForage | null = null;
   private playlistItemsStore: LocalForage | null = null;
+  private initialized = false;
+  private initializePromise: Promise<void> | null = null;
 
   async initialize(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+    if (this.initializePromise) {
+      return this.initializePromise;
+    }
+
+    const attempt = this.initializeOnce();
+    this.initializePromise = attempt;
+    try {
+      await attempt;
+      this.initialized = true;
+    } finally {
+      if (this.initializePromise === attempt) {
+        this.initializePromise = null;
+      }
+    }
+  }
+
+  private async initializeOnce(): Promise<void> {
     if (!this.playlistStore) {
       this.playlistStore = localforage.createInstance({
         name: 'aitu-audio-playlists',
@@ -180,7 +202,10 @@ class AudioPlaylistService {
     if (!playlist) {
       throw new Error('播放列表不存在');
     }
-    if (playlistId === AUDIO_PLAYLIST_FAVORITES_ID && !isAudioPlaylistAssetItemRef(itemRef)) {
+    if (
+      playlistId === AUDIO_PLAYLIST_FAVORITES_ID &&
+      !isAudioPlaylistAssetItemRef(itemRef)
+    ) {
       throw new Error('收藏仅支持音频素材');
     }
 
@@ -188,7 +213,9 @@ class AudioPlaylistService {
     if (
       items.some((item) => {
         const existingRef = getAudioPlaylistItemRef(item);
-        return existingRef ? isSameAudioPlaylistItemRef(existingRef, itemRef) : false;
+        return existingRef
+          ? isSameAudioPlaylistItemRef(existingRef, itemRef)
+          : false;
       })
     ) {
       return;
@@ -223,7 +250,9 @@ class AudioPlaylistService {
     const items = await this.getPlaylistItems(playlistId);
     const nextItems = items.filter((item) => {
       const existingRef = getAudioPlaylistItemRef(item);
-      return existingRef ? !isSameAudioPlaylistItemRef(existingRef, itemRef) : true;
+      return existingRef
+        ? !isSameAudioPlaylistItemRef(existingRef, itemRef)
+        : true;
     });
     await this.playlistItemsStore!.setItem(playlistId, nextItems);
     await this.playlistStore!.setItem(playlistId, {
@@ -252,7 +281,9 @@ class AudioPlaylistService {
     const items = await this.getPlaylistItems(AUDIO_PLAYLIST_FAVORITES_ID);
     const exists = items.some((item) => {
       const ref = getAudioPlaylistItemRef(item);
-      return ref ? isSameAudioPlaylistItemRef(ref, { kind: 'asset', assetId }) : false;
+      return ref
+        ? isSameAudioPlaylistItemRef(ref, { kind: 'asset', assetId })
+        : false;
     });
     if (exists) {
       await this.removeItemFromPlaylist(

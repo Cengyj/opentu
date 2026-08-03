@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AudioPlaylist } from '../../types/audio-playlist.types';
 
 const stores = new Map<string, Map<string, unknown>>();
+const storageCalls = vi.hoisted(() => ({
+  getItem: vi.fn(),
+  setItem: vi.fn(),
+}));
 
 vi.mock('localforage', () => ({
   default: {
@@ -10,9 +14,11 @@ vi.mock('localforage', () => ({
       stores.set(storeName, store);
       return {
         async getItem<T>(key: string): Promise<T | null> {
+          storageCalls.getItem(storeName, key);
           return (store.get(key) as T) || null;
         },
         async setItem<T>(key: string, value: T): Promise<T> {
+          storageCalls.setItem(storeName, key);
           store.set(key, value);
           return value;
         },
@@ -29,6 +35,7 @@ vi.mock('localforage', () => ({
 
 describe('audioPlaylistService', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     stores.clear();
     vi.resetModules();
     vi.stubGlobal('crypto', {
@@ -47,6 +54,23 @@ describe('audioPlaylistService', () => {
       name: '收藏',
       isSystem: true,
     });
+  });
+
+  it('shares one initialization attempt across concurrent providers', async () => {
+    const { audioPlaylistService } = await import('../audio-playlist-service');
+
+    await Promise.all([
+      audioPlaylistService.initialize(),
+      audioPlaylistService.initialize(),
+      audioPlaylistService.initialize(),
+    ]);
+
+    expect(storageCalls.getItem).toHaveBeenCalledTimes(1);
+    expect(storageCalls.getItem).toHaveBeenCalledWith(
+      'audio_playlists',
+      'favorites'
+    );
+    expect(storageCalls.setItem).toHaveBeenCalledTimes(2);
   });
 
   it('prevents duplicate items in the same playlist', async () => {
@@ -70,7 +94,11 @@ describe('audioPlaylistService', () => {
     await audioPlaylistService.addAssetToPlaylist('asset-1', playlist.id);
     await audioPlaylistService.removeAssetFromAllPlaylists('asset-1');
 
-    expect(await audioPlaylistService.getPlaylistItems('favorites')).toHaveLength(0);
-    expect(await audioPlaylistService.getPlaylistItems(playlist.id)).toHaveLength(0);
+    expect(
+      await audioPlaylistService.getPlaylistItems('favorites')
+    ).toHaveLength(0);
+    expect(
+      await audioPlaylistService.getPlaylistItems(playlist.id)
+    ).toHaveLength(0);
   });
 });

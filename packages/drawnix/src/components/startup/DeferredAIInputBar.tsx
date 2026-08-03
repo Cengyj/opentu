@@ -23,29 +23,6 @@ type PendingAIInputEvent =
   | { type: typeof AI_INPUT_FOCUS_EVENT; detail: AIInputFocusEventDetail }
   | { type: typeof AI_INPUT_PREFILL_EVENT; detail: AIInputPrefillEventDetail };
 
-const AI_INPUT_IDLE_TIMEOUT_MS = 1500;
-const AI_INPUT_FALLBACK_DELAY_MS = 400;
-
-function scheduleAIInputRuntimeLoad(callback: () => void): () => void {
-  const idleWindow = window as Window & {
-    requestIdleCallback?: (
-      idleCallback: () => void,
-      options?: { timeout: number }
-    ) => number;
-    cancelIdleCallback?: (id: number) => void;
-  };
-
-  if (typeof idleWindow.requestIdleCallback === 'function') {
-    const idleId = idleWindow.requestIdleCallback(callback, {
-      timeout: AI_INPUT_IDLE_TIMEOUT_MS,
-    });
-    return () => idleWindow.cancelIdleCallback?.(idleId);
-  }
-
-  const timer = window.setTimeout(callback, AI_INPUT_FALLBACK_DELAY_MS);
-  return () => window.clearTimeout(timer);
-}
-
 export function DeferredAIInputBar({
   isDataReady,
   isStartupOperable,
@@ -69,9 +46,10 @@ export function DeferredAIInputBar({
   const shouldFocusRef = useRef(false);
   const submitAfterReadyRef = useRef(false);
   const pendingEventsRef = useRef<PendingAIInputEvent[]>([]);
+  const shellInputRef = useRef<HTMLTextAreaElement | null>(null);
   const replayTimerRef = useRef<number | null>(null);
   const submitTimerRef = useRef<number | null>(null);
-  const cancelIdleLoadRef = useRef<(() => void) | null>(null);
+  const [workspaceNoticeVisible, setWorkspaceNoticeVisible] = useState(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -90,13 +68,7 @@ export function DeferredAIInputBar({
     onShellMounted?.();
   }, [onShellMounted]);
 
-  const cancelScheduledIdleLoad = useCallback(() => {
-    cancelIdleLoadRef.current?.();
-    cancelIdleLoadRef.current = null;
-  }, []);
-
   const activate = useCallback(() => {
-    cancelScheduledIdleLoad();
     if (runtimeRef.current || loadingRef.current) {
       return;
     }
@@ -124,34 +96,13 @@ export function DeferredAIInputBar({
         );
         setLoadStatus('error');
       });
-  }, [cancelScheduledIdleLoad]);
+  }, []);
 
   useEffect(() => {
-    if (!isStartupOperable || runtimeRef.current || loadingRef.current) {
-      return;
+    if (isDataReady) {
+      setWorkspaceNoticeVisible(false);
     }
-
-    let disposed = false;
-    const cancelScheduledLoad = scheduleAIInputRuntimeLoad(() => {
-      if (disposed) {
-        return;
-      }
-      cancelIdleLoadRef.current = null;
-      activate();
-    });
-    const cancelIdleLoad = () => {
-      disposed = true;
-      cancelScheduledLoad();
-    };
-    cancelIdleLoadRef.current = cancelIdleLoad;
-
-    return () => {
-      if (cancelIdleLoadRef.current === cancelIdleLoad) {
-        cancelIdleLoadRef.current = null;
-      }
-      cancelIdleLoad();
-    };
-  }, [activate, isStartupOperable]);
+  }, [isDataReady]);
 
   useEffect(() => {
     if (activationKey <= 0) {
@@ -168,6 +119,13 @@ export function DeferredAIInputBar({
       }
       const detail =
         (event as CustomEvent<AIInputFocusEventDetail>).detail || {};
+
+      if (!detail.generationType && !detail.skillId) {
+        shouldFocusRef.current = true;
+        shellInputRef.current?.focus();
+        return;
+      }
+
       pendingEventsRef.current.push({
         type: AI_INPUT_FOCUS_EVENT,
         detail,
@@ -184,6 +142,7 @@ export function DeferredAIInputBar({
       if (!detail) {
         return;
       }
+      setDraft(detail.prompt || '');
       pendingEventsRef.current.push({
         type: AI_INPUT_PREFILL_EVENT,
         detail,
@@ -273,13 +232,11 @@ export function DeferredAIInputBar({
       className={`ai-input-bar deferred-ai-input-bar ${ATTACHED_ELEMENT_CLASS_NAME}`}
       data-testid="deferred-ai-input-bar"
       data-load-status={loadStatus}
-      onPointerDown={activate}
+      data-startup-operable={isStartupOperable ? 'true' : 'false'}
+      data-workspace-ready={isDataReady ? 'true' : 'false'}
     >
       <div className="ai-input-bar__container deferred-ai-input-bar__container">
-        <div
-          className="deferred-ai-input-bar__toolbar"
-          aria-hidden={loadStatus === 'error' ? undefined : true}
-        >
+        <div className="deferred-ai-input-bar__toolbar">
           {loadStatus === 'error' ? (
             <button
               type="button"
@@ -291,24 +248,68 @@ export function DeferredAIInputBar({
             </button>
           ) : (
             <>
-              <span className="deferred-ai-input-bar__tool-placeholder" />
-              <span className="deferred-ai-input-bar__tool-placeholder" />
-              <span className="deferred-ai-input-bar__control-placeholder" />
-              <span className="deferred-ai-input-bar__control-placeholder deferred-ai-input-bar__control-placeholder--wide" />
-              <span className="deferred-ai-input-bar__send-placeholder" />
+              <button
+                type="button"
+                className="deferred-ai-input-bar__tool"
+                onClick={activate}
+                aria-label="加载附件工具"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                className="deferred-ai-input-bar__tool deferred-ai-input-bar__tool--mode"
+                onClick={activate}
+              >
+                智能
+              </button>
+              <span className="deferred-ai-input-bar__toolbar-spacer" />
+              <button
+                type="button"
+                className="deferred-ai-input-bar__control"
+                onClick={activate}
+              >
+                自动模型
+              </button>
+              <button
+                type="button"
+                className="deferred-ai-input-bar__control"
+                onClick={activate}
+              >
+                参数
+              </button>
+              <button
+                type="button"
+                className="deferred-ai-input-bar__send"
+                disabled={
+                  !isDataReady || !draft.trim() || loadStatus === 'loading'
+                }
+                aria-label={
+                  isDataReady ? '发送' : '工作区恢复完成后才能发送'
+                }
+                onClick={() => {
+                  if (!isDataReady) {
+                    setWorkspaceNoticeVisible(true);
+                    return;
+                  }
+                  submitAfterReadyRef.current = true;
+                  activate();
+                }}
+              >
+                ↑
+              </button>
             </>
           )}
         </div>
         <textarea
+          ref={shellInputRef}
           className="ai-input-bar__input deferred-ai-input-bar__input"
           value={draft}
           onFocus={() => {
             shouldFocusRef.current = true;
-            activate();
           }}
           onChange={(event) => {
             setDraft(event.target.value);
-            activate();
           }}
           onKeyDown={(event) => {
             if (
@@ -318,6 +319,10 @@ export function DeferredAIInputBar({
               !event.nativeEvent.isComposing
             ) {
               event.preventDefault();
+              if (!isDataReady) {
+                setWorkspaceNoticeVisible(true);
+                return;
+              }
               submitAfterReadyRef.current = true;
               activate();
             }
@@ -328,6 +333,11 @@ export function DeferredAIInputBar({
           aria-label="AI 输入"
           aria-busy={loadStatus === 'loading' || undefined}
         />
+        {workspaceNoticeVisible && !isDataReady ? (
+          <span className="deferred-ai-input-bar__workspace-notice" role="status">
+            正在恢复工作区，完成后即可发送
+          </span>
+        ) : null}
         <span className="deferred-ai-input-bar__status" aria-live="polite">
           {loadStatus === 'loading'
             ? '正在加载 AI 输入功能'

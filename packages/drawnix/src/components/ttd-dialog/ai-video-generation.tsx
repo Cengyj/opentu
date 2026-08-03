@@ -209,6 +209,7 @@ interface AIVideoGenerationProps {
   onModelRefChange?: (value: ModelRef | null) => void;
   externalBatchId?: string;
   initialAutoInsertToCanvas?: boolean;
+  onEnableRuntime?: () => void;
   onDraftChange?: (draft: {
     prompt: string;
     images: Array<{ url: string; name: string }>;
@@ -232,6 +233,7 @@ const AIVideoGeneration = ({
   onModelRefChange,
   externalBatchId,
   initialAutoInsertToCanvas,
+  onEnableRuntime,
   onDraftChange,
 }: AIVideoGenerationProps = {}) => {
   const videoModels = useSelectableModels('video');
@@ -1057,6 +1059,8 @@ const AIVideoGeneration = ({
         );
         return;
       }
+
+      onEnableRuntime?.();
 
       try {
         // Convert uploaded images to serializable format

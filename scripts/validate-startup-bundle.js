@@ -8,6 +8,7 @@ const {
 
 const DIST_DIR = path.resolve(__dirname, '../dist/apps/web');
 const INDEX_HTML = path.join(DIST_DIR, 'index.html');
+const PRECACHE_MANIFEST = path.join(DIST_DIR, 'precache-manifest.json');
 const IDLE_MANIFEST = path.join(DIST_DIR, 'idle-prefetch-manifest.json');
 const DISALLOWED_PREFIXES = [
   'ai-chat-',
@@ -22,19 +23,16 @@ const REQUIRED_STARTUP_DYNAMIC_PREFIXES = [
   'bootstrap-',
   'drawnix-app-',
 ];
-// Drawnix 首次渲染会无条件挂载 AI 输入轻壳；完整 AIInputBarRuntime 仅在
-// focus/input/prefill 后由轻壳加载，因此不能作为首屏根。
-const REQUIRED_STARTUP_DYNAMIC_ROOT_RULES = [
-  {
-    parentPrefix: 'drawnix-app-',
-    assetPrefix: 'DeferredAIInputBar-',
-    expectedMatches: 1,
-  },
-];
+// The real composer shell is a static part of drawnix-app. Only its heavy
+// action runtime remains dynamic, so there is no second required startup root.
 // These roots are mounted automatically after the canvas becomes interactive.
 // They may perform lightweight checks, but must not pull feature groups before
 // a matching update, memory-pressure condition, or user action exists.
 const AUTOMATIC_DEFERRED_ROOT_PREFIXES = ['DrawnixOperationalMonitors-'];
+const PROJECT_PANEL_DEFERRED_PREFIXES = [
+  'project-frame-panel-',
+  'project-layer-panel-',
+];
 
 function fail(message) {
   console.error(`[startup-validate] ${message}`);
@@ -75,20 +73,37 @@ if (invalidDirectAssets.length > 0) {
   fail(`重模块重新回流到入口 HTML：${invalidDirectAssets.join(', ')}`);
 }
 
-if (!fs.existsSync(IDLE_MANIFEST)) {
-  fail('idle-prefetch-manifest.json 不存在，请检查构建产物生成流程');
+if (!fs.existsSync(PRECACHE_MANIFEST) || !fs.existsSync(IDLE_MANIFEST)) {
+  fail('启动资源 manifest 不完整，请检查构建产物生成流程');
 }
 
+let precacheManifest;
 let idleManifest;
 try {
+  precacheManifest = JSON.parse(fs.readFileSync(PRECACHE_MANIFEST, 'utf8'));
+  if (!Array.isArray(precacheManifest.files)) {
+    throw new Error('precache files must be an array');
+  }
   idleManifest = JSON.parse(fs.readFileSync(IDLE_MANIFEST, 'utf8'));
   validateIdlePrefetchDefaults(idleManifest);
 } catch (error) {
   fail(
-    `idle-prefetch-manifest.json 无效：${
+    `启动资源 manifest 无效：${
       error instanceof Error ? error.message : String(error)
     }`
   );
+}
+
+const precachedUrls = new Set(
+  precacheManifest.files
+    .map((entry) => entry?.url)
+    .filter((url) => typeof url === 'string')
+);
+if (precachedUrls.has('/favicon.ico')) {
+  fail('precache 不得包含未被 HTML 引用的 legacy favicon.ico');
+}
+if (!precachedUrls.has('/icons/favicon-32x32.png')) {
+  fail('precache 缺少 HTML 实际引用的 compact favicon');
 }
 
 function readAssetSource(entryAsset) {
@@ -197,7 +212,6 @@ try {
     entryAssets: entryScripts,
     readAsset: readAssetSource,
     requiredDynamicPrefixes: REQUIRED_STARTUP_DYNAMIC_PREFIXES,
-    requiredDynamicRootRules: REQUIRED_STARTUP_DYNAMIC_ROOT_RULES,
   });
 } catch (error) {
   fail(
@@ -221,6 +235,39 @@ if (invalidStaticDeps.length > 0) {
 }
 
 const jsAssets = collectJsAssets();
+const idlePrefetchUrls = new Set(
+  Object.values(idleManifest.groups || {}).flatMap((entries) =>
+    Array.isArray(entries)
+      ? entries
+          .map((entry) => entry?.url)
+          .filter((url) => typeof url === 'string')
+      : []
+  )
+);
+const projectPanelDeferredRoots = [];
+for (const rootPrefix of PROJECT_PANEL_DEFERRED_PREFIXES) {
+  const matchingRoots = jsAssets.filter((asset) =>
+    path.basename(asset).startsWith(rootPrefix)
+  );
+  if (matchingRoots.length !== 1) {
+    fail(
+      `必须存在唯一项目面板延后根 ${rootPrefix}，实际为 ${matchingRoots.length}`
+    );
+  }
+
+  const [rootAsset] = matchingRoots;
+  const manifestUrl = `/${rootAsset}`;
+  if (
+    directAssets.includes(rootAsset) ||
+    entryDependencyGraph.has(rootAsset) ||
+    precachedUrls.has(manifestUrl) ||
+    idlePrefetchUrls.has(manifestUrl)
+  ) {
+    fail(`项目面板延后根被首屏或预取清单提前加载：${rootAsset}`);
+  }
+  projectPanelDeferredRoots.push(rootAsset);
+}
+
 const automaticDeferredGraphs = {};
 for (const rootPrefix of AUTOMATIC_DEFERRED_ROOT_PREFIXES) {
   const matchingRoots = jsAssets.filter((asset) =>
@@ -321,6 +368,7 @@ console.log(
       startupGraphBytes,
       startupGraphLimit: MAX_STARTUP_GRAPH_BYTES,
       automaticDeferredGraphs,
+      projectPanelDeferredRoots,
       chunkCycles: [],
       idlePrefetchGroups: Object.keys(idleManifest.groups || {}),
       idlePrefetchDefaults: idleManifest.defaults,

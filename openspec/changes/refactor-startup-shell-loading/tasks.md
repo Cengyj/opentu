@@ -13,7 +13,7 @@
 
 ## 3. Verification
 
-- [ ] 3.1 运行 OpenSpec CLI 校验（2026-08-03 执行 `openspec validate refactor-startup-shell-loading --strict`，exit 127：`openspec: command not found`；保持未完成，不伪造通过）
+- [ ] 3.1 运行 OpenSpec CLI 校验（2026-08-03 执行 `openspec validate refactor-startup-shell-loading --strict`，exit 127：`openspec: command not found`；`pnpm exec openspec validate refactor-startup-shell-loading --strict` exit 254：`Command "openspec" not found`；保持未完成，不伪造通过）
 - [x] 3.2 完成原 change 的类型检查与构建基线；重新打开后的最终产物复验由 6.3 跟踪
 
 ## 4. 2026-07-29 Evidence Refresh
@@ -40,7 +40,7 @@
 - [x] 5.11 将可选画布浮层、ToolGenerator/工具设置与生图、PPT 图片操作、刷新活动任务检查移入首次真实操作的延迟边界
 - [x] 5.12 将 AppMenu、MoreTools、Asset/统一缓存、RetryImage/音频缓存、Minimap 和精细擦除移入各自真实激活或空闲边界；CacheQuota idle/runtime 消费统一 `isStartupOperable` 门槛，并增加单飞、失败重试、卸载防迟到与手势快照合同；延迟缓存边界以显式 `UnifiedCacheService` 公共接口约束声明输出，不泄露实现类的私有 IndexedDB 状态，运行时 singleton 与缓存语义不变（最终边界回归 5 files / 16 tests、目标 lint/typecheck 通过）
 - [ ] 5.13 在最终生产产物上复验任务/工作流恢复、初始化失败与 warm offline，不以旧构建或仅单元测试替代浏览器证据
-- [x] 5.14 修复 AI 输入轻壳只在交互后升级的问题：传递统一 `isStartupOperable` 门槛，以 1500ms idle timeout/400ms fallback 自动挂载完整运行时；更早交互取消回调并复用 loader，卸载取消，自动挂载不聚焦、不提交。组件合同 9/9、生产 smoke 3/3、零交互探针均通过
+- [x] 5.14 历史实现：修复 AI 输入轻壳只在交互后升级的问题，以 `isStartupOperable` + idle 自动挂载完整运行时；组件合同 9/9、生产 smoke 3/3、零交互探针均通过。生产 v1.0.4 复审证明该语义导致刷新后加载过重，将由 10.3–10.4 的真实 ComposerCore 与动作级 runtime 取代；本项保持已完成只记录历史事实
 
 ## 6. Reverification
 
@@ -67,3 +67,54 @@
 - [x] 8.2 将应用菜单固定到 `./user-manual/index.html`，并增加禁止退回目录 URL 的合同
 - [x] 8.3 验证 21 个生成 HTML 页面、`opentu-document=user-manual`、手册版本 1.0.2、SW 显式 HTML 路由和 release static 字节/标记合同（manual contract 14/14、release static 44/44）
 - [x] 8.4 使用最终生产产物从应用菜单打开手册：新窗口为 `/user-manual/index.html`，marker/version 为 `user-manual`/`1.0.2`，sidebar/main 各 1、应用 `#root` 为 0，并成功跳转 `advanced-settings.html`
+
+## 9. Production Startup Regression Contracts (approval required)
+
+- [ ] 9.1 将 `https://img.foropencode.com/` v1.0.4 的 cold/SW-off、Slow 4G、400kbps + CPU×4、warm SW、首次/重复工具打开基线固化为可重复探针，保留每组原始样本、资源数、encoded/decoded 字节和版本身份
+- [ ] 9.2 先增加失败的产物图合同，证明当前 Composer idle 闭包、`tool-windows` catch-all、素材库/视频交叉导入、无效 CDN 和容器缺失 gzip 不符合新预算
+- [ ] 9.3 增加用户意图到可见 shell 的 100ms 可访问 fallback 合同，覆盖素材库、图片生成、Chat 和 Composer 动作加载失败/重试
+
+## 10. Startup Milestones, Composer and Resource Scheduling
+
+- [ ] 10.1 建立 `shellCommitted`、`boardInteractive`、`workspaceRestored`、`composerInteractive`、`assetIndexReady`、`taskRecoveryReady`、`generationRuntimeReady` 单调里程碑，迁移真实消费者并删除单一 `isStartupOperable` 的串行所有权
+- [ ] 10.2 实现无业务依赖的 `StartupResourceScheduler`，支持 critical/interaction/likely-next/background、前台抢占、并发/压缩字节预算、可重试单飞和生命周期清理
+- [ ] 10.3 将 AI 输入迁移为首屏真实 `ComposerCore`，保留 Prompt、草稿、IME、generation type、selectionKey、焦点和恰好一次提交语义
+- [ ] 10.4 将 model/parameter、attachment/library、history/optimizer、Agent/Workflow/MCP/external skills 和 generation submit 切为动作级 runtime，移除 `AIInputBar` 模块顶层 MCP/长视频/external skill 初始化与 idle 自动挂载完整业务闭包的路径
+- [ ] 10.5 增加快速连续意图、IME Enter、加载失败/重试、卸载迟到、在途 settings/catalog 变化和零隐式生成请求回归
+
+## 11. Media Library and Image Generation Feature Boundaries
+
+- [ ] 11.1 将素材库迁移为 shell/core/extended；首开 core 不得静态导入 GitHub sync、preview/editor、audio player、ZIP/download、canvas insertion、TaskExecutor 或 generation runtime
+- [ ] 11.2 建立版本化、可丢弃的 `AssetProjectionIndex` 与 source revision；先返回快照，后台分批增量对账，将 URL/cache/task 投影合并收敛为 O(n)
+- [ ] 11.3 增加索引首帧零全库扫描、同 revision 零重复扫描、损坏/版本不匹配重建、写入/删除对账和权威数据不变回归
+- [ ] 11.4 将 TTD 共享根迁移为独立 `image-generation-shell/core` 与 `video-generation-shell/core`，图片首开不得加载视频根；参考图素材库、batch/editor 按真实动作加载
+- [ ] 11.5 生成 submit 前通过单飞 loader 加载现有唯一 planner/TaskQueue/executor，验证一个用户意图恰好一次进入现有生图路由，不复制 ModelRef、binding、重试、取消或恢复语义
+- [ ] 11.6 从素材库/图片生成入口删除 `enableToolWindows(TOOL_WINDOW_GROUPS)` catch-all，补充禁止 chunk、import/fetch 计数、首次/重复打开与 PPT/Comic/workflow/plugin/canvas 行为回归
+
+## 12. Release Graph, CDN and Compression
+
+- [ ] 12.1 从明确 Composer、素材库、图片生成等 feature entry 生成精确传递闭包，用 gzip 字节、唯一文件数、依赖深度和禁止跨功能资源替换目录/chunk 名称分组
+- [ ] 12.2 收敛 ordinary/default idle union；manifest defaults 为空时 Service Worker 零 manifest 请求，明确 group 仅加载该组，upgrade full-prewarm 保持最低优先级且可被前台暂停
+- [ ] 12.3 将当前容器发行模式设为 origin-only/零 CDN 候选，删除主入口对未发布 jsDelivr `aitu-app` 的等待；仅当同 releaseId 资源发布且 hash/CORS/MIME/字节身份通过时才允许注入 CDN
+- [ ] 12.4 为可压缩的 HTML/JS/CSS/JSON/manifest/SVG 生成/服务 gzip，验证本机容器直连与生产 origin 的 `Content-Encoding`、`Vary`、解码字节身份、MIME 和既有缓存头
+- [ ] 12.5 更新 startup/release/CDN 产物合同与 CI，强制 Composer ≤12 JS/150KiB gzip/depth 4，素材库与图片 core 各 ≤25 files/300KiB gzip/depth 4，idle union ≤30 files/500KiB gzip
+
+## 13. Instrumentation, Regression and Production Verification
+
+- [ ] 13.1 新增不包含 Prompt、凭据、ModelRef、媒体 URL/字节的 performance marks，记录启动里程碑、feature intent/shell/core、索引快照/对账、资源来源与前后台调度计数
+- [ ] 13.2 运行组件、scheduler、索引、SW/CDN、release static、恢复/离线、AI 输入、素材库、图片/视频、PPT/Comic/workflow/plugin/canvas 定向测试与全量相关回归
+- [ ] 13.3 运行 `drawnix:typecheck`、`web:typecheck`、`check:cycles`、修改文件 lint baseline/delta、`git diff --check`、`NX_DAEMON=false pnpm exec nx build web` 和 production artifact smoke
+- [ ] 13.4 使用同一 production artifact 运行 cold/warm SW、A→B 升级、Slow 4G、400kbps + CPU×4、首次/重复打开各至少 20 次原始样本，检查 P75/P95、资源预算、禁止 chunk、调用计数和 timer/listener 清理
+- [ ] 13.5 使用本机容器直连验证 gzip、release identity、warm offline 和恢复语义，再部署到 `https://img.foropencode.com/` 复测同一指标；不发起付费生成请求
+- [ ] 13.6 运行 `openspec validate refactor-startup-shell-loading --strict`；CLI 不可用时保持未完成并记录精确错误，不伪造 strict validation 通过
+
+## 14. 2026-08-03 Release Slice
+
+- [x] 14.1 主入口改为 origin-only，移除未发布 jsDelivr 配置等待；空 defaults 启动不再请求 idle manifest，明确分组只收集其静态依赖
+- [x] 14.2 首屏保留真实可编辑 textarea；完整 AI runtime 只在真实扩展动作或提交时加载，草稿、IME、焦点与恰好一次提交合同由组件测试覆盖
+- [x] 14.3 图片、视频、Mermaid、Markdown 对话框拆为独立可重试边界；素材库 GitHub 同步、任务恢复、项目 Frame/Layer 和工具窗口按真实动作加载
+- [x] 14.4 素材首次读取并行化并消除音频封面 O(n²) 合并；异步 size、同步、playlist 与恢复逻辑增加 single-flight、取消和卸载防迟到保护
+- [x] 14.5 新增独立 Board metadata index、manifest、pending journal、跨标签排他锁和损坏重建；`boards` 保持唯一权威，首次历史扫描后后续启动不遍历完整 Board
+- [x] 14.6 Card Markdown 从首屏静态图移至 Card 存在时自动加载，内容就绪后重新测高；`drawnix-app` 从 516,122B 降至 504,879B，未提高 512,000B 预算
+- [x] 14.7 Web/static 合同 105/105、Drawnix 本轮合同 77/77、React Board 9/9、Card 边界 9/9 通过；`drawnix`/`web`/`react-board` typecheck、cycles、逐诊断 lint regression、diff check、Web 生产构建、SW 构建与 startup validator 均 exit 0
+- [ ] 14.8 OpenSpec strict validation（CLI 和 pnpm 命令均不可用，保持未完成；不阻断已经通过代码合同验证的实现）

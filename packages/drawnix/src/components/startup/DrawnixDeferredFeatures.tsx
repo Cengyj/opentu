@@ -1,46 +1,48 @@
-import React, { Suspense, lazy } from 'react';
+import React from 'react';
 import type { DrawnixBoard } from '../../hooks/use-drawnix';
 import type { Board as WorkspaceBoard } from '../../types/workspace.types';
 import type { MediaLibraryConfig } from '../../types/asset.types';
 import { useDrawnix } from '../../hooks/use-drawnix';
+import { createRetriableModuleLoader } from '../../utils/retriable-module-loader';
+import { RetriableDeferredFeature } from './RetriableDeferredFeature';
 import './deferred-features.scss';
 
-const ProjectDrawer = lazy(() =>
+const loadProjectDrawer = createRetriableModuleLoader(() =>
   import('../project-drawer/ProjectDrawer').then((module) => ({
     default: module.ProjectDrawer,
   }))
 );
-const ToolboxDrawer = lazy(() =>
+const loadToolboxDrawer = createRetriableModuleLoader(() =>
   import('../toolbox-drawer/ToolboxDrawer').then((module) => ({
     default: module.ToolboxDrawer,
   }))
 );
-const MediaLibraryModal = lazy(() =>
+const loadMediaLibraryModal = createRetriableModuleLoader(() =>
   import('./DeferredMediaLibraryModal').then((module) => ({
     default: module.DeferredMediaLibraryModal,
   }))
 );
-const BackupRestoreDialog = lazy(() =>
+const loadBackupRestoreDialog = createRetriableModuleLoader(() =>
   import('../backup-restore/backup-restore-dialog').then((module) => ({
     default: module.BackupRestoreDialog,
   }))
 );
-const SyncSettings = lazy(() =>
+const loadSyncSettings = createRetriableModuleLoader(() =>
   import('./DeferredSyncSettings').then((module) => ({
     default: module.DeferredSyncSettings,
   }))
 );
-const CommandPalette = lazy(() =>
+const loadCommandPalette = createRetriableModuleLoader(() =>
   import('../command-palette/command-palette').then((module) => ({
     default: module.CommandPalette,
   }))
 );
-const CanvasSearch = lazy(() =>
+const loadCanvasSearch = createRetriableModuleLoader(() =>
   import('../canvas-search/canvas-search').then((module) => ({
     default: module.CanvasSearch,
   }))
 );
-const ToolWinBoxManager = lazy(() =>
+const loadToolWinBoxManager = createRetriableModuleLoader(() =>
   import('../toolbox-drawer/ToolWinBoxManager').then((module) => ({
     default: module.ToolWinBoxManager,
   }))
@@ -72,6 +74,8 @@ interface DrawnixDeferredFeaturesProps {
     }
   ) => void;
   handleBeforeSwitch: () => Promise<void>;
+  enableToolWindows: () => void;
+  enableGenerationRuntime: () => void;
 }
 
 export function DrawnixDeferredFeatures({
@@ -92,6 +96,8 @@ export function DrawnixDeferredFeatures({
   setCloudSyncOpen,
   handleOpenMediaLibrary,
   handleBeforeSwitch,
+  enableToolWindows,
+  enableGenerationRuntime,
 }: DrawnixDeferredFeaturesProps) {
   const { appState, setAppState } = useDrawnix();
   const commandPaletteOpen = appState.openCommandPalette || false;
@@ -100,103 +106,155 @@ export function DrawnixDeferredFeatures({
   return (
     <>
       {mediaLibraryOpen && (
-        <Suspense fallback={null}>
-          <MediaLibraryModal
-            isOpen={mediaLibraryOpen}
-            onClose={() => setMediaLibraryOpen(false)}
-            mode={mediaLibraryConfig?.mode}
-            filterType={mediaLibraryConfig?.filterType}
-            onSelect={mediaLibraryConfig?.onSelect}
-            onSelectMultiple={mediaLibraryConfig?.onSelectMultiple}
-            selectButtonText={mediaLibraryConfig?.selectButtonText}
-            batchSelectButtonText={mediaLibraryConfig?.batchSelectButtonText}
-          />
-        </Suspense>
+        <RetriableDeferredFeature
+          loader={loadMediaLibraryModal}
+          label="素材库"
+          onCancel={() => setMediaLibraryOpen(false)}
+          renderFeature={({ default: MediaLibraryModal }) => (
+            <MediaLibraryModal
+              isOpen={mediaLibraryOpen}
+              onClose={() => setMediaLibraryOpen(false)}
+              mode={mediaLibraryConfig?.mode}
+              filterType={mediaLibraryConfig?.filterType}
+              onSelect={mediaLibraryConfig?.onSelect}
+              onSelectMultiple={mediaLibraryConfig?.onSelectMultiple}
+              selectButtonText={mediaLibraryConfig?.selectButtonText}
+              batchSelectButtonText={mediaLibraryConfig?.batchSelectButtonText}
+            />
+          )}
+        />
       )}
       {backupRestoreOpen && (
-        <Suspense fallback={null}>
-          <BackupRestoreDialog
-            open={backupRestoreOpen}
-            onOpenChange={setBackupRestoreOpen}
-            container={containerRef.current}
-            onBeforeImport={async () => {
-              await handleBeforeSwitch();
-            }}
-            onSwitchBoard={async (boardId, viewport) => {
-              const { workspaceService } = await import(
-                '../../services/workspace-service'
-              );
-              const nextBoard = await workspaceService.switchBoard(boardId);
-              if (nextBoard && onBoardSwitch) {
-                if (viewport) {
-                  nextBoard.viewport = viewport;
+        <RetriableDeferredFeature
+          loader={loadBackupRestoreDialog}
+          label="备份与恢复"
+          onCancel={() => setBackupRestoreOpen(false)}
+          renderFeature={({ default: BackupRestoreDialog }) => (
+            <BackupRestoreDialog
+              open={backupRestoreOpen}
+              onOpenChange={setBackupRestoreOpen}
+              container={containerRef.current}
+              onBeforeImport={async () => {
+                await handleBeforeSwitch();
+              }}
+              onSwitchBoard={async (boardId, viewport) => {
+                const { workspaceService } = await import(
+                  '../../services/workspace-service'
+                );
+                const nextBoard = await workspaceService.switchBoard(boardId);
+                if (nextBoard && onBoardSwitch) {
+                  if (viewport) {
+                    nextBoard.viewport = viewport;
+                  }
+                  onBoardSwitch(nextBoard);
                 }
-                onBoardSwitch(nextBoard);
-              }
-            }}
-          />
-        </Suspense>
+              }}
+            />
+          )}
+        />
       )}
       {cloudSyncOpen && (
-        <Suspense fallback={null}>
-          <SyncSettings
-            visible={cloudSyncOpen}
-            onClose={() => setCloudSyncOpen(false)}
-          />
-        </Suspense>
+        <RetriableDeferredFeature
+          loader={loadSyncSettings}
+          label="云同步设置"
+          onCancel={() => setCloudSyncOpen(false)}
+          renderFeature={({ default: SyncSettings }) => (
+            <SyncSettings
+              visible={cloudSyncOpen}
+              onClose={() => setCloudSyncOpen(false)}
+            />
+          )}
+        />
       )}
       {toolWindowManagerEnabled && (
-        <Suspense fallback={null}>
-          <ToolWinBoxManager />
-        </Suspense>
+        <RetriableDeferredFeature
+          loader={loadToolWinBoxManager}
+          label="工具窗口"
+          variant="passive"
+          renderFeature={({ default: ToolWinBoxManager }) => (
+            <ToolWinBoxManager />
+          )}
+        />
       )}
       {commandPaletteOpen && (
-        <Suspense fallback={null}>
-          <CommandPalette
-            open={commandPaletteOpen}
-            onClose={() => {
-              setAppState((prev) => ({
-                ...prev,
-                openCommandPalette: false,
-              }));
-            }}
-            board={board}
-            container={containerRef.current}
-          />
-        </Suspense>
+        <RetriableDeferredFeature
+          loader={loadCommandPalette}
+          label="命令面板"
+          onCancel={() => {
+            setAppState((prev) => ({
+              ...prev,
+              openCommandPalette: false,
+            }));
+          }}
+          renderFeature={({ default: CommandPalette }) => (
+            <CommandPalette
+              open={commandPaletteOpen}
+              onClose={() => {
+                setAppState((prev) => ({
+                  ...prev,
+                  openCommandPalette: false,
+                }));
+              }}
+              board={board}
+              container={containerRef.current}
+            />
+          )}
+        />
       )}
       {canvasSearchOpen && (
-        <Suspense fallback={null}>
-          <CanvasSearch
-            open={canvasSearchOpen}
-            onClose={() => {
-              setAppState((prev) => ({
-                ...prev,
-                openCanvasSearch: false,
-              }));
-            }}
-            board={board}
-          />
-        </Suspense>
+        <RetriableDeferredFeature
+          loader={loadCanvasSearch}
+          label="画布搜索"
+          onCancel={() => {
+            setAppState((prev) => ({
+              ...prev,
+              openCanvasSearch: false,
+            }));
+          }}
+          renderFeature={({ default: CanvasSearch }) => (
+            <CanvasSearch
+              open={canvasSearchOpen}
+              onClose={() => {
+                setAppState((prev) => ({
+                  ...prev,
+                  openCanvasSearch: false,
+                }));
+              }}
+              board={board}
+            />
+          )}
+        />
       )}
       {projectDrawerOpen && (
-        <Suspense fallback={null}>
-          <ProjectDrawer
-            isOpen={projectDrawerOpen}
-            onOpenChange={setProjectDrawerOpen}
-            onBeforeSwitch={handleBeforeSwitch}
-            onBoardSwitch={onBoardSwitch}
-            onOpenMediaLibrary={handleOpenMediaLibrary}
-          />
-        </Suspense>
+        <RetriableDeferredFeature
+          loader={loadProjectDrawer}
+          label="项目"
+          onCancel={() => setProjectDrawerOpen(false)}
+          renderFeature={({ default: ProjectDrawer }) => (
+            <ProjectDrawer
+              isOpen={projectDrawerOpen}
+              onOpenChange={setProjectDrawerOpen}
+              onBeforeSwitch={handleBeforeSwitch}
+              onBoardSwitch={onBoardSwitch}
+              onOpenMediaLibrary={handleOpenMediaLibrary}
+              onEnableGenerationRuntime={enableGenerationRuntime}
+            />
+          )}
+        />
       )}
       {toolboxDrawerOpen && (
-        <Suspense fallback={null}>
-          <ToolboxDrawer
-            isOpen={toolboxDrawerOpen}
-            onOpenChange={setToolboxDrawerOpen}
-          />
-        </Suspense>
+        <RetriableDeferredFeature
+          loader={loadToolboxDrawer}
+          label="工具箱"
+          onCancel={() => setToolboxDrawerOpen(false)}
+          renderFeature={({ default: ToolboxDrawer }) => (
+            <ToolboxDrawer
+              isOpen={toolboxDrawerOpen}
+              onOpenChange={setToolboxDrawerOpen}
+              onEnableToolWindows={enableToolWindows}
+            />
+          )}
+        />
       )}
     </>
   );

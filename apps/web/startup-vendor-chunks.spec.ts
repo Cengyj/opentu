@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { OutputBundle } from 'rollup';
 import {
   ONLY_EXPLICIT_MANUAL_CHUNKS,
+  STARTUP_MODULE_PRELOAD_ENABLED,
+  collectHtmlShellPrecacheUrls,
+  collectIdlePrefetchGroupEntriesFromBundle,
   compactProductionIndexHtml,
+  resolveDeferredProjectDrawerPanelChunk,
   resolveIdlePrefetchGroup,
   resolveStartupSourceChunk,
   resolveStartupVendorChunk,
+  shouldIncludeHtmlShellPrecacheUrl,
 } from './vite.config';
+import { IDLE_PREFETCH_DEFAULTS } from './src/startup-prefetch-config';
 
 describe('production index HTML compaction', () => {
   it('removes transport-only indentation while preserving sensitive content', () => {
@@ -138,15 +145,12 @@ describe('startup vendor chunk boundaries', () => {
 
   it('does not make the root TDesign compatibility shim load global or unrelated component styles', () => {
     const shimSource = fs.readFileSync(
-      path.resolve(
-        __dirname,
-        '../../packages/drawnix/src/utils/tdesign.ts'
-      ),
+      path.resolve(__dirname, '../../packages/drawnix/src/utils/tdesign.ts'),
       'utf8'
     );
 
     expect(shimSource).not.toMatch(/^import ['"]tdesign-react\/es\//m);
-    expect(shimSource).not.toContain("tdesign-react/es/style/css");
+    expect(shimSource).not.toContain('tdesign-react/es/style/css');
     expect(shimSource).not.toContain('/style/css');
   });
 });
@@ -188,6 +192,14 @@ describe('startup source chunk boundaries', () => {
 });
 
 describe('deferred feature chunk boundaries', () => {
+  it('preloads only dependencies discovered in the active import graph', () => {
+    expect(STARTUP_MODULE_PRELOAD_ENABLED).toBe(true);
+  });
+
+  it('keeps normal startup free of implicit deferred-group prefetch', () => {
+    expect(IDLE_PREFETCH_DEFAULTS).toEqual([]);
+  });
+
   it('keeps named deferred groups explicit instead of absorbing shared dependencies', () => {
     expect(ONLY_EXPLICIT_MANUAL_CHUNKS).toBe(true);
     expect(
@@ -231,5 +243,118 @@ describe('deferred feature chunk boundaries', () => {
         '/workspace/packages/drawnix/src/plugins/components/ppt-image-placeholder-controller.ts'
       )
     ).toBeUndefined();
+  });
+
+  it('keeps independently activated project panels out of the broad tool window chunk', () => {
+    const framePanel =
+      '/workspace/packages/drawnix/src/components/project-drawer/FramePanel.tsx';
+    const frameDialog =
+      '/workspace/packages/drawnix/src/components/project-drawer/AddFrameDialog.tsx';
+    const frameSlideshow =
+      '/workspace/packages/drawnix/src/components/project-drawer/FrameSlideshow.tsx';
+    const layerPanel =
+      '/workspace/packages/drawnix/src/components/project-drawer/LayerPanel.tsx';
+
+    expect(resolveDeferredProjectDrawerPanelChunk(framePanel)).toBe(
+      'project-frame-panel'
+    );
+    expect(resolveDeferredProjectDrawerPanelChunk(frameDialog)).toBe(
+      'project-frame-panel'
+    );
+    expect(resolveDeferredProjectDrawerPanelChunk(frameSlideshow)).toBe(
+      'project-frame-panel'
+    );
+    expect(resolveDeferredProjectDrawerPanelChunk(layerPanel)).toBe(
+      'project-layer-panel'
+    );
+    expect(resolveIdlePrefetchGroup(framePanel)).toBeUndefined();
+    expect(resolveIdlePrefetchGroup(layerPanel)).toBeUndefined();
+    expect(
+      resolveDeferredProjectDrawerPanelChunk(
+        '/workspace/packages/drawnix/src/components/project-drawer/ProjectDrawer.tsx'
+      )
+    ).toBeUndefined();
+    expect(
+      resolveIdlePrefetchGroup(
+        '/workspace/packages/drawnix/src/components/project-drawer/ProjectDrawer.tsx'
+      )
+    ).toBe('tool-windows');
+  });
+
+  it('collects only static dependencies of an explicitly requested prefetch group', () => {
+    const createChunk = ({
+      fileName,
+      moduleId,
+      imports = [],
+      dynamicImports = [],
+    }: {
+      fileName: string;
+      moduleId: string;
+      imports?: string[];
+      dynamicImports?: string[];
+    }) => ({
+      type: 'chunk' as const,
+      fileName,
+      name: fileName,
+      code: `export const id = ${JSON.stringify(fileName)};`,
+      modules: { [moduleId]: {} },
+      facadeModuleId: moduleId,
+      imports,
+      dynamicImports,
+      referencedFiles: [],
+      exports: [],
+      implicitlyLoadedBefore: [],
+      importedBindings: {},
+      isDynamicEntry: false,
+      isEntry: false,
+      isImplicitEntry: false,
+      map: null,
+      moduleIds: [moduleId],
+      preliminaryFileName: fileName,
+      sourcemapFileName: null,
+      viteMetadata: { importedCss: new Set<string>() },
+    });
+    const bundle = {
+      'assets/ai-chat-root.js': createChunk({
+        fileName: 'assets/ai-chat-root.js',
+        moduleId:
+          '/workspace/packages/drawnix/src/components/chat-drawer/ChatDrawer.tsx',
+        imports: ['assets/shared-static.js'],
+        dynamicImports: ['assets/optional-later-action.js'],
+      }),
+      'assets/shared-static.js': createChunk({
+        fileName: 'assets/shared-static.js',
+        moduleId: '/workspace/packages/drawnix/src/shared-static.ts',
+      }),
+      'assets/optional-later-action.js': createChunk({
+        fileName: 'assets/optional-later-action.js',
+        moduleId: '/workspace/packages/drawnix/src/optional-later-action.ts',
+      }),
+    };
+
+    const entries = collectIdlePrefetchGroupEntriesFromBundle(
+      bundle as unknown as OutputBundle,
+      'ai-chat'
+    );
+
+    expect(entries.map((entry) => entry.url)).toEqual([
+      '/assets/ai-chat-root.js',
+      '/assets/shared-static.js',
+    ]);
+  });
+});
+
+describe('precache shell boundary', () => {
+  it('derives the compact referenced favicon and excludes the legacy ICO', async () => {
+    const urls = await collectHtmlShellPrecacheUrls(
+      path.resolve(__dirname, 'index.html')
+    );
+
+    expect(urls.has('/icons/favicon-32x32.png')).toBe(true);
+    expect(urls.has('/favicon.ico')).toBe(false);
+    expect(shouldIncludeHtmlShellPrecacheUrl('/icons/favicon-32x32.png')).toBe(
+      true
+    );
+    expect(shouldIncludeHtmlShellPrecacheUrl('/favicon.ico')).toBe(true);
   });
 });

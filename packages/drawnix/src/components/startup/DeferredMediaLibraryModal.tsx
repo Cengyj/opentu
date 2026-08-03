@@ -1,14 +1,22 @@
 import React from 'react';
-import { GitHubSyncProvider } from '../../contexts/GitHubSyncContext';
+import { useAssets } from '../../contexts/AssetContext';
+import { hasStoredGitHubSyncToken } from '../../services/github-sync/token-storage';
 import { MediaLibraryModal } from '../media-library/MediaLibraryModal';
+import { DeferredMediaLibraryGitHubSync } from './DeferredMediaLibraryGitHubSync';
 
 type MediaLibraryModalProps = React.ComponentProps<typeof MediaLibraryModal>;
 
 export function DeferredMediaLibraryModal(props: MediaLibraryModalProps) {
+  const { loadSyncedUrls } = useAssets();
+
   return (
-    <GitHubSyncProvider>
+    <>
       <MediaLibraryModal {...props} />
-    </GitHubSyncProvider>
+      <DeferredMediaLibraryGitHubSync
+        enabled={hasStoredGitHubSyncToken()}
+        onSynced={loadSyncedUrls}
+      />
+    </>
   );
 }
 

@@ -156,6 +156,7 @@ function clearBoardCloseSnapshot(boardId?: string | null): void {
 export function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isDataReady, setIsDataReady] = useState(false);
+  const [isAppShellReady, setIsAppShellReady] = useState(false);
   // 使用 ref 跟踪 isDataReady，避免 handleBoardChange 因闭包捕获旧值导致保存被跳过
   // Wrapper 中 BOARD_TO_AFTER_CHANGE 的 effect 只依赖 [board]，不会因为 onChange 变化而更新
   // 如果 handleBoardChange 依赖 isDataReady state，onChange 变化后旧回调中 isDataReady 永远为 false
@@ -210,6 +211,9 @@ export function App() {
     () => persistedRevisionRef.current < persistenceRevisionRef.current,
     []
   );
+  const handleAppShellReady = useCallback(() => {
+    setIsAppShellReady(true);
+  }, []);
 
   // 使用 useDocumentTitle hook 管理页面标题
   useDocumentTitle(currentBoardId);
@@ -273,10 +277,10 @@ export function App() {
       return;
     }
 
-    if (showCrashDialog || initError || !isLoading) {
+    if (showCrashDialog || initError || (isDataReady && isAppShellReady)) {
       bootController.markReady();
     }
-  }, [initError, isLoading, showCrashDialog]);
+  }, [initError, isAppShellReady, isDataReady, showCrashDialog]);
 
   // Initialize workspace and handle migration
   useEffect(() => {
@@ -297,34 +301,47 @@ export function App() {
         const workspaceService = WorkspaceService.getInstance();
         // 首屏壳子已可挂载，不再等待工作区数据恢复完成才结束启动遮罩。
         setIsLoading(false);
-        await workspaceService.waitForInitialization();
-        // 使用 switchBoard 确保加载完整数据
-        const currentBoardId = workspaceService.getState().currentBoardId;
-        // 验证画板是否存在，防止旧状态中的 currentBoardId 指向不存在的画板
-
-        if (
-          currentBoardId &&
-          workspaceService.getBoardMetadata(currentBoardId)
-        ) {
-          const currentBoard = await workspaceService.switchBoard(
-            currentBoardId
+        try {
+          await workspaceService.waitForInitialization();
+          // 使用 switchBoard 确保加载完整数据
+          const currentBoardId = workspaceService.getState().currentBoardId;
+          // 验证画板是否存在，防止旧状态中的 currentBoardId 指向不存在的画板
+          if (
+            currentBoardId &&
+            workspaceService.getBoardMetadata(currentBoardId)
+          ) {
+            const currentBoard = await workspaceService.switchBoard(
+              currentBoardId
+            );
+            const nextData = {
+              children: recoverVideoUrlsInElements(
+                currentBoard.elements || []
+              ),
+              viewport: currentBoard.viewport,
+              theme: currentBoard.theme,
+            };
+            updateLatestBoardData(
+              currentBoard.id,
+              nextData,
+              currentBoard.updatedAt
+            );
+            resetPersistenceTracking();
+            setCurrentBoardId(currentBoard.id);
+            setValue(nextData);
+          }
+        } catch (error) {
+          console.error('[App] Initialization resume failed:', error);
+          setInitError(
+            error instanceof Error ? error : new Error(String(error))
           );
-          const nextData = {
-            children: currentBoard.elements || [],
-            viewport: currentBoard.viewport,
-            theme: currentBoard.theme,
-          };
-          updateLatestBoardData(
-            currentBoard.id,
-            nextData,
-            currentBoard.updatedAt
-          );
-          resetPersistenceTracking();
-          setValue(nextData);
+        } finally {
+          // StrictMode、HMR 或 ErrorBoundary 重挂时仍必须完成同一数据门禁；
+          // 否则新的画布实例会永久保持 readonly，启动遮罩也不会退出。
+          isDataReadyRef.current = true;
+          setIsDataReady(true);
+          setIsLoading(false);
+          crashRecoveryService.markLoadingComplete();
         }
-        setIsLoading(false);
-        // 标记加载完成
-        crashRecoveryService.markLoadingComplete();
         return;
       }
       appInitialized = true;
@@ -505,25 +522,23 @@ export function App() {
             currentBoard.updatedAt
           );
 
-          // 先设置原始元素，让页面先渲染
-          setValue(initialData);
+          const recoveredElements = recoverVideoUrlsInElements(
+            initialData.children
+          );
+          if (recoveredElements !== initialData.children) {
+            initialData = {
+              ...initialData,
+              children: recoveredElements,
+            };
+            updateLatestBoardData(
+              currentBoard.id,
+              initialData,
+              currentBoard.updatedAt
+            );
+          }
 
-          // 异步恢复视频 URL，不阻塞页面加载
-          recoverVideoUrlsInElements(initialData.children)
-            .then((recoveredElements) => {
-              // 只有当有元素被恢复时才更新
-              if (recoveredElements !== initialData.children) {
-                const nextData = {
-                  ...initialData,
-                  children: recoveredElements,
-                };
-                updateLatestBoardData(currentBoard!.id, nextData, Date.now());
-                setValue(nextData);
-              }
-            })
-            .catch((error) => {
-              console.error('[App] Video URL recovery failed:', error);
-            });
+          // 恢复和迁移在开放画布交互前完成，只提交一次初始画布快照。
+          setValue(initialData);
         }
       } catch (error) {
         console.error('[App] Initialization failed:', error);
@@ -564,7 +579,7 @@ export function App() {
         resetPersistenceTracking();
 
         // 在设置 state 之前，预先恢复失效的视频 URL
-        const elements = await recoverVideoUrlsInElements(board.elements || []);
+        const elements = recoverVideoUrlsInElements(board.elements || []);
         const nextData = {
           children: elements,
           viewport: board.viewport,
@@ -678,9 +693,7 @@ export function App() {
 
       if (updatedBoard) {
         // 恢复视频 URL
-        const elements = await recoverVideoUrlsInElements(
-          updatedBoard.elements || []
-        );
+        const elements = recoverVideoUrlsInElements(updatedBoard.elements || []);
         const nextData = {
           children: elements,
           viewport: updatedBoard.viewport,
@@ -712,15 +725,15 @@ export function App() {
   // Handle board changes (auto-save)
   const handleBoardChange = useCallback(
     (data: BoardChangeData) => {
-      setValue(data);
-      // 同步更新最新 viewport
-      latestViewportRef.current = data.viewport;
-
-      // 只在数据准备好之后才保存，避免在初始化时保存空数据
-      // 使用 ref 而非 state，避免闭包捕获旧值（Wrapper 中 BOARD_TO_AFTER_CHANGE 不会因 onChange 变化而更新）
+      // 启动壳中的临时空画布不得覆盖仍在恢复的真实工作区快照。
+      // 使用 ref 避免 Wrapper 中长期注册的 onChange 捕获旧 state。
       if (!isDataReadyRef.current) {
         return;
       }
+
+      setValue(data);
+      // 同步更新最新 viewport
+      latestViewportRef.current = data.viewport;
 
       // 同步期间不保存，防止用旧数据覆盖其他标签页保存的新数据
       if (isSyncingRef.current) {
@@ -770,6 +783,11 @@ export function App() {
   // Handle viewport changes (pan/zoom) - 单独保存 viewport
   const handleViewportChange = useCallback(
     (viewport: Viewport) => {
+      // 恢复完成前不接受或持久化启动壳的临时 viewport。
+      if (!isDataReadyRef.current) {
+        return;
+      }
+
       // 更新最新 viewport
       latestViewportRef.current = viewport;
       const latestSnapshot = latestBoardDataRef.current;
@@ -966,7 +984,23 @@ export function App() {
 
   return (
     <div style={{ height: '100vh' }}>
-      <Suspense fallback={null}>
+      <Suspense
+        fallback={
+          <div
+            role="status"
+            aria-live="polite"
+            data-testid="drawnix-shell-loading"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+            }}
+          >
+            正在加载画布…
+          </div>
+        }
+      >
         <Drawnix
           value={value.children}
           viewport={value.viewport}
@@ -976,6 +1010,7 @@ export function App() {
           onBoardSwitch={handleBoardSwitch}
           onTabSyncNeeded={handleTabSyncNeeded}
           isDataReady={isDataReady}
+          onStartupOperable={handleAppShellReady}
           currentBoardId={currentBoardId}
           afterInit={(board) => {
             // 保存 board 引用，用于手动触发边界更新
@@ -1019,10 +1054,9 @@ const addDebugLog = async (board: PlaitBoard, value: string) => {
  * 新格式 (/__aitu_cache__/video/...) 是稳定的，由 Service Worker 直接从 Cache API 返回
  * 旧格式 (blob:...#merged-video-xxx) 需要迁移到新格式
  */
-async function recoverVideoUrlsInElements(
-  elements: PlaitElement[]
-): Promise<PlaitElement[]> {
-  return elements.map((element) => {
+function recoverVideoUrlsInElements(elements: PlaitElement[]): PlaitElement[] {
+  let changed = false;
+  const recoveredElements = elements.map((element) => {
     const url = (element as any).url as string | undefined;
 
     // 新格式：稳定 URL，无需处理
@@ -1043,12 +1077,15 @@ async function recoverVideoUrlsInElements(
         // 转换为新格式的稳定 URL（带 .mp4 后缀）
         const newUrl = `/__aitu_cache__/video/${taskId}.mp4`;
         // console.log(`[App] Migrating video URL: ${taskId}`);
+        changed = true;
         return { ...element, url: newUrl };
       }
     }
 
     return element;
   });
+
+  return changed ? recoveredElements : elements;
 }
 
 /**

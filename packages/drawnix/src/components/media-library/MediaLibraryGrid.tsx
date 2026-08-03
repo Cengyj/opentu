@@ -33,7 +33,6 @@ import {
   Plus,
   Download,
   Eye,
-  CloudUpload,
   Heart,
   ListMusic,
 } from 'lucide-react';
@@ -69,11 +68,7 @@ import type {
   SortOption,
   Asset,
 } from '../../types/asset.types';
-import {
-  AssetType,
-  AssetSource,
-  AssetCategory,
-} from '../../types/asset.types';
+import { AssetType, AssetSource, AssetCategory } from '../../types/asset.types';
 import { useDrawnix } from '../../hooks/use-drawnix';
 import {
   removeElementsByAssetIds,
@@ -84,9 +79,8 @@ import {
 import { insertImageFromUrl } from '../../data/image';
 import { insertVideoFromUrl } from '../../data/video';
 import { insertAudioFromUrl } from '../../data/audio';
-import { useGitHubSync } from '../../contexts/GitHubSyncContext';
 import { useAudioPlaylists } from '../../contexts/AudioPlaylistContext';
-import { mediaSyncService } from '../../services/github-sync/media-sync-service';
+import { hasStoredGitHubSyncToken } from '../../services/github-sync/token-storage';
 import { openMusicPlayerToolAndPlay } from '../../services/tool-launch-service';
 import {
   AUDIO_PLAYLIST_ALL_ID,
@@ -100,6 +94,7 @@ import {
 import './MediaLibraryGrid.scss';
 import './VirtualAssetGrid.scss';
 import { HoverTip } from '../shared/hover';
+import { DeferredMediaLibrarySyncAction } from './DeferredMediaLibrarySyncAction';
 
 // 视图切换防抖时间
 const VIEW_MODE_DEBOUNCE_MS = 150;
@@ -274,7 +269,11 @@ function matchesSelectionScope(
   }
 
   return (
-    matchesType && matchesSource && matchesCategory && matchesSearch && matchesPlaylist
+    matchesType &&
+    matchesSource &&
+    matchesCategory &&
+    matchesSearch &&
+    matchesPlaylist
   );
 }
 
@@ -333,10 +332,6 @@ export function MediaLibraryGrid({
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0); // 0-100
 
-  // 同步状态
-  const { isConfigured } = useGitHubSync();
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState(0); // 0-100
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(
     null
   );
@@ -352,13 +347,6 @@ export function MediaLibraryGrid({
   } | null>(null);
   const [playlistNameInput, setPlaylistNameInput] = useState('');
   const { confirm, confirmDialog } = useConfirmDialog();
-
-  // 加载已同步的 URL（当配置了 GitHub 同步时）
-  useEffect(() => {
-    if (isConfigured) {
-      loadSyncedUrls();
-    }
-  }, [isConfigured, loadSyncedUrls]);
 
   useEffect(() => {
     if (
@@ -380,35 +368,6 @@ export function MediaLibraryGrid({
     }
   }, [playlists, selectedPlaylistId]);
 
-  // 监听媒体同步完成事件，刷新同步状态
-  useEffect(() => {
-    if (!isConfigured) return;
-
-    let mounted = true;
-    const handleSyncCompleted = async () => {
-      if (mounted) {
-        await loadSyncedUrls();
-      }
-    };
-
-    // 动态导入并注册监听器
-    import('../../services/github-sync/media-sync-service').then(
-      ({ mediaSyncService }) => {
-        mediaSyncService.addSyncCompletedListener(handleSyncCompleted);
-      }
-    );
-
-    return () => {
-      mounted = false;
-      // 清理监听器
-      import('../../services/github-sync/media-sync-service').then(
-        ({ mediaSyncService }) => {
-          mediaSyncService.removeSyncCompletedListener(handleSyncCompleted);
-        }
-      );
-    };
-  }, [isConfigured, loadSyncedUrls]);
-
   // 计算各类型的数量
   const counts = useMemo(() => {
     return {
@@ -416,9 +375,8 @@ export function MediaLibraryGrid({
       image: assets.filter((a) => a.type === AssetType.IMAGE).length,
       video: assets.filter((a) => a.type === AssetType.VIDEO).length,
       audio: assets.filter((a) => a.type === AssetType.AUDIO).length,
-      character: assets.filter(
-        (a) => a.category === AssetCategory.CHARACTER
-      ).length,
+      character: assets.filter((a) => a.category === AssetCategory.CHARACTER)
+        .length,
       local: assets.filter((a) => a.source === AssetSource.LOCAL).length,
       ai: assets.filter((a) => a.source === AssetSource.AI_GENERATED).length,
     };
@@ -1057,87 +1015,6 @@ export function MediaLibraryGrid({
     }
   }, [filteredSelectedAssets, isDownloading]);
 
-  // 批量同步处理（上传到云端）
-  // 同步当前筛选结果中被选中的素材（AI 生成和本地上传）
-  const handleBatchSync = useCallback(async () => {
-    if (filteredSelectedAssets.length === 0 || isSyncing) return;
-
-    // 收集所有可同步的媒体 URL（排除已同步的）
-    const syncableUrls: string[] = [];
-
-    // AI 生成素材：直接同步当前资产 URL（支持一个任务展开多条音频）
-    filteredSelectedAssets
-      .filter((a) => a.source === AssetSource.AI_GENERATED)
-      .forEach((a) => {
-        const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
-        if (syncStatus !== 'synced') {
-          syncableUrls.push(a.url);
-        }
-      });
-
-    // 本地上传素材：获取缓存 URL（排除已同步）
-    filteredSelectedAssets
-      .filter(
-        (a) =>
-          a.source === AssetSource.LOCAL && a.url.startsWith('/__aitu_cache__/')
-      )
-      .forEach((a) => {
-        const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
-        if (syncStatus !== 'synced') {
-          syncableUrls.push(a.url);
-        }
-      });
-
-    if (syncableUrls.length === 0) {
-      return;
-    }
-
-    setIsSyncing(true);
-    setSyncProgress(0);
-
-    try {
-      const result = await mediaSyncService.syncSelectedMedia(
-        syncableUrls,
-        (current, total, url, status) => {
-          setSyncProgress(Math.round((current / total) * 100));
-        }
-      );
-      setSyncProgress(100);
-
-      // 刷新同步状态（更新已同步 URL 列表）
-      if (result.succeeded > 0) {
-        await loadSyncedUrls();
-      }
-    } catch (error) {
-      console.error('[MediaLibraryGrid] Batch sync failed:', error);
-    } finally {
-      setIsSyncing(false);
-      setSyncProgress(0);
-    }
-  }, [filteredSelectedAssets, isSyncing, loadSyncedUrls]);
-
-  // 计算选中的可同步素材数量（排除已同步的）
-  const syncableCount = useMemo(() => {
-    // AI 生成素材：直接按资产 URL 判断是否可同步
-    const aiSyncable = filteredSelectedAssets.filter((a) => {
-      if (a.source !== AssetSource.AI_GENERATED) return false;
-      const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
-      return syncStatus !== 'synced';
-    }).length;
-
-    // 本地上传素材：检查是否有缓存 URL，且未同步
-    const localSyncable = filteredSelectedAssets.filter((a) => {
-      if (a.source !== AssetSource.LOCAL) return false;
-      // 只有在统一缓存中的本地素材才能同步
-      if (!a.url.startsWith('/__aitu_cache__/')) return false;
-      // 检查是否已同步
-      const syncStatus = mediaSyncService.getUrlSyncStatus(a.url);
-      return syncStatus !== 'synced';
-    }).length;
-
-    return aiSyncable + localSyncable;
-  }, [filteredSelectedAssets]);
-
   const handleToggleFavorite = useCallback(
     async (asset: Asset) => {
       if (asset.type !== AssetType.AUDIO) return;
@@ -1433,22 +1310,12 @@ export function MediaLibraryGrid({
                 >
                   下载
                 </Button>
-                {isConfigured && (
-                  <HoverTip content="同步选中的素材到云端" placement="bottom">
-                    <Button
-                      variant="outline"
-                      size="small"
-                      icon={<CloudUpload size={16} />}
-                      disabled={syncableCount === 0 || isSyncing}
-                      loading={isSyncing}
-                      onClick={handleBatchSync}
-                      data-track="grid_batch_sync"
-                    >
-                      {isSyncing
-                        ? `${syncProgress}%`
-                        : `同步 (${syncableCount})`}
-                    </Button>
-                  </HoverTip>
+                {hasStoredGitHubSyncToken() && (
+                  <DeferredMediaLibrarySyncAction
+                    assets={filteredSelectedAssets}
+                    syncedUrls={syncedUrls}
+                    onSynced={loadSyncedUrls}
+                  />
                 )}
               </>
             ) : (
@@ -1527,9 +1394,7 @@ export function MediaLibraryGrid({
                         aria-label={`${opt.label}：${count}`}
                         aria-pressed={isActive}
                         className={`media-library-grid__type-tab ${
-                          isActive
-                            ? 'media-library-grid__type-tab--active'
-                            : ''
+                          isActive ? 'media-library-grid__type-tab--active' : ''
                         }`}
                         onClick={() =>
                           setFilters({

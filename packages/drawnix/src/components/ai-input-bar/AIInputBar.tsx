@@ -3117,6 +3117,15 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
           | AIInputSubmitTrigger
           | GenerationRequestOverride = 'button'
       ) => {
+        if (!isDataReady) {
+          MessagePlugin.warning(
+            language === 'zh'
+              ? '工作区正在恢复，请等待恢复完成后再发送'
+              : 'The workspace is still restoring. Please wait before sending.'
+          );
+          return;
+        }
+
         const override =
           typeof triggerOrOverride === 'string' ? undefined : triggerOrOverride;
         const trigger =
@@ -4227,6 +4236,8 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         prompt,
         allContent,
         isSubmitting,
+        isDataReady,
+        language,
         selectedModel,
         selectedModelRef,
         workflowControl,
@@ -4808,7 +4819,9 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
         selectedModelRef?.profileId,
       ]
     );
-    const canGenerate = prompt.trim().length > 0 || allContent.length > 0;
+    const canGenerate =
+      Boolean(isDataReady) &&
+      (prompt.trim().length > 0 || allContent.length > 0);
     const shouldHighlightInspirationSend =
       isInspirationSendGuideActive && canGenerate && !isSubmitting;
     const showInspirationBoard = isCanvasEmpty === true;
@@ -4886,7 +4899,7 @@ export const AIInputBar: React.FC<AIInputBarProps> = React.memo(
             variant="canvas"
             expanded={shouldKeepExpanded}
             longText={isPromptManuallyExpanded}
-            disabled={isSubmitting}
+            disabled={!isDataReady || isSubmitting}
             leftTools={
               <>
                 <input

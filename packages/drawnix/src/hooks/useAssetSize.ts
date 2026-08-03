@@ -19,20 +19,20 @@ const pendingQueries = new Map<string, ((size: number | null) => void)[]>();
  */
 async function processPendingQueries(): Promise<void> {
   if (pendingQueries.size === 0) return;
-  
+
   // 复制当前队列并清空
   const queries = new Map(pendingQueries);
   pendingQueries.clear();
-  
+
   for (const [url, callbacks] of queries) {
     try {
       const size = await fetchSizeFromCache(url);
       if (size !== null) {
         sizeCache.set(url, size);
       }
-      callbacks.forEach(cb => cb(size));
+      callbacks.forEach((cb) => cb(size));
     } catch {
-      callbacks.forEach(cb => cb(null));
+      callbacks.forEach((cb) => cb(null));
     }
   }
 }
@@ -81,12 +81,15 @@ async function fetchSizeFromCache(url: string): Promise<number | null> {
 /**
  * 从缓存获取文件大小（非 Hook 版本，可在任意地方调用）
  */
-export async function getAssetSizeFromCache(url: string): Promise<number | null> {
+export async function getAssetSizeFromCache(
+  url: string
+): Promise<number | null> {
   // 先检查内存缓存
-  if (sizeCache.has(url)) {
-    return sizeCache.get(url)!;
+  const cachedSize = sizeCache.get(url);
+  if (cachedSize !== undefined) {
+    return cachedSize;
   }
-  
+
   const size = await fetchSizeFromCache(url);
   if (size !== null) {
     sizeCache.set(url, size);
@@ -103,40 +106,89 @@ export function useAssetSize(
   assetUrl: string | undefined,
   assetSize: number | undefined
 ): number | null {
-  const [cachedSize, setCachedSize] = useState<number | null>(null);
+  const [resolvedSize, setResolvedSize] = useState<{
+    url: string;
+    size: number | null;
+  } | null>(() => {
+    const cachedSize = assetUrl ? sizeCache.get(assetUrl) : undefined;
+    if (assetUrl && cachedSize !== undefined) {
+      return { url: assetUrl, size: cachedSize };
+    }
+    return null;
+  });
+  const knownSize =
+    typeof assetSize === 'number' && Number.isFinite(assetSize) && assetSize > 0
+      ? assetSize
+      : null;
 
   useEffect(() => {
-    if (!assetId || !assetUrl) {
-      setCachedSize(null);
-      return;
-    }
-
-    // 如果 asset 已有有效的 size，直接使用
-    if (assetSize && assetSize > 0) {
-      setCachedSize(assetSize);
+    // A persisted size is already the authoritative render value. Avoid the
+    // previous mount effect + state update, which rendered every visible item
+    // twice even though no cache lookup was needed.
+    if (!assetId || !assetUrl || knownSize !== null) {
       return;
     }
 
     // 检查内存缓存
-    if (sizeCache.has(assetUrl)) {
-      setCachedSize(sizeCache.get(assetUrl)!);
+    const cachedSize = sizeCache.get(assetUrl);
+    if (cachedSize !== undefined) {
+      setResolvedSize((current) =>
+        current?.url === assetUrl && current.size === cachedSize
+          ? current
+          : { url: assetUrl, size: cachedSize }
+      );
       return;
     }
 
+    let active = true;
+    const handleResolvedSize = (size: number | null) => {
+      if (active) {
+        setResolvedSize({ url: assetUrl, size });
+      }
+    };
+
     // 加入待查询队列
     const callbacks = pendingQueries.get(assetUrl) || [];
-    callbacks.push(setCachedSize);
+    callbacks.push(handleResolvedSize);
     pendingQueries.set(assetUrl, callbacks);
 
     // 使用 requestIdleCallback 批量处理
     if (callbacks.length === 1) {
       if ('requestIdleCallback' in window) {
-        (window as Window).requestIdleCallback(processPendingQueries, { timeout: 1000 });
+        (window as Window).requestIdleCallback(processPendingQueries, {
+          timeout: 1000,
+        });
       } else {
         setTimeout(processPendingQueries, 100);
       }
     }
-  }, [assetId, assetUrl, assetSize]);
 
-  return cachedSize;
+    return () => {
+      active = false;
+      const pendingCallbacks = pendingQueries.get(assetUrl);
+      if (!pendingCallbacks) {
+        return;
+      }
+      const nextCallbacks = pendingCallbacks.filter(
+        (callback) => callback !== handleResolvedSize
+      );
+      if (nextCallbacks.length > 0) {
+        pendingQueries.set(assetUrl, nextCallbacks);
+      } else {
+        pendingQueries.delete(assetUrl);
+      }
+    };
+  }, [assetId, assetUrl, knownSize]);
+
+  if (knownSize !== null) {
+    return knownSize;
+  }
+  if (!assetId || !assetUrl) {
+    return null;
+  }
+  const cachedSize = sizeCache.get(assetUrl);
+  if (cachedSize !== undefined) {
+    return cachedSize;
+  }
+  return resolvedSize?.url === assetUrl ? resolvedSize.size : null;
 }

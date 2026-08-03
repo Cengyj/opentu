@@ -4,10 +4,14 @@ import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 type DrawnixProps = {
+  value: Array<{ id: string; type: string }>;
+  isDataReady: boolean;
+  onStartupOperable: () => void;
   onChange: (data: {
     children: Array<{ id: string; type: string }>;
     viewport?: { zoom: number };
   }) => void;
+  onViewportChange: (viewport: { zoom: number }) => void;
 };
 
 const harness = vi.hoisted(() => {
@@ -16,7 +20,7 @@ const harness = vi.hoisted(() => {
     name: 'Board A',
     folderId: null,
     order: 0,
-    elements: [],
+    elements: [] as Array<{ id: string; type: string }>,
     createdAt: 1_700_000_000_000,
     updatedAt: 1_700_000_000_000,
   };
@@ -24,6 +28,8 @@ const harness = vi.hoisted(() => {
   return {
     board,
     latestDrawnixProps: null as DrawnixProps | null,
+    initialize: vi.fn(async () => undefined),
+    waitForInitialization: vi.fn(async () => undefined),
     saveCurrentBoard: vi.fn(),
     persistCurrentBoardId: vi.fn(),
   };
@@ -31,8 +37,8 @@ const harness = vi.hoisted(() => {
 
 vi.mock('@drawnix/drawnix/runtime', () => {
   const workspaceService = {
-    initialize: vi.fn(async () => undefined),
-    waitForInitialization: vi.fn(async () => undefined),
+    initialize: harness.initialize,
+    waitForInitialization: harness.waitForInitialization,
     getState: vi.fn(() => ({
       currentBoardId: harness.board.id,
       expandedFolderIds: [],
@@ -90,7 +96,61 @@ describe('App board persistence recovery', () => {
     cleanup();
     localStorage.clear();
     harness.latestDrawnixProps = null;
+    harness.board.elements = [];
+    delete (window as Window & { __OPENTU_BOOT__?: unknown }).__OPENTU_BOOT__;
     vi.clearAllMocks();
+    vi.resetModules();
+  });
+
+  it('keeps the startup shell non-authoritative until workspace restore completes', async () => {
+    let finishInitialize: (() => void) | null = null;
+    harness.board.elements = [{ id: 'persisted', type: 'geometry' }];
+    harness.initialize.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishInitialize = resolve;
+        })
+    );
+    const markReady = vi.fn();
+    (
+      window as Window & {
+        __OPENTU_BOOT__?: { markReady: () => void; markError: () => void };
+      }
+    ).__OPENTU_BOOT__ = { markReady, markError: vi.fn() };
+
+    const { default: App } = await import('./app');
+    render(<App />);
+
+    await waitFor(() => {
+      expect(harness.latestDrawnixProps).not.toBeNull();
+    });
+    expect(harness.latestDrawnixProps?.isDataReady).toBe(false);
+    expect(markReady).not.toHaveBeenCalled();
+
+    act(() => harness.latestDrawnixProps?.onStartupOperable());
+    expect(markReady).not.toHaveBeenCalled();
+
+    act(() => {
+      harness.latestDrawnixProps?.onChange({
+        children: [{ id: 'startup-shell-change', type: 'geometry' }],
+      });
+      harness.latestDrawnixProps?.onViewportChange({ zoom: 2 });
+    });
+    expect(harness.saveCurrentBoard).not.toHaveBeenCalled();
+
+    await act(async () => {
+      finishInitialize?.();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(harness.latestDrawnixProps?.isDataReady).toBe(true);
+      expect(harness.latestDrawnixProps?.value).toEqual([
+        expect.objectContaining({ id: 'persisted' }),
+      ]);
+    });
+
+    await waitFor(() => expect(markReady).toHaveBeenCalledTimes(1));
   });
 
   it('keeps a close snapshot while a newer board save is still pending', async () => {
@@ -150,5 +210,42 @@ describe('App board persistence recovery', () => {
     expect(snapshot?.children).toEqual([
       expect.objectContaining({ id: 'second' }),
     ]);
+  });
+
+  it('restores data authority when the app remounts after initialization', async () => {
+    harness.board.elements = [{ id: 'persisted', type: 'geometry' }];
+    const markReady = vi.fn();
+    (
+      window as Window & {
+        __OPENTU_BOOT__?: { markReady: () => void; markError: () => void };
+      }
+    ).__OPENTU_BOOT__ = { markReady, markError: vi.fn() };
+
+    const { default: App } = await import('./app');
+    const firstMount = render(<App />);
+
+    await waitFor(() => {
+      expect(harness.latestDrawnixProps?.isDataReady).toBe(true);
+    });
+    act(() => harness.latestDrawnixProps?.onStartupOperable());
+    await waitFor(() => expect(markReady).toHaveBeenCalledTimes(1));
+
+    firstMount.unmount();
+    harness.latestDrawnixProps = null;
+    markReady.mockClear();
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(harness.waitForInitialization).toHaveBeenCalledTimes(1);
+      expect(harness.latestDrawnixProps?.isDataReady).toBe(true);
+      expect(harness.latestDrawnixProps?.value).toEqual([
+        expect.objectContaining({ id: 'persisted' }),
+      ]);
+    });
+
+    act(() => harness.latestDrawnixProps?.onStartupOperable());
+    await waitFor(() => expect(markReady).toHaveBeenCalledTimes(1));
+    expect(harness.initialize).toHaveBeenCalledTimes(1);
   });
 });

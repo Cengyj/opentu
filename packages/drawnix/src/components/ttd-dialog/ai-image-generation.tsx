@@ -110,6 +110,7 @@ interface AIImageGenerationProps {
   externalBatchId?: string;
   assetMetadata?: GenerationParams['assetMetadata'];
   initialAutoInsertToCanvas?: boolean;
+  onEnableRuntime?: () => void;
   onDraftChange?: (draft: {
     prompt: string;
     images: Array<{ url: string; name: string }>;
@@ -199,6 +200,7 @@ const AIImageGeneration = ({
   externalBatchId,
   assetMetadata,
   initialAutoInsertToCanvas,
+  onEnableRuntime,
   onDraftChange,
 }: AIImageGenerationProps = {}) => {
   const imageModels = useSelectableModels('image');
@@ -775,6 +777,8 @@ const AIImageGeneration = ({
           return;
         }
       }
+
+      onEnableRuntime?.();
 
       try {
         const finalWidth =

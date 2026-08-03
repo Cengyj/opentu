@@ -94,6 +94,7 @@ import {
   mergeIdlePrefetchGroupRequests,
   resolveOrderedIdlePrefetchGroups,
 } from './idle-prefetch-policy';
+import { IDLE_PREFETCH_DEFAULTS } from '../startup-prefetch-config';
 
 // fix: self redeclaration error and type casting
 const sw = self as unknown as ServiceWorkerGlobalScope;
@@ -3063,14 +3064,16 @@ sw.addEventListener('activate', (event: ExtendableEvent) => {
         logSWDebug('activate: skip clients.claim for staged update');
       }
 
-      // 激活后自动消费 idle-prefetch manifest 的默认分组。
-      // prefetchIdleGroups 会在最近有客户端请求时自动延后，避免抢占首屏。
-      setTimeout(() => {
-        logSWDebug('activate: scheduling default idle prefetch');
-        void enqueueIdlePrefetchTask('default-groups', async () =>
-          prefetchDefaultIdleGroups()
-        );
-      }, 800);
+      // 构建时没有默认分组时不请求 100KB+ manifest。显式功能请求和
+      // release full-prewarm 仍会按需加载同一份 manifest。
+      if (IDLE_PREFETCH_DEFAULTS.length > 0) {
+        setTimeout(() => {
+          logSWDebug('activate: scheduling default idle prefetch');
+          void enqueueIdlePrefetchTask('default-groups', async () =>
+            prefetchDefaultIdleGroups()
+          );
+        }, 800);
+      }
 
       // 使用 channelManager 通知所有客户端 SW 已更新
       const cm = getChannelManager();

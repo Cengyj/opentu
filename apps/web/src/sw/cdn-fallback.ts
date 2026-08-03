@@ -81,16 +81,12 @@ const CDN_DEGRADE_POLICIES: Record<
   },
 };
 
-// CDN 源列表（按默认优先级排序）
-const CDN_SOURCES: CDNSource[] = [
-  {
-    name: 'jsdelivr',
-    urlTemplate: 'https://cdn.jsdelivr.net/npm/aitu-app@{version}/{path}',
-    healthCheckPath: 'version.json',
-    enabled: true,
-    priority: 1,
-  },
-];
+// Remote sources are release facts, not modelled from a display version or a
+// historical browser preference. The current workflow publishes only the
+// container static tree, therefore it authorizes zero remote candidates.
+// Future CDN publishing must inject an exact-release source here only after
+// hash/CORS/MIME/byte-identity verification succeeds.
+const CDN_SOURCES: CDNSource[] = [];
 
 const cdnHealthStatus: Map<string, CDNHealthStatus> = new Map();
 let persistedCDNPreference: CDNPreference | null = null;
@@ -131,6 +127,13 @@ function sanitizeCDNPreference(value: unknown): CDNPreference | null {
   const version = record['version'];
 
   if (!isCDNName(cdn) || typeof version !== 'string' || version.trim() === '') {
+    return null;
+  }
+
+  if (
+    cdn !== 'local' &&
+    !CDN_SOURCES.some((source) => source.name === cdn && source.enabled)
+  ) {
     return null;
   }
 
@@ -595,9 +598,8 @@ export async function fetchFromCDNWithFallback(
   localOrigin: string,
   options: FetchFallbackOptions = {}
 ): Promise<{ response: Response; source: string; targetUrl: string } | null> {
-  // Build-mode policy belongs to the service-worker orchestrator. A localhost
-  // hostname is also a valid production deployment address and must retain
-  // the same CDN -> local-origin recovery behavior as any other origin.
+  // Source policy belongs to the release artifact. A hostname, display version
+  // or historical preference must never manufacture a remote candidate.
   await ensureCDNPreferenceLoaded();
 
   const {
