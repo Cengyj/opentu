@@ -1,3 +1,13 @@
+## 1.0.6 (2026-08-03)
+
+### 🩹 Fixes
+
+- stabilize deferred AI input CI checks (706b1b0)
+
+### ❤️  Thank You
+
+- Codex <codex@openai.com>
+
 ## 1.0.5 (2026-08-03)
 
 ### 🔧 Chores
