@@ -23,9 +23,6 @@ try {
     const identity = resolveReleaseManifest(versionJson);
     appVersion = identity.version;
     appReleaseId = identity.releaseId;
-    console.log(
-      `[Vite SW] Loaded release ${appReleaseId} (display version ${appVersion})`
-    );
   } else {
     console.warn('[Vite SW] version.json not found at', versionPath);
   }

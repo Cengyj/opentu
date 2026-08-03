@@ -34,9 +34,6 @@ try {
     const identity = resolveReleaseManifest(versionJson);
     appVersion = identity.version;
     appReleaseId = identity.releaseId;
-    console.log(
-      `[Vite] Loaded release ${appReleaseId} (display version ${appVersion})`
-    );
   } else {
     console.warn('[Vite] version.json not found at', versionPath);
   }

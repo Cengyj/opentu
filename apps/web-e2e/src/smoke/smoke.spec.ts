@@ -66,9 +66,16 @@ test.describe('@smoke 核心功能验证', () => {
     await page.waitForTimeout(100);
     
     // 4. AI 输入栏交互（必须通过）
-    const aiInput = page.locator('[data-testid="ai-input-textarea"]');
+    const deferredInput = page
+      .locator('[data-testid="ai-input-textarea"]')
+      .first();
+    await expect(deferredInput).toBeVisible();
+    await deferredInput.fill('测试输入');
+
+    const aiInputBar = page.getByTestId('ai-input-bar');
+    await expect(aiInputBar).toBeVisible({ timeout: 10000 });
+    const aiInput = aiInputBar.getByTestId('ai-input-textarea');
     await expect(aiInput).toBeVisible();
-    await aiInput.fill('测试输入');
     await expect(aiInput).toHaveValue('测试输入');
 
     const getTextareaMetrics = () =>
@@ -92,14 +99,35 @@ test.describe('@smoke 核心功能验证', () => {
         };
       });
 
-    await page.waitForTimeout(250);
+    await expect
+      .poll(
+        async () => {
+          const metrics = await getTextareaMetrics();
+          return Math.abs(metrics.height - metrics.fourRowsHeight);
+        },
+        { timeout: 5000 }
+      )
+      .toBeLessThanOrEqual(2);
     const fourRowsMetrics = await getTextareaMetrics();
     expect(
       Math.abs(fourRowsMetrics.height - fourRowsMetrics.fourRowsHeight)
     ).toBeLessThanOrEqual(2);
 
     await aiInput.fill('第1行\n第2行\n第3行\n第4行\n第5行\n第6行\n第7行');
-    await page.waitForTimeout(250);
+    await expect
+      .poll(
+        async () => {
+          const metrics = await getTextareaMetrics();
+          return Math.abs(metrics.height - metrics.sixRowsHeight);
+        },
+        { timeout: 5000 }
+      )
+      .toBeLessThanOrEqual(2);
+    await expect
+      .poll(async () => (await getTextareaMetrics()).overflowY, {
+        timeout: 5000,
+      })
+      .toBe('auto');
     const maxRowsMetrics = await getTextareaMetrics();
     expect(maxRowsMetrics.height).toBeGreaterThanOrEqual(
       maxRowsMetrics.sixRowsHeight - 2

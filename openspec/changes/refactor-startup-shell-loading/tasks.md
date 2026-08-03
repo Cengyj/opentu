@@ -44,7 +44,7 @@
 ## 6. Reverification
 
 - [x] 6.1 运行最终相关 Vitest、App/SW 集成测试和 startup validator：`pnpm test` 292 files / 2,218 tests（2,217 passed、1 skipped、0 failed），startup analyzer 9/9、release static 44/44、manual contract 14/14，均 exit 0
-- [ ] 6.2 运行相关 Playwright smoke/feature/visual/responsive；仓库套件当前要求 Chromium 1200，但本机只有可用的 Chromium 1208，直接执行 3 个 smoke 均在 launch 前因 executable missing 失败；`pnpm exec playwright install chromium` 无输出等待后被终止（exit 130）。已用 1208 完成下述真实浏览器 smoke，但未把仓库 Playwright 全矩阵误勾为通过
+- [ ] 6.2 运行相关 Playwright smoke/feature/visual/responsive；Chromium 1200 已安装到隔离可写缓存，刚构建的 production artifact 经 `web:preview` 运行 smoke 3/3 通过，并修复延迟 AI 输入轻壳/完整运行时切换的测量竞态；feature/visual/responsive 全矩阵尚未全部执行，因此保持未完成
 - [x] 6.3 运行 `drawnix:typecheck`、`web:typecheck`、相关回归、cycles、`git diff --check`、`NX_DAEMON=false pnpm exec nx build web`、`NX_DAEMON=false pnpm exec nx build drawnix --skip-nx-cache`、startup contract 与 `verify:startup`：类型检查/build/diff 均 exit 0，Drawnix JS 与 `vite-plugin-dts` 声明生成无 TypeScript diagnostics，0 cycles；独立 declaration-only 合同扫描 1,071 个声明且关键入口/浮层声明完整。最终 `drawnix-app` 481,924B、入口静态图 1,941,175B、所有单文件不超过 512,000B。全仓 lint 仍 exit 1，但当前 433 errors / 2,441 warnings 相对 HEAD 439 / 2,471 减少 6 / 30，本 change 新增 diagnostics 为 0
 - [x] 6.4 用同口径重跑四组各 5 次并报告原始值、中位数、范围、请求/正文和代价；另以 10 次 cold/SW-off 强制门槛确认中位 313ms、最大 375ms、18 请求、1,989,484B，禁止资源和页面/HTTP 失败均为 0。原四组 warm/SW-on 第 2 次有一次 `startup-app` `ERR_ABORTED`，页面仍可操作；稳定 2 秒后追加 5 次均未复现，保留原异常且不推测原因
 - [ ] 6.5 复审 Chat/AI 首次交互、任务/工作流恢复、升级、离线与多标签页路径（最终产物已验证 Chat/AI、菜单/工具/Minimap 和 warm offline；任务/工作流真实恢复、升级与多标签页浏览器路径仍未在本轮重新执行）
@@ -58,6 +58,7 @@
 - [x] 7.5 记录完整工具链审计剩余风险：1,592 dependencies、3 moderate、0 high/critical，exit 1；其中 2 个来自 `@swc/cli → downloader → file-type`、1 个来自 Nx 19 `nx graph` CORS，不把生产审计通过误写为全依赖无风险
 - [x] 7.6 根据 Node 官方发布计划将项目 engines 收敛到 22.x，并将 CI 与 Docker builder 从 2026-04-30 已 EOL 的 Node 20 迁移到精确版本 `22.23.2`；builder 固定 linux/amd64 `bookworm-slim@sha256:0f654709…c7e00`，frozen install 独立于源码和 release identity 形成可复用层；本机 Node 22 全量测试/类型/构建已通过，最终 slim builder 兼容性由本次 amd64 发布镜像构建复验
 - [x] 7.7 修复 Floating UI 四个导出 Hook 的 `TS2742` 非可移植声明，令 Vite 声明 diagnostics fail-closed，并增加独立 CI declaration-only 生成与关键文件/路径泄漏合同（3/3 测试、1,071 个真实声明扫描通过）
+- [ ] 7.8 将 GitHub quality、production build、production artifact smoke 拆成职责独立的 job；以六个 Nx 项目和 Drawnix Hover 的 schema v2 逐诊断 fingerprint/scope baseline 替换必然失败的裸 lint，补充新诊断、重复、动态消息、target/config/tool scope、文件退出扫描、Hover 崩溃、Nx 冷启动 JSON stdout、artifact 部分/完整重跑和单调 ratchet 合同，并等待新提交的 quality、main、smoke、release-e2e 四个 job 实际完成
 
 ## 8. User Manual Static Document
 

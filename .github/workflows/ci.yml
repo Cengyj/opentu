@@ -11,8 +11,9 @@ permissions:
   contents: read
 
 jobs:
-  # PR 时运行：lint、test、build 和冒烟测试
-  main:
+  # Quality gates run independently from the production build. Existing lint
+  # debt is fingerprinted; every new diagnostic still fails this job.
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -33,13 +34,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - uses: nrwl/nx-set-shas@v4
 
-      # 安装 Playwright 浏览器和依赖
-      - name: Install Playwright
-        run: npx playwright install --with-deps chromium
-
       # nx-set-shas provides NX_BASE/NX_HEAD for both push and pull_request.
-      # Run affected checks against those SHAs, then always produce the web
-      # artifact required by startup and bundle-size verification.
       - run: npx nx affected -t test --verbose
       - name: Test User Manual Build Contract
         run: pnpm run manual:test
@@ -47,7 +42,34 @@ jobs:
         run: pnpm run release:static:test
       - name: Verify portable Drawnix declarations
         run: pnpm run verify:drawnix-declarations
-      - run: npx nx affected -t lint --exclude=drawnix --verbose
+      - name: Test CI workflow contract
+        run: pnpm run ci:workflow:test
+      - name: Test lint regression contract
+        run: pnpm run lint:regression:test
+      - name: Reject new lint diagnostics
+        run: pnpm run lint:regression
+
+  # Build is an independent required result: a lint or unit-test failure must
+  # never make compilation look as if it ran and failed.
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.21.0
+          run_install: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.2
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
       - name: Build web production artifact
         id: build-web
         env:
@@ -64,16 +86,91 @@ jobs:
       - name: Verify startup bundle
         run: pnpm verify:startup
 
-      # PR 时运行冒烟测试（快速，约2分钟）
-      - name: Run Smoke Tests
+      - name: Upload production web artifact
+        uses: actions/upload-artifact@v6
+        with:
+          # Stable across partial reruns so a retried smoke job can still
+          # consume the artifact from the successful main job. Full reruns may
+          # replace it with the newly built artifact for the same workflow run.
+          name: web-production-${{ github.run_id }}
+          path: dist/apps/web/
+          if-no-files-found: error
+          include-hidden-files: true
+          overwrite: true
+          retention-days: 1
+
+      - name: Check Bundle Size
+        # AI Chat has a documented pre-existing 140 kB budget violation tracked
+        # by refactor-startup-shell-loading. Keep reporting it without masking
+        # test/build failures until that approved architecture change lands.
+        continue-on-error: true
+        run: pnpm run size
+
+      - name: Upload Bundle Stats
+        uses: actions/upload-artifact@v6
+        with:
+          name: bundle-stats-${{ github.sha }}-${{ github.run_attempt }}
+          path: dist/apps/web/stats.html
+          if-no-files-found: error
+
+  # Browser checks consume the exact artifact produced by main. Playwright
+  # installation or runtime failures cannot turn the build result into skipped.
+  smoke:
+    needs: main
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: http://localhost:7200
+      # Browser contracts must execute against the artifact downloaded in this
+      # attempt; replaying an Nx result could skip the preview server entirely.
+      NX_SKIP_NX_CACHE: 'true'
+      PLAYWRIGHT_WEB_SERVER_COMMAND: >-
+        pnpm exec nx run web:preview --
+        --host=localhost --port=7200 --strictPort
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.21.0
+          run_install: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.23.2
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Download production web artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: web-production-${{ github.run_id }}
+          path: dist/apps/web
+
+      - name: Verify downloaded artifact release identity
+        run: >-
+          pnpm run release:static:create --
+          --dist dist/apps/web
+          --output "${{ runner.temp }}/downloaded-release-static-contract.json"
+          --expected-release-id "${{ github.sha }}"
+          --expected-version "$(node -p "require('./package.json').version")"
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Run production artifact smoke tests
+        id: smoke-tests
         run: pnpm run e2e:smoke
 
       - name: Upload Smoke Test Results
-        if: failure()
+        if: always() && steps.smoke-tests.outcome == 'failure'
         uses: actions/upload-artifact@v6
         with:
-          name: smoke-test-results
+          name: smoke-test-results-${{ github.sha }}-${{ github.run_attempt }}
           path: apps/web-e2e/test-results/
+          if-no-files-found: error
 
       # Playwright snapshots are platform-specific. Only run the Linux visual
       # suite after reviewed Linux baselines have been committed; never accept
@@ -90,30 +187,17 @@ jobs:
           fi
 
       - name: Run Visual Regression Tests
+        id: visual-tests
         if: steps.linux-visual-baselines.outputs.available == 'true'
         run: pnpm run e2e:visual
 
       - name: Upload Visual Test Report
-        if: failure()
+        if: always() && steps.visual-tests.outcome == 'failure'
         uses: actions/upload-artifact@v6
         with:
-          name: visual-diff-report
+          name: visual-diff-report-${{ github.sha }}-${{ github.run_attempt }}
           path: apps/web-e2e/playwright-report/
-
-      - name: Check Bundle Size
-        # AI Chat has a documented pre-existing 140 kB budget violation tracked
-        # by refactor-startup-shell-loading. Keep reporting it without masking
-        # test/build failures until that approved architecture change lands.
-        if: always() && steps.build-web.outcome == 'success'
-        continue-on-error: true
-        run: pnpm run size
-
-      - name: Upload Bundle Stats
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: bundle-stats
-          path: dist/apps/web/stats.html
+          if-no-files-found: error
 
   # 发布前运行：完整 E2E 测试 + 生成用户手册
   release-e2e:
@@ -173,7 +257,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: e2e-test-report
+          name: e2e-test-report-${{ github.sha }}-${{ github.run_attempt }}
           path: apps/web-e2e/playwright-report/
 
       # 上传测试结果（包含截图）
@@ -181,12 +265,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: e2e-test-results
+          name: e2e-test-results-${{ github.sha }}-${{ github.run_attempt }}
           path: apps/web-e2e/test-results/
 
       # 上传用户手册
       - name: Upload User Manual
         uses: actions/upload-artifact@v6
         with:
-          name: user-manual
+          name: user-manual-${{ github.sha }}-${{ github.run_attempt }}
           path: apps/web/public/user-manual/

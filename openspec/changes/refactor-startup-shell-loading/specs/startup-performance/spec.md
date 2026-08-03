@@ -126,6 +126,33 @@
 - **AND** `ai-chat`、`diagram-engines`、`tool-windows`、`external-skills` JavaScript 分组 SHALL 不在入口静态依赖图中
 - **AND** 若发现重模块 chunk 重新进入入口链路或首屏资源超出预算则返回失败
 
+### Requirement: CI 必须独立报告生产构建与质量结果
+
+系统 SHALL 让生产构建、质量门禁和生产产物浏览器验证拥有可区分的执行结论，不得因前置历史债务或浏览器安装失败把未执行的编译呈现为编译失败。
+
+#### Scenario: 质量门禁失败时仍执行生产构建
+
+- **WHEN** unit、declaration 或 lint 质量门禁失败
+- **THEN** production build/release identity/startup 静态合同仍在无依赖的 build job 中真实执行
+- **AND** build job 的成功或失败不包含 Playwright 安装、smoke 或 visual 结果
+
+#### Scenario: 浏览器验证消费精确生产产物
+
+- **WHEN** production build、release identity 和 startup 静态合同成功
+- **THEN** build job 上传该提交的 `dist/apps/web` artifact
+- **AND** 独立 smoke job 下载并再次校验相同 release identity
+- **AND** Playwright 使用 production preview 服务该 artifact，不得重新构建或启动开发服务器冒充生产产物
+- **AND** 仅重跑失败的 smoke job 时必须仍能读取同一 workflow run 的成功构建产物，完整重跑时不得因 artifact 同名冲突失败
+- **AND** production artifact smoke 必须绕过 Nx result cache，确保 preview 与浏览器断言真实执行
+
+#### Scenario: 既有 lint 债务只能单调减少
+
+- **WHEN** CI 对六个 Nx lint 项目和 Drawnix Hover policy 执行 lint 回归门禁
+- **THEN** 新 fingerprint、已有 fingerprint 次数增加、fatal parser error、scope/config/tool 漂移、既有文件退出扫描或 Hover 内部失败均阻断质量 job
+- **AND** 历史诊断减少后必须显式执行只减不增的原子 ratchet 收紧 baseline 才能通过
+- **AND** CI 不得自动改写 baseline、降低 severity、仅比较总数或排除已有 lint target
+- **AND** Nx JSON 命令输出包含非 JSON 前缀、截断、重复文档或尾部垃圾时必须失败，构建配置加载不得污染机器可读 stdout
+
 ### Requirement: 生产与构建依赖升级必须来源明确且保持业务合同
 
 系统 SHALL 通过唯一锁文件解析安全修复依赖，并以真实消费者合同证明升级没有改变 Excel、Mermaid 或构建工具链语义。
